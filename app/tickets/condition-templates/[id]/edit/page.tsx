@@ -32,6 +32,11 @@ const AIRLINE_OPTIONS = [
   { value: 'MH', label: 'MH — Malaysia Airlines' },
   { value: 'CX', label: 'CX — Cathay Pacific' },
   { value: 'JL', label: 'JL — Japan Airlines' },
+  { value: 'CI', label: 'CI — China Airlines' },
+  { value: 'NH', label: 'NH — All Nippon Airways' },
+  { value: 'KE', label: 'KE — Korean Air' },
+  { value: 'BR', label: 'BR — EVA Air' },
+  { value: 'CA', label: 'CA — Air China' },
 ]
 
 const CURRENCY_OPTIONS = [
@@ -75,7 +80,7 @@ export default function EditConditionTemplatePage({ params }: { params: Promise<
 
   return (
     <AppLayout title="แก้ไข Template Condition">
-      <div className="max-w-3xl mx-auto space-y-4">
+      <div className="max-w-[1400px] mx-auto space-y-4">
         {/* Template Metadata */}
         <Card>
           <CardContent className="pt-4">

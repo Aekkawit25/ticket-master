@@ -15,13 +15,16 @@ import {
   CondPaymentType, CondCalcType, CondDueType, CondTtlCalcType,
   CondApplyScope, CondQuantityBasis, CondRefundableType,
   CondBaggageStatus, CondBaggageType, CondBaggageAllowanceMode, CondBaggagePiece,
-  CondSeatReductionAllow, CondSeatBasis, CondSeatReductionMode, CondSeatRangeType,
-  CondSingleOverLimit, CondRuleOverLimitAction, CondStepPenaltyType, CondStepCalcBase,
+  CondSeatReductionAllow, CondSeatBasis, CondSeatNoticeDaysBase, CondSeatReductionMode, CondSeatRangeType,
+  CondSingleOverLimit, CondRuleOverLimitAction, CondForfeitSource, CondStepPenaltyType, CondStepCalcBase,
+  CondCancelGroupPolicy, CondCancelGroupDeadlineBase, CondCancelGroupRefundable, CondCancelGroupTerms,
+  defaultCancelGroupTerms,
   CondPostRefundFeeType, CondPostRefundFeeBase,
   CondMainRefundPolicy,
   // v2 refund types
   CondPostRefundApplyAfter, CondPostRefundMainPolicy, CondRefundItem, CondRefundFeeUnit,
   CondRefundPenaltyMode, CondRefundPenaltyStepRule,
+  CondNameChangePolicy,
   CondUtilizationBase, CondUtilizationMeasure, CondUtilizationAction, CondUtilizationPenaltyType, CondUtilizationForfeitType,
   CondUtilization,
   defaultCondStage, defaultBaggagePolicy, defaultSeatReductionPolicy, defaultSeatReductionRule,
@@ -30,6 +33,7 @@ import {
   formatStageAmount, formatTtlRule, autoStageName, formatBaggageSummary, migrateBaggagePolicy,
   migrateSeatReductionPolicy, formatSeatReductionSummary,
   migrateRefundTerms, formatRefundTermsSummary,
+  DAY_BASED_DUE_TYPES,
 } from '@/lib/condition-schema'
 import { MASTER_AIRLINES, MASTER_CURRENCIES, MASTER_COUNTRIES, getAirlineName } from '@/lib/master-data'
 import RichTextEditor from '@/components/condition-builder/RichTextEditor'
@@ -44,7 +48,7 @@ export const TABS: { key: TabKey; label: string; no: number }[] = [
   { key: 'basic',   label: 'รายละเอียดหัว',      no: 1 },
   { key: 'payment', label: 'งวดชำระเงิน',         no: 2 },
   { key: 'baggage', label: 'สัมภาระ',             no: 3 },
-  { key: 'reduce',  label: 'ลดที่นั่ง',            no: 4 },
+  { key: 'reduce',  label: 'ลดที่นั่ง / ยกเลิกกรุ๊ป', no: 4 },
   { key: 'refund',  label: 'เงื่อนไขการคืน',      no: 5 },
   { key: 'extra',   label: 'เงื่อนไขเพิ่มเติม',  no: 6 },
 ]
@@ -80,7 +84,7 @@ export function validateTab(key: TabKey, v: AppCondition, conditionMode: Conditi
           if (s.percent <= 0)   errs.push(`${no}: เปอร์เซ็นต์ต้องมากกว่า 0`)
           if (s.percent > 100)  errs.push(`${no}: เปอร์เซ็นต์ต้องไม่เกิน 100`)
         }
-        if (s.dueType === 'TRAVEL_MINUS_DAYS' && !s.dueDays)
+        if (DAY_BASED_DUE_TYPES.includes(s.dueType) && !s.dueDays)
           errs.push(`${no}: กรุณาระบุจำนวนวัน`)
         if (s.dueType === 'CUSTOM_DATE' && !s.dueDate)
           errs.push(`${no}: กรุณาระบุวันที่กำหนดเอง`)
@@ -136,7 +140,11 @@ export function validateTab(key: TabKey, v: AppCondition, conditionMode: Conditi
           errs.push('ลดได้สูงสุด (%) ต้องอยู่ระหว่าง 0–100')
         if (sp.noticeDays != null && sp.noticeDays < 0)
           errs.push('แจ้งลดไม่น้อยกว่า ต้องมากกว่าหรือเท่ากับ 0')
+        if (sp.singleOverLimitAction === 'FORFEIT' && !sp.singleForfeitSource)
+          errs.push('กรุณาเลือกว่ายึดเงินจากส่วนใด')
         if (sp.singleOverLimitAction === 'PENALTY') {
+          if (sp.singlePenaltyType === 'NONE')
+            errs.push('กรุณาเลือกประเภทค่าปรับ')
           if (sp.singlePenaltyType === 'FIXED' && (sp.singlePenaltyAmount == null || sp.singlePenaltyAmount < 0))
             errs.push('กรุณาระบุจำนวนเงินค่าปรับ')
           if (sp.singlePenaltyType === 'PERCENT' && (sp.singlePenaltyPercent == null || sp.singlePenaltyPercent <= 0))
@@ -158,6 +166,8 @@ export function validateTab(key: TabKey, v: AppCondition, conditionMode: Conditi
           }
           if (r.maxReducePercent != null && (r.maxReducePercent < 0 || r.maxReducePercent > 100))
             errs.push(`กฎที่ ${n}: ลดได้สูงสุด (%) ต้องอยู่ระหว่าง 0–100`)
+          if (r.ruleOverLimitAction === 'FORFEIT' && !r.forfeitSource)
+            errs.push(`กฎที่ ${n}: กรุณาเลือกว่ายึดเงินจากส่วนใด`)
           if (r.ruleOverLimitAction === 'PENALTY') {
             if (r.penaltyType === 'FIXED'   && (r.penaltyAmount  == null || r.penaltyAmount  < 0))
               errs.push(`กฎที่ ${n}: กรุณาระบุจำนวนเงินค่าปรับ`)
@@ -177,6 +187,20 @@ export function validateTab(key: TabKey, v: AppCondition, conditionMode: Conditi
             if (aLo <= bHi && bLo <= aHi)
               errs.push(`กฎที่ ${i + 1} และกฎที่ ${j + 1} มีช่วงวันที่ทับซ้อนกัน`)
           }
+        }
+      }
+      // Cancel Group validation
+      const cg = v.cancelGroupTerms ?? defaultCancelGroupTerms()
+      if (cg.enabled && cg.policy !== 'UNSPECIFIED') {
+        if (cg.overLimitAction === 'FORFEIT' && !cg.forfeitSource)
+          errs.push('ยกเลิกกรุ๊ป: กรุณาเลือกว่ายึดเงินจากส่วนใด')
+        if (cg.overLimitAction === 'PENALTY') {
+          if (cg.penaltyType === 'NONE')
+            errs.push('ยกเลิกกรุ๊ป: กรุณาเลือกประเภทค่าปรับ')
+          if (cg.penaltyType === 'FIXED' && (cg.penaltyAmount == null || cg.penaltyAmount < 0))
+            errs.push('ยกเลิกกรุ๊ป: กรุณาระบุจำนวนเงินค่าปรับ')
+          if (cg.penaltyType === 'PERCENT' && (cg.penaltyPercent == null || cg.penaltyPercent <= 0))
+            errs.push('ยกเลิกกรุ๊ป: กรุณาระบุเปอร์เซ็นต์ค่าปรับ')
         }
       }
       return errs
@@ -229,6 +253,8 @@ export function validateTab(key: TabKey, v: AppCondition, conditionMode: Conditi
           errs.push('ใช้ที่นั่งขั้นต่ำ: กรุณาระบุเปอร์เซ็นต์การใช้ที่นั่งขั้นต่ำ (มากกว่า 0)')
         else if (pct > 100)
           errs.push('ใช้ที่นั่งขั้นต่ำ: เปอร์เซ็นต์การใช้ที่นั่งขั้นต่ำต้องไม่เกิน 100')
+        if (rt.utilization.calcBase === 'LATEST_SEAT' && rt.utilization.measureBy === 'CURRENT_TICKET')
+          errs.push('ใช้ที่นั่งขั้นต่ำ: ฐานคำนวณและจำนวนที่ใช้ตรวจสอบไม่ควรเป็นค่าเดียวกัน เพราะจะทำให้เงื่อนไขไม่มีผล')
         if (rt.utilization.exceedAction === 'PENALTY') {
           if (rt.utilization.penaltyType === 'AMOUNT_PER_MISSING') {
             if (rt.utilization.penaltyAmount == null || rt.utilization.penaltyAmount <= 0)
@@ -290,6 +316,7 @@ export function getTabStatus(key: TabKey, v: AppCondition, errs: string[] = [], 
         || (isAmountCalc(s.calcType) && s.amount < 0)
         || (isPercentCalc(s.calcType) && (s.percent <= 0 || s.percent > 100))
         || (s.dueType === 'CUSTOM_DATE' && !s.dueDate)
+        || (DAY_BASED_DUE_TYPES.includes(s.dueType) && !s.dueDays)
       )
       const ttlIncomplete = (v.ttlRule.calcType === 'TRAVEL_MINUS_DAYS' && !v.ttlRule.daysBefore)
         || (v.ttlRule.calcType === 'MANUAL_DATE' && !v.ttlRule.fixedDate)
@@ -319,23 +346,38 @@ export function getTabStatus(key: TabKey, v: AppCondition, errs: string[] = [], 
     }
     case 'reduce': {
       const sp = migrateSeatReductionPolicy(v.seatReductionPolicy)
-      if (!sp.enabled) return 'empty'
-      if (sp.allowReduction === 'UNSPECIFIED') return 'incomplete'
-      if (sp.mode === 'SINGLE') {
-        if (sp.singleOverLimitAction === 'PENALTY') {
-          if (sp.singlePenaltyType === 'NONE') return 'incomplete'
-          if (sp.singlePenaltyType === 'FIXED'   && (sp.singlePenaltyAmount  == null || sp.singlePenaltyAmount  < 0)) return 'incomplete'
-          if (sp.singlePenaltyType === 'PERCENT' && (sp.singlePenaltyPercent == null || sp.singlePenaltyPercent <= 0)) return 'incomplete'
+      const cg = v.cancelGroupTerms ?? defaultCancelGroupTerms()
+      const spActive = sp.enabled
+      const cgActive = cg.enabled
+      if (!spActive && !cgActive) return 'empty'
+      if (spActive) {
+        if (sp.allowReduction === 'UNSPECIFIED') return 'incomplete'
+        if (sp.mode === 'SINGLE') {
+          if (sp.singleOverLimitAction === 'FORFEIT' && !sp.singleForfeitSource) return 'incomplete'
+          if (sp.singleOverLimitAction === 'PENALTY') {
+            if (sp.singlePenaltyType === 'NONE') return 'incomplete'
+            if (sp.singlePenaltyType === 'FIXED'   && (sp.singlePenaltyAmount  == null || sp.singlePenaltyAmount  < 0)) return 'incomplete'
+            if (sp.singlePenaltyType === 'PERCENT' && (sp.singlePenaltyPercent == null || sp.singlePenaltyPercent <= 0)) return 'incomplete'
+          }
+        }
+        if (sp.mode === 'STEP_RULE') {
+          if (sp.rules.length === 0) return 'incomplete'
+          if (sp.rules.some(r =>
+            (r.ruleOverLimitAction === 'FORFEIT' && !r.forfeitSource) ||
+            (r.ruleOverLimitAction === 'PENALTY' && (
+              (r.penaltyType === 'FIXED'   && (r.penaltyAmount  == null || r.penaltyAmount  < 0)) ||
+              (r.penaltyType === 'PERCENT' && (r.penaltyPercent == null || r.penaltyPercent <= 0))
+            ))
+          )) return 'incomplete'
         }
       }
-      if (sp.mode === 'STEP_RULE') {
-        if (sp.rules.length === 0) return 'incomplete'
-        if (sp.rules.some(r =>
-          r.ruleOverLimitAction === 'PENALTY' && (
-            (r.penaltyType === 'FIXED'   && (r.penaltyAmount  == null || r.penaltyAmount  < 0)) ||
-            (r.penaltyType === 'PERCENT' && (r.penaltyPercent == null || r.penaltyPercent <= 0))
-          )
-        )) return 'incomplete'
+      if (cgActive && cg.policy !== 'UNSPECIFIED') {
+        if (cg.overLimitAction === 'FORFEIT' && !cg.forfeitSource) return 'incomplete'
+        if (cg.overLimitAction === 'PENALTY') {
+          if (cg.penaltyType === 'NONE') return 'incomplete'
+          if (cg.penaltyType === 'FIXED'   && (cg.penaltyAmount  == null || cg.penaltyAmount  < 0)) return 'incomplete'
+          if (cg.penaltyType === 'PERCENT' && (cg.penaltyPercent == null || cg.penaltyPercent <= 0)) return 'incomplete'
+        }
       }
       return 'complete'
     }
@@ -437,7 +479,7 @@ export function clearTab(key: TabKey, v: AppCondition, conditionMode: ConditionM
     case 'baggage':
       return { ...v, baggagePolicy: defaultBaggagePolicy() }
     case 'reduce':
-      return { ...v, seatReductionPolicy: defaultSeatReductionPolicy() }
+      return { ...v, seatReductionPolicy: defaultSeatReductionPolicy(), cancelGroupTerms: defaultCancelGroupTerms() }
     case 'refund':
       return { ...v, refundTerms: defaultRefundTerms() }
     case 'extra':
@@ -985,14 +1027,19 @@ function buildPreview(stage: CondStage, currency: string): string {
 }
 
 function formatDueShort(stage: CondStage): string {
+  const noTime = stage.dueTimeUnspecified ?? !stage.dueTime
+  const t = noTime ? '' : ` เวลา ${stage.dueTime}`
   switch (stage.dueType) {
-    case 'TRAVEL_MINUS_DAYS':   return `ก่อนเดินทาง ${stage.dueDays} วัน เวลา ${stage.dueTime}`
-    case 'CREATED_PLUS_DAYS':   return `หลังสร้าง ${stage.dueDays} วัน`
-    case 'PREV_DUE_PLUS_DAYS':  return `หลังงวดก่อน ${stage.dueDays} วัน`
-    case 'PREV_PAID_PLUS_DAYS': return `หลังชำระงวดก่อน ${stage.dueDays} วัน`
-    case 'CUSTOM_DATE':          return stage.dueDate || 'ระบุวันที่'
-    case 'TBD':                  return 'กำหนดภายหลัง'
-    default:                     return ''
+    case 'TRAVEL_MINUS_DAYS':          return `ก่อนเดินทาง ${stage.dueDays} วัน${t}`
+    case 'SEAT_CONFIRMED_PLUS_DAYS':   return `หลัง Confirm ที่นั่ง ${stage.dueDays} วัน${t}`
+    case 'NAME_DEADLINE_MINUS_DAYS':   return `ก่อนวันส่งชื่อ ${stage.dueDays} วัน${t}`
+    case 'TICKET_ISSUE_MINUS_DAYS':    return `ก่อนวันออกตั๋ว ${stage.dueDays} วัน${t}`
+    case 'CREATED_PLUS_DAYS':          return `หลังสร้าง ${stage.dueDays} วัน`
+    case 'PREV_DUE_PLUS_DAYS':         return `หลังงวดก่อน ${stage.dueDays} วัน`
+    case 'PREV_PAID_PLUS_DAYS':        return `หลังชำระงวดก่อน ${stage.dueDays} วัน`
+    case 'CUSTOM_DATE':                return stage.dueDate ? `${stage.dueDate}${t}` : 'ระบุวันที่'
+    case 'TBD':                        return 'กำหนดภายหลัง'
+    default:                           return ''
   }
 }
 
@@ -1006,10 +1053,11 @@ function StageCard({ stage, idx, total, currency, readOnly, open, onToggle, onCh
   onDuplicate: () => void; onDelete: () => void; onMoveUp: () => void; onMoveDown: () => void
 }) {
   const set = <K extends keyof CondStage>(k: K, v: CondStage[K]) => onChange({ [k]: v } as Partial<CondStage>)
+  const timeUnspecified  = stage.dueTimeUnspecified ?? !stage.dueTime
   const isPercent        = isPercentCalc(stage.calcType)
   const isAmount         = isAmountCalc(stage.calcType)
   const showQtyBasis     = stage.calcType === 'PER_SEAT'
-  const dueNeedsDays     = stage.dueType === 'TRAVEL_MINUS_DAYS'
+  const dueNeedsDays     = DAY_BASED_DUE_TYPES.includes(stage.dueType)
   const dueNeedsDate     = stage.dueType === 'CUSTOM_DATE'
   const isMissing        = !stage.paymentType
   const preview          = buildPreview(stage, currency)
@@ -1179,7 +1227,13 @@ function StageCard({ stage, idx, total, currency, readOnly, open, onToggle, onCh
               <FSelect<CondDueType>
                 value={stage.dueType}
                 onChange={v => set('dueType', v as CondDueType)}
-                options={(['TRAVEL_MINUS_DAYS', 'CUSTOM_DATE'] as CondDueType[]).map(v => ({ value: v, label: COND_DUE_TYPE_LABELS[v] }))}
+                options={([
+                  'TRAVEL_MINUS_DAYS',
+                  'SEAT_CONFIRMED_PLUS_DAYS',
+                  'NAME_DEADLINE_MINUS_DAYS',
+                  'TICKET_ISSUE_MINUS_DAYS',
+                  'CUSTOM_DATE',
+                ] as CondDueType[]).map(v => ({ value: v, label: COND_DUE_TYPE_LABELS[v] }))}
                 disabled={readOnly}
               />
             </div>
@@ -1187,15 +1241,49 @@ function StageCard({ stage, idx, total, currency, readOnly, open, onToggle, onCh
 
           {/* Row 3: Days/Date + Time */}
           {dueNeedsDays && (
-            <div className="grid grid-cols-2 gap-2.5">
-              <div>
-                <Label>จำนวนวัน</Label>
-                <FInput type="number" min={0} value={stage.dueDays || ''} onChange={v => set('dueDays', Number(v))} disabled={readOnly} placeholder="30" />
+            <div className="space-y-1.5">
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <Label>จำนวนวัน</Label>
+                  <FInput type="number" min={0} value={stage.dueDays || ''} onChange={v => set('dueDays', Number(v))} disabled={readOnly} placeholder="7" />
+                </div>
+                <div>
+                  <Label>เวลา Deadline</Label>
+                  <FInput type="time" value={stage.dueTime} onChange={v => set('dueTime', v)} disabled={readOnly || timeUnspecified} />
+                  {!readOnly && (
+                    <label className="flex items-center gap-1.5 mt-1.5 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={timeUnspecified}
+                        onChange={e => {
+                          if (e.target.checked) {
+                            onChange({ dueTimeUnspecified: true, dueTime: '' })
+                          } else {
+                            onChange({ dueTimeUnspecified: false, dueTime: stage.dueTime || '18:00' })
+                          }
+                        }}
+                        className="w-3 h-3 accent-[#05a94f] cursor-pointer"
+                      />
+                      <span className="text-[10px] text-slate-500">ยังไม่ระบุเวลา</span>
+                    </label>
+                  )}
+                </div>
               </div>
-              <div>
-                <Label>เวลา Deadline</Label>
-                <FInput type="time" value={stage.dueTime} onChange={v => set('dueTime', v)} disabled={readOnly} />
-              </div>
+              {stage.dueType === 'SEAT_CONFIRMED_PLUS_DAYS' && (
+                <p className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2.5 py-1.5 leading-snug">
+                  Due Date จะคำนวณหลังจากมีการ Confirm ที่นั่งแล้ว — ถ้ายังไม่มีวันที่ Confirm จะแสดงสถานะ &ldquo;รอวันที่ Confirm ที่นั่ง&rdquo;
+                </p>
+              )}
+              {stage.dueType === 'NAME_DEADLINE_MINUS_DAYS' && (
+                <p className="text-[10px] text-slate-400 leading-snug px-0.5">
+                  คำนวณจากวัน TTL / วันส่งชื่อผู้โดยสารของ Series — ถ้ายังไม่ได้กำหนด TTL จะไม่สามารถคำนวณได้
+                </p>
+              )}
+              {stage.dueType === 'TICKET_ISSUE_MINUS_DAYS' && (
+                <p className="text-[10px] text-slate-400 leading-snug px-0.5">
+                  คำนวณจากวัน Deadline ออกตั๋วของ Series — ถ้ายังไม่ได้กำหนดจะไม่สามารถคำนวณได้
+                </p>
+              )}
             </div>
           )}
           {dueNeedsDate && (
@@ -1206,7 +1294,24 @@ function StageCard({ stage, idx, total, currency, readOnly, open, onToggle, onCh
               </div>
               <div>
                 <Label>เวลา Deadline</Label>
-                <FInput type="time" value={stage.dueTime} onChange={v => set('dueTime', v)} disabled={readOnly} />
+                <FInput type="time" value={stage.dueTime} onChange={v => set('dueTime', v)} disabled={readOnly || timeUnspecified} />
+                {!readOnly && (
+                  <label className="flex items-center gap-1.5 mt-1.5 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={timeUnspecified}
+                      onChange={e => {
+                        if (e.target.checked) {
+                          onChange({ dueTimeUnspecified: true, dueTime: '' })
+                        } else {
+                          onChange({ dueTimeUnspecified: false, dueTime: stage.dueTime || '18:00' })
+                        }
+                      }}
+                      className="w-3 h-3 accent-[#05a94f] cursor-pointer"
+                    />
+                    <span className="text-[10px] text-slate-500">ยังไม่ระบุเวลา</span>
+                  </label>
+                )}
               </div>
             </div>
           )}
@@ -1715,7 +1820,7 @@ function BaggageSlotCard({ title, icon, slot, onChange, readOnly }: {
 function BaggagePreviewCard({ bp: rawBp }: { bp: CondBaggagePolicy }) {
   const bp = migrateBaggagePolicy(rawBp)
   const summary = formatBaggageSummary(bp)
-  const isUnset = summary === 'ยังไม่ระบุ'
+  const isUnset = summary === 'ยังไม่ระบุสัมภาระ'
 
   return (
     <div className={cn(
@@ -1845,8 +1950,14 @@ const SR_ALLOW_OPTIONS: { value: CondSeatReductionAllow; label: string }[] = [
 ]
 
 const SR_BASIS_OPTIONS: { value: CondSeatBasis; label: string }[] = [
-  { value: 'INITIAL_SEAT',   label: 'Seat เริ่มต้น' },
+  { value: 'INITIAL_SEAT',   label: 'Seat เริ่มต้น (ที่นั่งเปิดขาย)' },
   { value: 'REMAINING_SEAT', label: 'Seat คงเหลือ' },
+]
+
+const SR_NOTICE_BASE_OPTIONS: { value: CondSeatNoticeDaysBase; label: string }[] = [
+  { value: 'DEPARTURE_DATE', label: 'วันเดินทางวันแรก' },
+  { value: 'TICKET_ISSUE',   label: 'วันออกตั๋ว' },
+  { value: 'SEAT_CONFIRMED', label: 'วันที่ Confirm ที่นั่ง' },
 ]
 
 const SR_MODE_OPTIONS: { value: CondSeatReductionMode; label: string }[] = [
@@ -1855,15 +1966,25 @@ const SR_MODE_OPTIONS: { value: CondSeatReductionMode; label: string }[] = [
 ]
 
 const SR_SINGLE_OVER_LIMIT_OPTIONS: { value: CondSingleOverLimit; label: string }[] = [
-  { value: 'NO_FORFEIT', label: 'ไม่ยึดเงิน' },
-  { value: 'FORFEIT',    label: 'ยึดเงิน' },
-  { value: 'PENALTY',    label: 'คิดค่าปรับ' },
+  { value: 'UNSPECIFIED',      label: 'ยังไม่กำหนด' },
+  { value: 'NO_FORFEIT',       label: 'ไม่ยึดเงิน' },
+  { value: 'FORFEIT',          label: 'ยึดเงิน' },
+  { value: 'PENALTY',          label: 'คิดค่าปรับ' },
+  { value: 'REQUIRE_APPROVAL', label: 'ต้องขออนุมัติ' },
 ]
 
 const SR_RULE_OVER_LIMIT_OPTIONS: { value: CondRuleOverLimitAction; label: string }[] = [
-  { value: 'NO_FORFEIT', label: 'ไม่ยึดเงิน' },
-  { value: 'FORFEIT',    label: 'ยึดเงิน' },
-  { value: 'PENALTY',    label: 'คิดค่าปรับ' },
+  { value: 'UNSPECIFIED',      label: 'ยังไม่กำหนด' },
+  { value: 'NO_FORFEIT',       label: 'ไม่ยึดเงิน' },
+  { value: 'FORFEIT',          label: 'ยึดเงิน' },
+  { value: 'PENALTY',          label: 'คิดค่าปรับ' },
+  { value: 'REQUIRE_APPROVAL', label: 'ต้องขออนุมัติ' },
+]
+
+const SR_FORFEIT_SOURCE_OPTIONS: { value: CondForfeitSource; label: string; desc: string }[] = [
+  { value: 'DEPOSIT',  label: 'Deposit',    desc: 'ยึดเงินมัดจำที่ชำระแล้ว' },
+  { value: 'RSVN_FEE', label: 'RSVN Fee',  desc: 'ยึดค่าจองที่นั่ง' },
+  { value: 'ALL',      label: 'ทั้งหมด',   desc: 'ยึดเงินที่ชำระทั้งหมด' },
 ]
 
 const SR_PENALTY_OPTIONS: { value: CondStepPenaltyType; label: string }[] = [
@@ -1920,7 +2041,8 @@ function SrRuleCard({
   const [expanded, setExpanded] = useState(true)
 
   const overLimitLabel: Record<CondRuleOverLimitAction, string> = {
-    NO_FORFEIT: 'ไม่ยึดเงิน', FORFEIT: 'ยึดเงิน', PENALTY: 'คิดค่าปรับ',
+    UNSPECIFIED: 'ยังไม่กำหนด', NO_FORFEIT: 'ไม่ยึดเงิน',
+    FORFEIT: 'ยึดเงิน', PENALTY: 'คิดค่าปรับ', REQUIRE_APPROVAL: 'ต้องขออนุมัติ',
   }
   const penaltyLabel =
     rule.penaltyType === 'PERCENT'    ? `${rule.penaltyPercent ?? '?'}%` :
@@ -1950,10 +2072,11 @@ function SrRuleCard({
           )}
           <span className={cn(
             'text-[10px] px-1.5 py-0.5 rounded-full font-medium shrink-0',
-            rule.ruleOverLimitAction === 'NO_FORFEIT' ? 'bg-slate-100 text-slate-500' :
-            rule.ruleOverLimitAction === 'FORFEIT'   ? 'bg-orange-50 text-orange-600' :
-            rule.ruleOverLimitAction === 'PENALTY'   ? 'bg-amber-50 text-amber-700' :
-                                                       'bg-slate-100 text-slate-500',
+            rule.ruleOverLimitAction === 'NO_FORFEIT'       ? 'bg-slate-100 text-slate-500' :
+            rule.ruleOverLimitAction === 'FORFEIT'          ? 'bg-orange-50 text-orange-600' :
+            rule.ruleOverLimitAction === 'PENALTY'          ? 'bg-amber-50 text-amber-700' :
+            rule.ruleOverLimitAction === 'REQUIRE_APPROVAL' ? 'bg-purple-50 text-purple-600' :
+                                                              'bg-slate-100 text-slate-400',
           )}>
             {overLimitLabel[rule.ruleOverLimitAction]}
             {penaltyLabel ? ` ${penaltyLabel}` : ''}
@@ -2060,18 +2183,58 @@ function SrRuleCard({
               <Label>หากเกินเงื่อนไข</Label>
               <FSelect<CondRuleOverLimitAction>
                 value={rule.ruleOverLimitAction}
-                onChange={v => v && onChange({ ruleOverLimitAction: v as CondRuleOverLimitAction })}
+                onChange={v => {
+                  if (!v) return
+                  const patch: Partial<CondSeatReductionRule> = { ruleOverLimitAction: v as CondRuleOverLimitAction }
+                  if (v !== 'FORFEIT') patch.forfeitSource = null
+                  if (v !== 'PENALTY') { patch.penaltyType = 'NONE'; patch.penaltyAmount = null; patch.penaltyPercent = null }
+                  onChange(patch)
+                }}
                 options={SR_RULE_OVER_LIMIT_OPTIONS}
                 disabled={readOnly}
               />
             </div>
           </div>
 
-          {/* Penalty type */}
+          {/* Description for non-input actions */}
+          {rule.ruleOverLimitAction === 'UNSPECIFIED' && (
+            <p className="text-[10px] text-slate-400 italic px-0.5">ยังไม่ได้กำหนดผลลัพธ์เมื่อเกินเงื่อนไข</p>
+          )}
+          {rule.ruleOverLimitAction === 'NO_FORFEIT' && (
+            <p className="text-[10px] text-slate-400 italic px-0.5">เกินเงื่อนไขแล้วไม่เสียค่าใช้จ่ายเพิ่ม</p>
+          )}
+          {rule.ruleOverLimitAction === 'REQUIRE_APPROVAL' && (
+            <p className="text-[10px] text-purple-500 italic px-0.5">ต้องส่งให้ผู้มีอำนาจอนุมัติก่อนดำเนินการ</p>
+          )}
+
+          {/* Forfeit source — shown when FORFEIT */}
+          {rule.ruleOverLimitAction === 'FORFEIT' && (
+            <div>
+              <Label required>ยึดเงินจาก</Label>
+              <div className="grid grid-cols-3 gap-2">
+                {SR_FORFEIT_SOURCE_OPTIONS.map(opt => (
+                  <label key={opt.value} className={cn(
+                    'flex flex-col gap-1 p-2.5 rounded-xl border cursor-pointer select-none transition',
+                    rule.forfeitSource === opt.value
+                      ? 'border-orange-400 bg-orange-50'
+                      : 'border-slate-200 bg-white hover:border-orange-200 hover:bg-orange-50/30',
+                    readOnly && 'pointer-events-none opacity-60',
+                  )}>
+                    <input type="radio" className="sr-only" checked={rule.forfeitSource === opt.value}
+                      onChange={() => onChange({ forfeitSource: opt.value })} disabled={readOnly} />
+                    <span className="text-xs font-semibold text-slate-700">{opt.label}</span>
+                    <span className="text-[10px] text-slate-400 leading-snug">{opt.desc}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Penalty type — shown when PENALTY */}
           {rule.ruleOverLimitAction === 'PENALTY' && (
             <>
               <div>
-                <Label>ค่าปรับ</Label>
+                <Label>ประเภทค่าปรับ</Label>
                 <StatusPills<CondStepPenaltyType>
                   value={rule.penaltyType}
                   onChange={v => {
@@ -2097,8 +2260,16 @@ function SrRuleCard({
                         placeholder="0"
                         disabled={readOnly}
                       />
-                      <span className="text-xs text-slate-500 shrink-0">{currency}/ที่นั่ง</span>
                     </div>
+                  </div>
+                  <div>
+                    <Label>สกุลเงิน</Label>
+                    <FSelect<string>
+                      value={rule.currency || currency}
+                      onChange={v => v && onChange({ currency: v })}
+                      options={MASTER_CURRENCIES.slice(0, 8).map(c => ({ value: c.code, label: c.code }))}
+                      disabled={readOnly}
+                    />
                   </div>
                 </div>
               )}
@@ -2286,7 +2457,7 @@ export function SeatReductionSection({ value, onChange, readOnly, currency, erro
                     />
                   </div>
 
-                  {/* maxReducePercent (SINGLE only) + basis */}
+                  {/* ── จำนวนที่นั่งที่ลดได้ ─────────────────────────────────────────── */}
                   <div className={cn('grid gap-3', sp.mode === 'SINGLE' ? 'grid-cols-2' : '')}>
                     {sp.mode === 'SINGLE' && (
                       <div>
@@ -2305,7 +2476,7 @@ export function SeatReductionSection({ value, onChange, readOnly, currency, erro
                       </div>
                     )}
                     <div>
-                      <Label>คำนวณจาก Seat</Label>
+                      <Label>คำนวณจำนวนที่นั่งจาก</Label>
                       <FSelect<CondSeatBasis>
                         value={sp.basis}
                         onChange={v => v && setSp({ basis: v as CondSeatBasis })}
@@ -2315,9 +2486,10 @@ export function SeatReductionSection({ value, onChange, readOnly, currency, erro
                     </div>
                   </div>
 
-                  {/* SINGLE mode: noticeDays + singleOverLimitAction + penalty fields */}
+                  {/* SINGLE mode: deadline notice + overLimitAction + penalty fields */}
                   {sp.mode === 'SINGLE' && (
                     <>
+                      {/* ── Deadline การแจ้งลดที่นั่ง ─────────────────────────────── */}
                       <div className="grid grid-cols-2 gap-3">
                         <div>
                           <Label>แจ้งลดไม่น้อยกว่า</Label>
@@ -2329,9 +2501,21 @@ export function SeatReductionSection({ value, onChange, readOnly, currency, erro
                               placeholder="ไม่จำกัด"
                               disabled={readOnly}
                             />
-                            <span className="text-xs text-slate-500 shrink-0">วันก่อนเดินทาง</span>
+                            <span className="text-xs text-slate-500 shrink-0">วัน</span>
                           </div>
                         </div>
+                        <div>
+                          <Label>คำนวณจาก (วัน Deadline)</Label>
+                          <FSelect<CondSeatNoticeDaysBase>
+                            value={sp.noticeDaysBase}
+                            onChange={v => v && setSp({ noticeDaysBase: v as CondSeatNoticeDaysBase })}
+                            options={SR_NOTICE_BASE_OPTIONS}
+                            disabled={readOnly}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
                         <div>
                           <Label>หากเกินเงื่อนไข</Label>
                           <FSelect<CondSingleOverLimit>
@@ -2339,10 +2523,12 @@ export function SeatReductionSection({ value, onChange, readOnly, currency, erro
                             onChange={v => {
                               if (!v) return
                               const patch: Partial<CondSeatReductionPolicy> = { singleOverLimitAction: v as CondSingleOverLimit }
+                              if (v !== 'FORFEIT') patch.singleForfeitSource = null
                               if (v !== 'PENALTY') {
                                 patch.singlePenaltyType    = 'NONE'
                                 patch.singlePenaltyPercent = null
                                 patch.singlePenaltyAmount  = null
+                                patch.singlePenaltyCurrency = ''
                               }
                               setSp(patch)
                             }}
@@ -2352,11 +2538,47 @@ export function SeatReductionSection({ value, onChange, readOnly, currency, erro
                         </div>
                       </div>
 
+                      {/* Description for non-input actions */}
+                      {sp.singleOverLimitAction === 'UNSPECIFIED' && (
+                        <p className="text-[10px] text-slate-400 italic">ยังไม่ได้กำหนดผลลัพธ์เมื่อเกินเงื่อนไข</p>
+                      )}
+                      {sp.singleOverLimitAction === 'NO_FORFEIT' && (
+                        <p className="text-[10px] text-slate-400 italic">เกินเงื่อนไขแล้วไม่เสียค่าใช้จ่ายเพิ่ม</p>
+                      )}
+                      {sp.singleOverLimitAction === 'REQUIRE_APPROVAL' && (
+                        <p className="text-[10px] text-purple-500 italic">ต้องส่งให้ผู้มีอำนาจอนุมัติก่อนดำเนินการ</p>
+                      )}
+
+                      {/* Forfeit source — shown when FORFEIT */}
+                      {sp.singleOverLimitAction === 'FORFEIT' && (
+                        <div>
+                          <Label required>ยึดเงินจาก</Label>
+                          <div className="grid grid-cols-3 gap-2">
+                            {SR_FORFEIT_SOURCE_OPTIONS.map(opt => (
+                              <label key={opt.value} className={cn(
+                                'flex flex-col gap-1 p-2.5 rounded-xl border cursor-pointer select-none transition',
+                                sp.singleForfeitSource === opt.value
+                                  ? 'border-orange-400 bg-orange-50'
+                                  : 'border-slate-200 bg-white hover:border-orange-200 hover:bg-orange-50/30',
+                                readOnly && 'pointer-events-none opacity-60',
+                              )}>
+                                <input type="radio" className="sr-only"
+                                  checked={sp.singleForfeitSource === opt.value}
+                                  onChange={() => setSp({ singleForfeitSource: opt.value })}
+                                  disabled={readOnly} />
+                                <span className="text-xs font-semibold text-slate-700">{opt.label}</span>
+                                <span className="text-[10px] text-slate-400 leading-snug">{opt.desc}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
                       {/* Penalty fields for SINGLE mode */}
                       {sp.singleOverLimitAction === 'PENALTY' && (
                         <>
                           <div>
-                            <Label>ค่าปรับ</Label>
+                            <Label>ประเภทค่าปรับ</Label>
                             <StatusPills<CondStepPenaltyType>
                               value={sp.singlePenaltyType}
                               onChange={v => {
@@ -2373,16 +2595,22 @@ export function SeatReductionSection({ value, onChange, readOnly, currency, erro
                             <div className="grid grid-cols-2 gap-3">
                               <div>
                                 <Label required>จำนวนเงินค่าปรับ</Label>
-                                <div className="flex items-center gap-2">
-                                  <FInput
-                                    type="number" min={0}
-                                    value={sp.singlePenaltyAmount ?? ''}
-                                    onChange={v => setSp({ singlePenaltyAmount: v === '' ? null : Number(v) })}
-                                    placeholder="0"
-                                    disabled={readOnly}
-                                  />
-                                  <span className="text-xs text-slate-500 shrink-0">{currency}/ที่นั่ง</span>
-                                </div>
+                                <FInput
+                                  type="number" min={0}
+                                  value={sp.singlePenaltyAmount ?? ''}
+                                  onChange={v => setSp({ singlePenaltyAmount: v === '' ? null : Number(v) })}
+                                  placeholder="0"
+                                  disabled={readOnly}
+                                />
+                              </div>
+                              <div>
+                                <Label>สกุลเงิน</Label>
+                                <FSelect<string>
+                                  value={sp.singlePenaltyCurrency || currency}
+                                  onChange={v => v && setSp({ singlePenaltyCurrency: v })}
+                                  options={MASTER_CURRENCIES.slice(0, 8).map(c => ({ value: c.code, label: c.code }))}
+                                  disabled={readOnly}
+                                />
                               </div>
                             </div>
                           )}
@@ -2452,18 +2680,29 @@ export function SeatReductionSection({ value, onChange, readOnly, currency, erro
               }
               let overLimitSuffix = ''
               let overLimitMissing = false
-              if (sp.singleOverLimitAction === 'NO_FORFEIT') {
-                overLimitSuffix = 'จะไม่มีคืนเงิน'
+              const FORFEIT_LABEL: Record<string, string> = { DEPOSIT: 'Deposit', RSVN_FEE: 'RSVN Fee', ALL: 'ทั้งหมด' }
+              if (sp.singleOverLimitAction === 'UNSPECIFIED') {
+                overLimitSuffix = 'ยังไม่ได้กำหนดผลลัพธ์'
+                overLimitMissing = true
+              } else if (sp.singleOverLimitAction === 'NO_FORFEIT') {
+                overLimitSuffix = 'ไม่เสียค่าใช้จ่ายเพิ่ม'
               } else if (sp.singleOverLimitAction === 'FORFEIT') {
-                overLimitSuffix = 'จะถูกยึดเงินตามเงื่อนไข'
+                overLimitSuffix = sp.singleForfeitSource
+                  ? `จะถูกยึด${FORFEIT_LABEL[sp.singleForfeitSource]}`
+                  : 'จะถูกยึดเงิน (ยังไม่ได้เลือกประเภท)'
+                overLimitMissing = !sp.singleForfeitSource
+              } else if (sp.singleOverLimitAction === 'REQUIRE_APPROVAL') {
+                overLimitSuffix = 'ต้องขออนุมัติจากผู้มีอำนาจ'
               } else {
                 if (sp.singlePenaltyType === 'NONE') {
-                  overLimitSuffix = 'จะไม่มีการคิดค่าปรับ'
+                  overLimitSuffix = 'คิดค่าปรับ (ยังไม่ได้เลือกประเภท)'
+                  overLimitMissing = true
                 } else if (sp.singlePenaltyType === 'FORFEIT_ALL') {
-                  overLimitSuffix = 'จะถูกยึดเงินเต็มจำนวนตามเงื่อนไข'
+                  overLimitSuffix = 'จะถูกยึดเงินเต็มจำนวน'
                 } else if (sp.singlePenaltyType === 'FIXED') {
+                  const penCur = sp.singlePenaltyCurrency || currency
                   if (sp.singlePenaltyAmount != null) {
-                    overLimitSuffix = `จะมีการคิดค่าปรับ ${sp.singlePenaltyAmount.toLocaleString()} ${currency} ต่อที่นั่ง`
+                    overLimitSuffix = `คิดค่าปรับ ${sp.singlePenaltyAmount.toLocaleString('en-US')} ${penCur} ต่อที่นั่ง`
                   } else {
                     overLimitSuffix = 'ยังไม่ได้ระบุจำนวนเงินค่าปรับ'
                     overLimitMissing = true
@@ -2471,7 +2710,7 @@ export function SeatReductionSection({ value, onChange, readOnly, currency, erro
                 } else if (sp.singlePenaltyType === 'PERCENT') {
                   const calcBaseLabel = SR_CALC_BASE_LABELS[sp.singleCalcBase] ?? sp.singleCalcBase
                   if (sp.singlePenaltyPercent != null) {
-                    overLimitSuffix = `จะมีการคิดค่าปรับ ${sp.singlePenaltyPercent}% ของ ${calcBaseLabel}`
+                    overLimitSuffix = `คิดค่าปรับ ${sp.singlePenaltyPercent}% ของ ${calcBaseLabel}`
                   } else {
                     overLimitSuffix = 'ยังไม่ได้ระบุเปอร์เซ็นต์ค่าปรับ'
                     overLimitMissing = true
@@ -2599,11 +2838,11 @@ const POST_FEE_BASE_OPTIONS: { value: CondPostRefundFeeBase; label: string }[] =
 ]
 
 const POST_REFUND_APPLY_AFTER_OPTIONS: { value: CondPostRefundApplyAfter; label: string }[] = [
-  { value: 'AFTER_NAME_SUBMIT', label: 'หลังส่งชื่อ' },
-  { value: 'AFTER_TICKETING',   label: 'หลังออกตั๋ว' },
-  { value: 'AFTER_DEPOSIT',     label: 'หลังชำระมัดจำ' },
-  { value: 'AFTER_DEADLINE',    label: 'หลังครบกำหนดออกตั๋ว' },
-  { value: 'OTHER',             label: 'อื่นๆ' },
+  { value: 'AFTER_NAME_SUBMIT',   label: 'หลังส่งชื่อ' },
+  { value: 'AFTER_TICKETING',     label: 'หลังออกตั๋ว' },
+  { value: 'AFTER_DEPOSIT',       label: 'หลังชำระมัดจำ' },
+  { value: 'AFTER_DEADLINE',      label: 'หลังครบกำหนดออกตั๋ว' },
+  { value: 'AFTER_FULL_PAYMENT',  label: 'หลังชำระเต็มจำนวน' },
 ]
 
 const POST_REFUND_MAIN_POLICY_OPTIONS: { value: CondPostRefundMainPolicy; label: string; desc: string }[] = [
@@ -2613,14 +2852,21 @@ const POST_REFUND_MAIN_POLICY_OPTIONS: { value: CondPostRefundMainPolicy; label:
   { value: 'FULL_REFUND',        label: 'Refund ได้ทั้งหมด',         desc: 'คืนได้เต็มจำนวน' },
 ]
 
-const REFUND_ITEM_OPTIONS: { value: CondRefundItem; label: string; tooltip?: string }[] = [
-  { value: 'FARE',    label: 'Fare' },
-  { value: 'TAX',     label: 'Tax' },
-  { value: 'FUEL',    label: 'Fuel Charge' },
-  { value: 'YQ',      label: 'YQ',      tooltip: 'ค่าธรรมเนียมที่สายการบินเรียกเก็บ เช่น Fuel/Carrier Surcharge การ Refund ขึ้นอยู่กับเงื่อนไขสายการบิน' },
-  { value: 'YR',      label: 'YR',      tooltip: 'ค่าธรรมเนียมที่สายการบินเรียกเก็บอีกประเภทหนึ่ง หลายกรณีไม่สามารถ Refund ได้ ต้องดูเงื่อนไขสายการบิน' },
-  { value: 'DEPOSIT', label: 'Deposit' },
-  { value: 'OTHER',   label: 'อื่นๆ' },
+const NAME_CHANGE_POLICY_OPTIONS: { value: CondNameChangePolicy; label: string }[] = [
+  { value: 'UNSPECIFIED',      label: 'ไม่ระบุ' },
+  { value: 'ALLOW',            label: 'อนุญาตให้เปลี่ยนชื่อ' },
+  { value: 'NOT_ALLOW',        label: 'ไม่อนุญาตให้เปลี่ยนชื่อ' },
+  { value: 'REQUIRE_APPROVAL', label: 'ต้องขออนุมัติ' },
+]
+
+
+const REFUND_ITEM_OPTIONS: { value: CondRefundItem; label: string; desc?: string; tooltip?: string }[] = [
+  { value: 'FARE',    label: 'Fare',    desc: 'ค่าตั๋วโดยสาร' },
+  { value: 'TAX',     label: 'Tax',     desc: 'ภาษี / ค่าธรรมเนียมภาษี' },
+  { value: 'YQ',      label: 'YQ',      desc: 'Fuel / Carrier Surcharge', tooltip: 'Fuel Charge / Carrier Surcharge หรือค่าธรรมเนียมน้ำมันที่สายการบินเรียกเก็บ หากเอกสารสายการบินระบุ "Fuel Charge" ให้เลือก YQ' },
+  { value: 'YR',      label: 'YR',      desc: 'ค่าธรรมเนียมสายการบิน',   tooltip: 'ค่าธรรมเนียมสายการบินอีกประเภทหนึ่ง บางสายการบินไม่อนุญาตให้ Refund ต้องดูเงื่อนไขสายการบิน' },
+  { value: 'DEPOSIT', label: 'Deposit', desc: 'เงินมัดจำ' },
+  { value: 'OTHER',   label: 'อื่นๆ',  desc: 'รายการอื่นที่ระบุเพิ่มเติม' },
 ]
 
 const REFUND_FEE_UNIT_OPTIONS: { value: CondRefundFeeUnit; label: string }[] = [
@@ -2690,41 +2936,60 @@ const UTIL_PENALTY_TYPE_OPTIONS: { value: CondUtilizationPenaltyType; label: str
 
 // ── RefundItemCheckboxes ──────────────────────────────────────────────────────
 
-function RefundItemCheckboxes({ selected, disabledItems = [], onChange, readOnly }: {
+function RefundItemCheckboxes({ selected, disabledItems = [], onChange, readOnly, colorScheme = 'green' }: {
   selected: CondRefundItem[]
   disabledItems?: CondRefundItem[]
   onChange: (items: CondRefundItem[]) => void
   readOnly: boolean
+  colorScheme?: 'green' | 'orange'
 }) {
   return (
-    <div className="flex gap-1.5 flex-wrap">
-      {REFUND_ITEM_OPTIONS.map(({ value, label, tooltip }) => {
+    <div className="space-y-1.5">
+      {REFUND_ITEM_OPTIONS.map(({ value, label, desc, tooltip }) => {
         const checked = selected.includes(value)
         const blocked = !checked && disabledItems.includes(value)
         const isDisabled = readOnly || blocked
+        const isGreen = colorScheme === 'green'
         return (
           <label key={value} className={cn(
-            'flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs transition select-none',
-            checked ? 'border-[#05a94f] bg-emerald-50 text-[#05a94f] font-semibold cursor-pointer' :
-            blocked ? 'border-slate-100 bg-slate-50 text-slate-300 cursor-not-allowed' :
-            'border-slate-200 text-slate-600 hover:border-slate-300 cursor-pointer',
+            'flex items-start gap-2.5 px-3 py-2.5 rounded-lg border transition select-none',
+            checked
+              ? isGreen
+                ? 'border-emerald-400 bg-emerald-50 text-emerald-800 cursor-pointer'
+                : 'border-orange-400 bg-orange-50 text-orange-800 cursor-pointer'
+              : blocked
+                ? 'border-slate-100 bg-slate-50 text-slate-300 cursor-not-allowed opacity-60'
+                : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50/80 cursor-pointer',
             readOnly && 'pointer-events-none',
           )}>
             <input type="checkbox" className="sr-only" checked={checked} disabled={isDisabled}
               onChange={() => !isDisabled && onChange(checked ? selected.filter(x => x !== value) : [...selected, value])} />
-            <span className={cn('w-3.5 h-3.5 rounded border-2 flex items-center justify-center shrink-0',
-              checked ? 'border-[#05a94f] bg-[#05a94f]' : blocked ? 'border-slate-200 bg-slate-100' : 'border-slate-300')}>
-              {checked && <Check size={8} className="text-white" />}
+            <span className={cn('w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 mt-0.5',
+              checked
+                ? isGreen ? 'border-emerald-500 bg-emerald-500' : 'border-orange-500 bg-orange-500'
+                : blocked ? 'border-slate-200 bg-slate-100' : 'border-slate-300')}>
+              {checked && <Check size={9} className="text-white" />}
             </span>
-            {label}
-            {tooltip && (
-              <span className="relative group/tip inline-flex items-center pointer-events-auto">
-                <Info size={10} className={cn('shrink-0', checked ? 'text-emerald-500' : blocked ? 'text-slate-200' : 'text-slate-400')} />
-                <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 px-2.5 py-2 text-[10px] leading-relaxed bg-slate-800 text-white rounded-lg shadow-lg opacity-0 group-hover/tip:opacity-100 transition-opacity pointer-events-none z-50 whitespace-normal text-left font-normal">
-                  {tooltip}
-                </span>
+            <span className="flex-1 min-w-0">
+              <span className="flex items-center gap-1">
+                <span className="text-xs font-medium">{label}</span>
+                {tooltip && (
+                  <span className="relative group/tip inline-flex items-center pointer-events-auto">
+                    <Info size={10} className={cn('shrink-0',
+                      checked ? (isGreen ? 'text-emerald-500' : 'text-orange-500') : blocked ? 'text-slate-200' : 'text-slate-400')} />
+                    <span className="absolute bottom-full left-0 mb-2 w-64 px-2.5 py-2 text-[10px] leading-relaxed bg-slate-800 text-white rounded-lg shadow-lg opacity-0 group-hover/tip:opacity-100 transition-opacity pointer-events-none z-50 whitespace-normal text-left font-normal">
+                      {tooltip}
+                    </span>
+                  </span>
+                )}
               </span>
-            )}
+              {desc && (
+                <span className={cn('text-[10px] leading-tight block mt-0.5',
+                  checked ? (isGreen ? 'text-emerald-600' : 'text-orange-600') : blocked ? 'text-slate-300' : 'text-slate-400')}>
+                  {desc}
+                </span>
+              )}
+            </span>
           </label>
         )
       })}
@@ -2820,6 +3085,288 @@ function RefundPenaltyStepRuleRow({ rule, index, readOnly, onUpdate, onRemove, c
   )
 }
 
+// ── CancelGroupSection ────────────────────────────────────────────────────────
+
+const CG_POLICY_OPTIONS: { value: CondCancelGroupPolicy; label: string; desc: string }[] = [
+  { value: 'UNSPECIFIED',      label: 'ไม่ระบุ',          desc: 'ยังไม่ได้กำหนดนโยบาย' },
+  { value: 'ALLOW',            label: 'อนุญาต',           desc: 'สามารถยกเลิกกรุ๊ปได้ตามเงื่อนไข' },
+  { value: 'NOT_ALLOW',        label: 'ไม่อนุญาต',        desc: 'ห้ามยกเลิกกรุ๊ปในทุกกรณี' },
+  { value: 'REQUIRE_APPROVAL', label: 'ต้องขออนุมัติ',   desc: 'ต้องได้รับการอนุมัติก่อนยกเลิก' },
+]
+
+const CG_DEADLINE_BASE_OPTIONS: { value: CondCancelGroupDeadlineBase; label: string }[] = [
+  { value: 'DEPARTURE_DATE', label: 'วันเดินทางแรก' },
+  { value: 'TICKET_ISSUE',   label: 'วันออกตั๋ว' },
+  { value: 'SEAT_CONFIRMED', label: 'วันที่ Confirm ที่นั่ง' },
+  { value: 'CUSTOM_DATE',    label: 'วันที่กำหนดเอง' },
+]
+
+const CG_REFUNDABLE_OPTIONS: { value: CondCancelGroupRefundable; label: string }[] = [
+  { value: 'UNSPECIFIED',    label: 'ยังไม่ระบุ' },
+  { value: 'NON_REFUNDABLE', label: 'คืนไม่ได้' },
+  { value: 'PARTIAL_REFUND', label: 'คืนได้บางส่วน' },
+  { value: 'FULL_REFUND',    label: 'คืนได้ทั้งหมด' },
+]
+
+export function CancelGroupSection({ value, onChange, readOnly, currency, errors = [] }: {
+  value: AppCondition; onChange: (v: AppCondition) => void; readOnly: boolean; currency: string; errors?: string[]
+}) {
+  const cg: CondCancelGroupTerms = value.cancelGroupTerms ?? defaultCancelGroupTerms()
+  const setCg = (patch: Partial<CondCancelGroupTerms>) =>
+    onChange({ ...value, cancelGroupTerms: { ...cg, ...patch } })
+
+  const policyActive = cg.enabled && cg.policy !== 'UNSPECIFIED'
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
+      {/* Section header */}
+      <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-200 bg-slate-50">
+        <X size={14} className="text-slate-500" />
+        <p className="text-xs font-semibold text-slate-700 flex-1">เงื่อนไขการยกเลิกกรุ๊ป</p>
+        <p className="text-[10px] text-slate-400">แยกจากเงื่อนไข Refund รายผู้โดยสาร</p>
+      </div>
+
+      <div className="px-4 py-4 space-y-4">
+        {/* Toggle */}
+        <label className="flex items-center gap-3 cursor-pointer select-none p-3 rounded-xl border border-slate-200 hover:bg-slate-50 transition">
+          <Toggle checked={cg.enabled} onChange={v => setCg({ enabled: v })} disabled={readOnly} />
+          <div>
+            <p className="text-sm font-semibold text-slate-800">เปิดใช้งานเงื่อนไขการยกเลิกกรุ๊ป</p>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              {cg.enabled ? 'เปิดใช้งาน — กรอกเงื่อนไขด้านล่าง' : 'ปิดอยู่ — ไม่มีเงื่อนไขการยกเลิกกรุ๊ป'}
+            </p>
+          </div>
+        </label>
+
+        {cg.enabled && (
+          <>
+            {/* Policy */}
+            <div>
+              <Label>นโยบายการยกเลิกกรุ๊ป</Label>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {CG_POLICY_OPTIONS.map(opt => (
+                  <label key={opt.value} className={cn(
+                    'flex flex-col gap-1 p-2.5 rounded-xl border cursor-pointer select-none transition',
+                    cg.policy === opt.value
+                      ? (opt.value === 'NOT_ALLOW' ? 'border-red-400 bg-red-50' : 'border-[#05a94f] bg-emerald-50')
+                      : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/40',
+                    readOnly && 'pointer-events-none opacity-60',
+                  )}>
+                    <input type="radio" className="sr-only" checked={cg.policy === opt.value}
+                      onChange={() => {
+                        const patch: Partial<CondCancelGroupTerms> = { policy: opt.value }
+                        if (opt.value === 'UNSPECIFIED') {
+                          // ล้างค่าทั้งหมดเมื่อเลือก "ไม่ระบุ"
+                          Object.assign(patch, {
+                            noticeDays: null, deadlineBase: 'DEPARTURE_DATE', deadlineCustomDate: '',
+                            overLimitAction: 'UNSPECIFIED', forfeitSource: null,
+                            penaltyType: 'NONE', penaltyAmount: null, penaltyPercent: null, penaltyCurrency: '',
+                            refundable: 'UNSPECIFIED', remark: '',
+                          })
+                        }
+                        setCg(patch)
+                      }}
+                      disabled={readOnly} />
+                    <span className="text-xs font-semibold text-slate-700">{opt.label}</span>
+                    <span className="text-[10px] text-slate-400 leading-snug">{opt.desc}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {policyActive && (
+              <>
+                {/* Notice days + Deadline base */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label>แจ้งยกเลิกไม่น้อยกว่า</Label>
+                    <div className="flex items-center gap-2">
+                      <FInput
+                        type="number" min={0}
+                        value={cg.noticeDays ?? ''}
+                        onChange={v => setCg({ noticeDays: v === '' ? null : Number(v) })}
+                        placeholder="ไม่จำกัด"
+                        disabled={readOnly}
+                      />
+                      <span className="text-xs text-slate-500 shrink-0">วัน</span>
+                    </div>
+                  </div>
+                  <div>
+                    <Label>คำนวณจาก</Label>
+                    <FSelect<CondCancelGroupDeadlineBase>
+                      value={cg.deadlineBase}
+                      onChange={v => v && setCg({ deadlineBase: v as CondCancelGroupDeadlineBase, ...(v !== 'CUSTOM_DATE' ? { deadlineCustomDate: '' } : {}) })}
+                      options={CG_DEADLINE_BASE_OPTIONS}
+                      disabled={readOnly}
+                    />
+                  </div>
+                </div>
+
+                {cg.deadlineBase === 'CUSTOM_DATE' && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label required>วันที่กำหนดเอง</Label>
+                      <FInput
+                        type="date"
+                        value={cg.deadlineCustomDate}
+                        onChange={v => setCg({ deadlineCustomDate: v })}
+                        disabled={readOnly}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Over limit action */}
+                <div>
+                  <Label>หากเกินเงื่อนไข</Label>
+                  <FSelect<CondSingleOverLimit>
+                    value={cg.overLimitAction}
+                    onChange={v => {
+                      if (!v) return
+                      const patch: Partial<CondCancelGroupTerms> = { overLimitAction: v as CondSingleOverLimit }
+                      if (v !== 'FORFEIT') patch.forfeitSource = null
+                      if (v !== 'PENALTY') { patch.penaltyType = 'NONE'; patch.penaltyAmount = null; patch.penaltyPercent = null; patch.penaltyCurrency = '' }
+                      setCg(patch)
+                    }}
+                    options={SR_SINGLE_OVER_LIMIT_OPTIONS}
+                    disabled={readOnly}
+                  />
+                </div>
+
+                {cg.overLimitAction === 'UNSPECIFIED' && (
+                  <p className="text-[10px] text-slate-400 italic">ยังไม่ได้กำหนดผลลัพธ์เมื่อเกินเงื่อนไข</p>
+                )}
+                {cg.overLimitAction === 'NO_FORFEIT' && (
+                  <p className="text-[10px] text-slate-400 italic">เกินเงื่อนไขแล้วไม่เสียค่าใช้จ่ายเพิ่ม</p>
+                )}
+                {cg.overLimitAction === 'REQUIRE_APPROVAL' && (
+                  <p className="text-[10px] text-purple-500 italic">ต้องส่งให้ผู้มีอำนาจอนุมัติก่อนดำเนินการ</p>
+                )}
+
+                {/* Forfeit source */}
+                {cg.overLimitAction === 'FORFEIT' && (
+                  <div>
+                    <Label required>ยึดเงินจาก</Label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {SR_FORFEIT_SOURCE_OPTIONS.map(opt => (
+                        <label key={opt.value} className={cn(
+                          'flex flex-col gap-1 p-2.5 rounded-xl border cursor-pointer select-none transition',
+                          cg.forfeitSource === opt.value
+                            ? 'border-orange-400 bg-orange-50'
+                            : 'border-slate-200 bg-white hover:border-orange-200 hover:bg-orange-50/30',
+                          readOnly && 'pointer-events-none opacity-60',
+                        )}>
+                          <input type="radio" className="sr-only" checked={cg.forfeitSource === opt.value}
+                            onChange={() => setCg({ forfeitSource: opt.value })} disabled={readOnly} />
+                          <span className="text-xs font-semibold text-slate-700">{opt.label}</span>
+                          <span className="text-[10px] text-slate-400 leading-snug">{opt.desc}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Penalty fields */}
+                {cg.overLimitAction === 'PENALTY' && (
+                  <>
+                    <div>
+                      <Label>ประเภทค่าปรับ</Label>
+                      <StatusPills<CondStepPenaltyType>
+                        value={cg.penaltyType}
+                        onChange={v => {
+                          const patch: Partial<CondCancelGroupTerms> = { penaltyType: v }
+                          if (v !== 'FIXED')   patch.penaltyAmount  = null
+                          if (v !== 'PERCENT') patch.penaltyPercent = null
+                          setCg(patch)
+                        }}
+                        options={SR_PENALTY_OPTIONS}
+                        disabled={readOnly}
+                      />
+                    </div>
+                    {cg.penaltyType === 'FIXED' && (
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <Label required>จำนวนเงินค่าปรับ</Label>
+                          <FInput
+                            type="number" min={0}
+                            value={cg.penaltyAmount ?? ''}
+                            onChange={v => setCg({ penaltyAmount: v === '' ? null : Number(v) })}
+                            placeholder="0"
+                            disabled={readOnly}
+                          />
+                        </div>
+                        <div>
+                          <Label>สกุลเงิน</Label>
+                          <FSelect<string>
+                            value={cg.penaltyCurrency || currency}
+                            onChange={v => v && setCg({ penaltyCurrency: v })}
+                            options={MASTER_CURRENCIES.slice(0, 8).map(c => ({ value: c.code, label: c.code }))}
+                            disabled={readOnly}
+                          />
+                        </div>
+                      </div>
+                    )}
+                    {cg.penaltyType === 'PERCENT' && (
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <Label required>เปอร์เซ็นต์ค่าปรับ</Label>
+                          <div className="flex items-center gap-2">
+                            <FInput
+                              type="number" min={0} max={100}
+                              value={cg.penaltyPercent ?? ''}
+                              onChange={v => setCg({ penaltyPercent: v === '' ? null : Number(v) })}
+                              placeholder="0"
+                              disabled={readOnly}
+                            />
+                            <span className="text-xs text-slate-500 shrink-0">%</span>
+                          </div>
+                        </div>
+                        <div>
+                          <Label>ฐานคำนวณ</Label>
+                          <FSelect<CondStepCalcBase>
+                            value={cg.penaltyCalcBase}
+                            onChange={v => v && setCg({ penaltyCalcBase: v as CondStepCalcBase })}
+                            options={(Object.entries(SR_CALC_BASE_LABELS) as [CondStepCalcBase, string][]).map(([val, lbl]) => ({ value: val, label: lbl }))}
+                            disabled={readOnly}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* Refundable */}
+                <div>
+                  <Label>คืนเงินได้หรือไม่</Label>
+                  <FSelect<CondCancelGroupRefundable>
+                    value={cg.refundable}
+                    onChange={v => v && setCg({ refundable: v as CondCancelGroupRefundable })}
+                    options={CG_REFUNDABLE_OPTIONS}
+                    disabled={readOnly}
+                  />
+                </div>
+
+                {/* Remark */}
+                <div>
+                  <Label>รายละเอียดเงื่อนไขการยกเลิกกรุ๊ป</Label>
+                  <textarea
+                    className="w-full text-sm rounded-xl border border-slate-200 px-3 py-2.5 bg-white resize-none outline-none focus:ring-2 focus:ring-[#05a94f]/20 focus:border-[#05a94f] transition placeholder:text-slate-300 disabled:opacity-50"
+                    rows={3}
+                    value={cg.remark}
+                    onChange={e => setCg({ remark: e.target.value })}
+                    placeholder="เช่น ยกเลิกกรุ๊ปได้แต่ต้องแจ้งล่วงหน้าไม่น้อยกว่า 30 วัน และเสียค่าธรรมเนียม 5%"
+                    disabled={readOnly}
+                  />
+                </div>
+              </>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── CombinedRefundSection ─────────────────────────────────────────────────────
 
 export function CombinedRefundSection({ value, onChange, readOnly, currency, errors = [] }: {
@@ -2909,9 +3456,9 @@ export function CombinedRefundSection({ value, onChange, readOnly, currency, err
       const baseLabel    = UTIL_BASE_OPTIONS.find(o => o.value === util.calcBase)?.label ?? util.calcBase
       const measureLabel = UTIL_MEASURE_OPTIONS.find(o => o.value === util.measureBy)?.label ?? util.measureBy
       lines.push(pct != null
-        ? { text: `ต้องใช้ที่นั่งไม่น้อยกว่า ${pct}% ของ ${baseLabel}`, missing: false }
+        ? { text: `ต้องใช้ที่นั่งไม่น้อยกว่า ${pct}% ของ${baseLabel}`, missing: false }
         : { text: 'ยังไม่ระบุเปอร์เซ็นต์การใช้ที่นั่งขั้นต่ำ', missing: true })
-      lines.push({ text: `โดยวัดผลจาก${measureLabel}`, missing: false })
+      lines.push({ text: `โดยตรวจสอบจาก${measureLabel}`, missing: false })
       const belowMin = `หาก${measureLabel}ต่ำกว่าขั้นต่ำ`
       if (util.exceedAction === 'NO_PENALTY') {
         lines.push({ text: `${belowMin} จะไม่มีค่าปรับ`, missing: false })
@@ -3034,62 +3581,121 @@ export function CombinedRefundSection({ value, onChange, readOnly, currency, err
                   </div>
                 </div>
 
+                {/* การเปลี่ยนชื่อผู้โดยสาร */}
+                <div>
+                  <Label>การเปลี่ยนชื่อผู้โดยสาร</Label>
+                  <div className="flex gap-1.5 flex-wrap mt-1">
+                    {NAME_CHANGE_POLICY_OPTIONS.map(opt => (
+                      <label key={opt.value} className={cn(
+                        'flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs cursor-pointer transition select-none',
+                        post.nameChangePolicy === opt.value ? 'border-[#05a94f] bg-emerald-50 text-[#05a94f] font-semibold' : 'border-slate-200 text-slate-600 hover:border-slate-300',
+                        readOnly && 'pointer-events-none',
+                      )}>
+                        <input type="radio" className="sr-only"
+                          checked={post.nameChangePolicy === opt.value}
+                          onChange={() => setPost({ nameChangePolicy: opt.value })}
+                          disabled={readOnly} />
+                        {opt.label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
                 {/* รายการที่ Refund ได้ / ไม่ได้ */}
                 {post.refundMainPolicy !== 'NON_REFUNDABLE' && (
-                  <div className="space-y-2">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <div className="flex items-center justify-between mb-1">
-                          <Label>รายการที่ Refund ได้</Label>
-                          {!readOnly && (
-                            <div className="flex gap-1">
-                              <button type="button"
-                                onClick={() => setPost({ refundableItems: ['TAX', 'FUEL'], nonRefundableItems: ['FARE', 'YR'] })}
-                                className="px-1.5 py-0.5 rounded-md border border-sky-200 bg-sky-50 text-[10px] text-sky-700 hover:bg-sky-100 transition">
-                                เลือก Tax/Fuel
-                              </button>
-                              {(post.refundableItems.length > 0 || post.nonRefundableItems.length > 0) && (
-                                <button type="button"
-                                  onClick={() => setPost({ refundableItems: [], nonRefundableItems: [] })}
-                                  className="px-1.5 py-0.5 rounded-md border border-slate-200 bg-slate-50 text-[10px] text-slate-500 hover:bg-slate-100 transition">
-                                  ล้างรายการ
-                                </button>
-                              )}
-                            </div>
+                  <div className="space-y-3">
+                    {/* Rule + preset actions */}
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                      <p className="text-[11px] text-slate-500 flex items-center gap-1 shrink-0">
+                        <Info size={10} className="shrink-0" />
+                        รายการเดียวกันเลือกได้เพียงฝั่งเดียวเท่านั้น
+                      </p>
+                      {!readOnly && (
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <button type="button"
+                            onClick={() => setPost({ refundableItems: ['TAX', 'YQ'], nonRefundableItems: ['FARE', 'YR'] })}
+                            className="px-2.5 py-1 rounded-lg border border-sky-200 bg-sky-50 text-[11px] font-medium text-sky-700 hover:bg-sky-100 transition">
+                            เลือกค่าเริ่มต้น Tax + YQ
+                          </button>
+                          <span className="text-[10px] text-slate-400 hidden sm:inline">คืนได้เฉพาะ Tax และ YQ ไม่คืน Fare / YR</span>
+                          {(post.refundableItems.length > 0 || post.nonRefundableItems.length > 0) && (
+                            <button type="button"
+                              onClick={() => setPost({ refundableItems: [], nonRefundableItems: [] })}
+                              className="px-2 py-1 rounded-lg border border-slate-200 bg-slate-50 text-[11px] text-slate-500 hover:bg-slate-100 transition">
+                              ล้างรายการ
+                            </button>
                           )}
                         </div>
-                        <RefundItemCheckboxes
-                          selected={post.refundableItems}
-                          disabledItems={post.nonRefundableItems}
-                          onChange={v => setPost({
-                            refundableItems: v,
-                            nonRefundableItems: post.nonRefundableItems.filter(x => !v.includes(x)),
-                          })}
-                          readOnly={readOnly}
-                        />
+                      )}
+                    </div>
+
+                    {/* 2 cards */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Card A: Refund ได้ */}
+                      <div className="rounded-xl border border-emerald-200 overflow-hidden flex flex-col">
+                        <div className="px-4 py-3 bg-emerald-50 border-b border-emerald-200">
+                          <div className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                            <span className="text-sm font-semibold text-emerald-800">Refund ได้</span>
+                          </div>
+                          <p className="text-[11px] text-emerald-600 mt-0.5 ml-4">รายการที่สามารถขอคืนเงินได้</p>
+                        </div>
+                        <div className="px-4 py-3 bg-white flex-1">
+                          <RefundItemCheckboxes
+                            selected={post.refundableItems}
+                            disabledItems={post.nonRefundableItems}
+                            onChange={v => setPost({
+                              refundableItems: v,
+                              nonRefundableItems: post.nonRefundableItems.filter(x => !v.includes(x)),
+                            })}
+                            readOnly={readOnly}
+                            colorScheme="green"
+                          />
+                        </div>
+                        <div className={cn('px-4 py-2 border-t text-[11px] font-medium',
+                          post.refundableItems.length > 0 ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : 'bg-slate-50 border-slate-100 text-slate-400')}>
+                          {post.refundableItems.length > 0
+                            ? `เลือกแล้ว: ${post.refundableItems.map(i => REFUND_ITEM_OPTIONS.find(o => o.value === i)?.label ?? i).join(', ')}`
+                            : 'ยังไม่ได้เลือกรายการ'}
+                        </div>
                         {post.refundMainPolicy === 'PARTIAL_REFUND' && post.refundableItems.length === 0 && (
-                          <p className="text-[10px] text-amber-600 mt-1 flex items-center gap-1">
-                            <AlertCircle size={10} /> เลือกอย่างน้อย 1 รายการ
-                          </p>
+                          <div className="px-4 pb-2">
+                            <p className="text-[10px] text-amber-600 flex items-center gap-1">
+                              <AlertCircle size={10} /> เลือกอย่างน้อย 1 รายการ
+                            </p>
+                          </div>
                         )}
                       </div>
-                      <div>
-                        <Label>รายการที่ Refund ไม่ได้</Label>
-                        <RefundItemCheckboxes
-                          selected={post.nonRefundableItems}
-                          disabledItems={post.refundableItems}
-                          onChange={v => setPost({
-                            nonRefundableItems: v,
-                            refundableItems: post.refundableItems.filter(x => !v.includes(x)),
-                          })}
-                          readOnly={readOnly}
-                        />
+
+                      {/* Card B: Refund ไม่ได้ */}
+                      <div className="rounded-xl border border-orange-200 overflow-hidden flex flex-col">
+                        <div className="px-4 py-3 bg-orange-50 border-b border-orange-200">
+                          <div className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-orange-400 shrink-0" />
+                            <span className="text-sm font-semibold text-orange-800">Refund ไม่ได้</span>
+                          </div>
+                          <p className="text-[11px] text-orange-600 mt-0.5 ml-4">รายการที่ไม่คืนเงินไม่ว่ากรณีใด</p>
+                        </div>
+                        <div className="px-4 py-3 bg-white flex-1">
+                          <RefundItemCheckboxes
+                            selected={post.nonRefundableItems}
+                            disabledItems={post.refundableItems}
+                            onChange={v => setPost({
+                              nonRefundableItems: v,
+                              refundableItems: post.refundableItems.filter(x => !v.includes(x)),
+                            })}
+                            readOnly={readOnly}
+                            colorScheme="orange"
+                          />
+                        </div>
+                        <div className={cn('px-4 py-2 border-t text-[11px] font-medium',
+                          post.nonRefundableItems.length > 0 ? 'bg-orange-50 border-orange-100 text-orange-700' : 'bg-slate-50 border-slate-100 text-slate-400')}>
+                          {post.nonRefundableItems.length > 0
+                            ? `เลือกแล้ว: ${post.nonRefundableItems.map(i => REFUND_ITEM_OPTIONS.find(o => o.value === i)?.label ?? i).join(', ')}`
+                            : 'ยังไม่ได้เลือกรายการ'}
+                        </div>
                       </div>
                     </div>
-                    <p className="text-[10px] text-slate-400 flex items-start gap-1">
-                      <Info size={10} className="mt-0.5 shrink-0" />
-                      รายการเดียวกันไม่สามารถเลือกทั้ง Refund ได้ และ Refund ไม่ได้พร้อมกัน หากมีข้อยกเว้น ให้ระบุในหมายเหตุ Refund
-                    </p>
                   </div>
                 )}
 
@@ -3302,6 +3908,7 @@ export function CombinedRefundSection({ value, onChange, readOnly, currency, err
             {util.enabled && (
               <div className="px-4 py-4 space-y-4">
 
+                {/* ฐานคำนวณ + % */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <Label required>เปอร์เซ็นต์การใช้ที่นั่งขั้นต่ำ</Label>
@@ -3311,45 +3918,75 @@ export function CombinedRefundSection({ value, onChange, readOnly, currency, err
                       <span className="text-xs text-slate-500 shrink-0">%</span>
                     </div>
                     <p className="text-[10px] text-slate-400 mt-1">
-                      ระบุเป็นเปอร์เซ็นต์ เช่น 90 หมายถึงต้องใช้ที่นั่งอย่างน้อย 90% ของฐานที่เลือกในช่องคำนวณจาก
+                      เช่น 90 หมายถึงต้องใช้ที่นั่งอย่างน้อย 90% ของฐานที่เลือก
                     </p>
                   </div>
                   <div>
-                    <Label required>คำนวณจาก</Label>
+                    <Label required>ฐานที่ใช้คำนวณขั้นต่ำ</Label>
                     <FSelect<CondUtilizationBase>
                       value={util.calcBase}
-                      onChange={v => { if (v) setUtil({ calcBase: v }) }}
+                      onChange={v => {
+                        if (!v) return
+                        setUtil({
+                          calcBase: v,
+                          ...(v === 'LATEST_SEAT' && util.measureBy === 'CURRENT_TICKET'
+                            ? { measureBy: 'ISSUED_TICKET' } : {}),
+                        })
+                      }}
                       options={UTIL_BASE_OPTIONS}
                       disabled={readOnly}
                     />
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      เลือกจำนวนตั้งต้นที่ใช้คำนวณ % ขั้นต่ำ เช่น จำนวนตั๋วเริ่มต้น หรือจำนวนตั๋วที่มัดจำ
+                    </p>
                   </div>
                 </div>
 
+                {/* จำนวนที่ใช้ตรวจสอบจริง */}
                 <div>
-                  <Label required>วัดผลจาก</Label>
+                  <Label required>จำนวนที่ใช้ตรวจสอบจริง</Label>
                   <p className="text-[10px] text-slate-400 mt-0.5 mb-2">
-                    เลือกจำนวนที่ระบบจะนำมาเทียบกับจำนวนขั้นต่ำ เช่น ใช้ <span className="font-medium text-slate-500">จำนวนตั๋วปัจจุบัน</span> เทียบกับจำนวนตั๋วเริ่มต้น
+                    เลือกจำนวนจริงที่ระบบจะนำมาเทียบกับขั้นต่ำ เช่น จำนวนตั๋วปัจจุบัน หรือจำนวนที่ออกตั๋วจริง
                   </p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {UTIL_MEASURE_OPTIONS.map(opt => (
-                      <label key={opt.value} className={cn(
-                        'flex flex-col px-3 py-2 rounded-xl border cursor-pointer transition select-none',
-                        util.measureBy === opt.value
-                          ? 'border-[#05a94f] bg-emerald-50'
-                          : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50',
-                        readOnly && 'pointer-events-none',
-                      )}>
-                        <input type="radio" className="sr-only" checked={util.measureBy === opt.value}
-                          onChange={() => setUtil({ measureBy: opt.value })} disabled={readOnly} />
-                        <span className={cn('text-xs font-semibold', util.measureBy === opt.value ? 'text-[#05a94f]' : 'text-slate-700')}>
-                          {opt.label}
-                        </span>
-                        <span className={cn('text-[10px] mt-0.5 leading-relaxed', util.measureBy === opt.value ? 'text-emerald-600' : 'text-slate-400')}>
-                          {opt.desc}
-                        </span>
-                      </label>
-                    ))}
+                    {UTIL_MEASURE_OPTIONS.map(opt => {
+                      const notAllowed = util.calcBase === 'LATEST_SEAT' && opt.value === 'CURRENT_TICKET'
+                      return (
+                        <label key={opt.value} className={cn(
+                          'flex flex-col px-3 py-2 rounded-xl border transition select-none',
+                          notAllowed
+                            ? 'border-slate-100 bg-slate-50 opacity-50 cursor-not-allowed'
+                            : util.measureBy === opt.value
+                              ? 'border-[#05a94f] bg-emerald-50 cursor-pointer'
+                              : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50 cursor-pointer',
+                          readOnly && 'pointer-events-none',
+                        )}>
+                          <input type="radio" className="sr-only" checked={util.measureBy === opt.value}
+                            onChange={() => !notAllowed && setUtil({ measureBy: opt.value })}
+                            disabled={readOnly || notAllowed} />
+                          <span className={cn('text-xs font-semibold',
+                            notAllowed ? 'text-slate-300' : util.measureBy === opt.value ? 'text-[#05a94f]' : 'text-slate-700')}>
+                            {opt.label}
+                          </span>
+                          <span className={cn('text-[10px] mt-0.5 leading-relaxed',
+                            notAllowed ? 'text-slate-300' : util.measureBy === opt.value ? 'text-emerald-600' : 'text-slate-400')}>
+                            {opt.desc}
+                          </span>
+                          {notAllowed && (
+                            <span className="text-[9px] text-slate-400 mt-1">
+                              ไม่รองรับเมื่อฐาน = จำนวนตั๋วล่าสุด
+                            </span>
+                          )}
+                        </label>
+                      )
+                    })}
                   </div>
+                  {util.calcBase === 'LATEST_SEAT' && util.measureBy === 'CURRENT_TICKET' && (
+                    <p className="text-[10px] text-amber-600 mt-1.5 flex items-center gap-1">
+                      <AlertCircle size={10} />
+                      ฐานคำนวณและจำนวนที่ใช้ตรวจสอบไม่ควรเป็นค่าเดียวกัน เพราะจะทำให้เงื่อนไขใช้ที่นั่งขั้นต่ำไม่มีผล
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -3555,7 +4192,12 @@ export default function ConditionBuilder({
       case 'basic':   return showBasicInfo ? <BasicInfoSection value={value} onChange={onChange} readOnly={readOnly} errors={errors.basic} conditionMode={conditionMode} seriesInfo={seriesInfo} templateInfo={templateInfo} /> : null
       case 'payment': return <PaymentSection value={value} onChange={onChange} readOnly={readOnly} currency={currency} errors={errors.payment} conditionMode={conditionMode} seriesInfo={seriesInfo} />
       case 'baggage': return <BaggageSection value={value} onChange={onChange} readOnly={readOnly} errors={errors.baggage} />
-      case 'reduce':  return <SeatReductionSection value={value} onChange={onChange} readOnly={readOnly} currency={currency} errors={errors.reduce} />
+      case 'reduce':  return (
+        <div className="space-y-4">
+          <SeatReductionSection value={value} onChange={onChange} readOnly={readOnly} currency={currency} errors={errors.reduce} />
+          <CancelGroupSection value={value} onChange={onChange} readOnly={readOnly} currency={currency} errors={errors.reduce} />
+        </div>
+      )
       case 'refund':  return <CombinedRefundSection value={value} onChange={onChange} readOnly={readOnly} currency={currency} errors={errors.refund} />
       case 'extra':   return <AdditionalSection value={value} onChange={onChange} readOnly={readOnly} errors={errors.extra} />
       default:        return null

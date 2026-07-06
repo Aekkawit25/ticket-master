@@ -916,13 +916,13 @@ export function BulkPnrBuilder({
                       </div>
                       {hasSummaryData ? (
                         <p className="mt-0.5 text-[11px] leading-4 text-slate-500">
-                          {shared.seatTotal} ที่นั่ง · Fare {fare.toLocaleString('th-TH')} · Tax{' '}
+                          {shared.seatTotal} ที่นั่ง · Fare {fare.toLocaleString('en-US')} · Tax{' '}
                           <span className={shared.taxType === 'included' ? 'text-emerald-600' : shared.taxType === 'pending' ? 'text-amber-500' : ''}>
-                            {shared.taxType === 'included' ? 'รวม' : shared.taxType === 'pending' ? 'รอระบุ' : tax.toLocaleString('th-TH')}
+                            {shared.taxType === 'included' ? 'รวม' : shared.taxType === 'pending' ? 'รอระบุ' : tax.toLocaleString('en-US')}
                           </span>
                           {travelDays > 1 && ` · ${travelDays} วัน`}
                           {' · '}
-                          <span className="font-semibold text-emerald-700">Total {total.toLocaleString('th-TH')} {currency}</span>
+                          <span className="font-semibold text-emerald-700">Total {total.toLocaleString('en-US')} {currency}</span>
                         </p>
                       ) : (
                         <p className="mt-0.5 text-[11px] text-slate-400 italic">รอกรอกข้อมูลที่นั่ง / ราคา</p>
@@ -1177,7 +1177,7 @@ export function BulkPnrBuilder({
                           </td>
                           {/* Total */}
                           <td className="px-2 py-2 text-xs font-bold text-right text-emerald-700 bg-emerald-50/60 whitespace-nowrap">
-                            {row.total > 0 ? row.total.toLocaleString('th-TH') : '—'}
+                            {row.total > 0 ? row.total.toLocaleString('en-US') : '—'}
                           </td>
                           {/* Condition */}
                           <td className="px-1 py-2">

@@ -134,7 +134,7 @@ export function legacyPercentBase(pb: PercentBase | undefined): CalculationBase 
 export function calcPreview(stage: DemoConditionTemplateStage, currency: string): string | null {
   const ct = stage.calculationType
   if (!ct || !stage.paymentType || ct === 'NOT_SPECIFIED') return null
-  const fmt = stage.amountValue > 0 ? stage.amountValue.toLocaleString('th-TH') : '—'
+  const fmt = stage.amountValue > 0 ? stage.amountValue.toLocaleString('en-US') : '—'
   const pct = stage.percentValue ?? stage.amountValue
   const baseLabel = CALC_BASE_OPTIONS.find(o => o.value === (stage.calculationBase ?? 'FARE_TAX'))?.label ?? ''
   switch (ct) {

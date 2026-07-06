@@ -6,7 +6,7 @@ import {
   calcCondTtlDate,
   defaultBaggagePolicy, migrateBaggagePolicy,
   defaultSeatReductionPolicy, migrateSeatReductionPolicy, defaultSeatReturnPolicy, defaultRefundPolicy, defaultTtlRule,
-  migrateRefundTerms, defaultRefundTerms,
+  migrateRefundTerms, defaultRefundTerms, defaultCancelGroupTerms,
 } from '@/lib/condition-schema'
 
 // Map removed calc types to the nearest active equivalent
@@ -445,6 +445,7 @@ export function getDemoStocks(): DemoStock[] {
         // Policies — migrate old {enabled,checkedBagKg,...} to new schema
         baggagePolicy:       migrateBaggagePolicy((cond as any).baggagePolicy ?? null) ?? defaultBaggagePolicy(),
         seatReductionPolicy: migrateSeatReductionPolicy((cond as any).seatReductionPolicy ?? null),
+        cancelGroupTerms:    (cond as any).cancelGroupTerms ?? defaultCancelGroupTerms(),
         seatReturnPolicy:    cond.seatReturnPolicy     ?? defaultSeatReturnPolicy(),
         refundPolicy:        cond.refundPolicy         ?? defaultRefundPolicy(),
         refundTerms:         migrateRefundTerms((cond as any).refundTerms ?? null),
@@ -527,6 +528,7 @@ export function getDemoStocks(): DemoStock[] {
             version:             'V1',
             baggagePolicy:       defaultBaggagePolicy(),
             seatReductionPolicy: defaultSeatReductionPolicy(),
+            cancelGroupTerms:    defaultCancelGroupTerms(),
             seatReturnPolicy:    defaultSeatReturnPolicy(),
             refundPolicy: {
               enabled: !!(c.refundType),

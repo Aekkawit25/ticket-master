@@ -503,7 +503,7 @@ export default function ImportExcelModal({
                 <CheckCircle size={11} /> พร้อมเพิ่ม {readyCount + dummyCount} PNR
               </span>
               <span className="text-slate-400">
-                Seat รวม <span className="font-bold text-slate-600">{seatTotal.toLocaleString('th-TH')}</span>
+                Seat รวม <span className="font-bold text-slate-600">{seatTotal.toLocaleString('en-US')}</span>
               </span>
               {successMsg && <span className="ml-auto font-semibold text-[#05a94f]">{successMsg}</span>}
             </div>

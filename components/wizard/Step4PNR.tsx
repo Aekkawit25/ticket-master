@@ -523,7 +523,7 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
                     {/* Total — computed readonly */}
                     <td className="border border-slate-200 bg-green-50/50 text-right select-none align-middle">
                       <span className="px-2 text-xs font-bold text-green-700">
-                        {total > 0 ? total.toLocaleString('th-TH') : '—'}
+                        {total > 0 ? total.toLocaleString('en-US') : '—'}
                       </span>
                     </td>
 
@@ -616,16 +616,16 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
                     รวม {pnrs.length} PNR
                   </td>
                   <td className="border border-slate-300 px-2 py-1.5 text-xs text-center text-slate-800 font-bold">
-                    {totals.seat.toLocaleString('th-TH')}
+                    {totals.seat.toLocaleString('en-US')}
                   </td>
                   <td className="border border-slate-300 px-2 py-1.5 text-xs text-right text-slate-800 font-bold">
-                    {totals.fare.toLocaleString('th-TH')}
+                    {totals.fare.toLocaleString('en-US')}
                   </td>
                   <td className="border border-slate-300 px-2 py-1.5 text-xs text-right text-slate-800 font-bold">
-                    {totals.tax.toLocaleString('th-TH')}
+                    {totals.tax.toLocaleString('en-US')}
                   </td>
                   <td className="border border-slate-300 px-2 py-1.5 text-xs text-right text-green-700 font-bold bg-green-50">
-                    {totals.total.toLocaleString('th-TH')}
+                    {totals.total.toLocaleString('en-US')}
                   </td>
                   <td colSpan={5} className="border border-slate-300 px-2 py-1.5 text-xs">
                     <span className="text-slate-400">({currency}) · Payment Due ✦ = Payment Base Date − Payment Due Days Before + Payment Due Time</span>

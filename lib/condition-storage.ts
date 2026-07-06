@@ -5,7 +5,7 @@
  */
 
 import {
-  type AppConditionTemplate, type AppCondition, type CondCalcType, type CondDueType, type CondTtlCalcType, type CondRefundableType,
+  type AppConditionTemplate, type AppCondition, type CondCalcType, type CondDueType, type CondTtlCalcType, type CondRefundableType, type CondCancelGroupTerms,
   defaultTemplate,
   newTemplateId,
   generateTemplateCode,
@@ -18,6 +18,7 @@ import {
   migrateSeatReductionPolicy,
   defaultSeatReturnPolicy,
   migrateRefundTerms,
+  defaultCancelGroupTerms,
 } from '@/lib/condition-schema'
 
 const STORAGE_KEY = 'app_condition_templates'
@@ -46,6 +47,28 @@ function migrateRefundable(r: string | undefined): CondRefundableType {
 }
 
 // Fill missing fields for conditions stored before schema revisions
+function migrateCancelGroupTerms(raw: any): CondCancelGroupTerms {
+  if (raw == null) return defaultCancelGroupTerms()
+  const def = defaultCancelGroupTerms()
+  const VALID_POLICY = ['UNSPECIFIED', 'ALLOW', 'NOT_ALLOW', 'REQUIRE_APPROVAL']
+  const VALID_BASE   = ['DEPARTURE_DATE', 'TICKET_ISSUE', 'SEAT_CONFIRMED', 'CUSTOM_DATE']
+  const VALID_OVER   = ['UNSPECIFIED', 'NO_FORFEIT', 'FORFEIT', 'PENALTY', 'REQUIRE_APPROVAL']
+  const VALID_FORFEIT= ['DEPOSIT', 'RSVN_FEE', 'ALL']
+  const VALID_PEN    = ['NONE', 'FIXED', 'PERCENT', 'FORFEIT_ALL']
+  const VALID_CALC   = ['GROUP_PRICE', 'FARE', 'ALLIN', 'NET_FARE', 'DEPOSIT', 'AMOUNT_PAID']
+  const VALID_REF    = ['UNSPECIFIED', 'NON_REFUNDABLE', 'PARTIAL_REFUND', 'FULL_REFUND']
+  return {
+    ...def, ...raw,
+    policy:             VALID_POLICY.includes(raw.policy)           ? raw.policy   : 'UNSPECIFIED',
+    deadlineBase:       VALID_BASE.includes(raw.deadlineBase)       ? raw.deadlineBase : 'DEPARTURE_DATE',
+    overLimitAction:    VALID_OVER.includes(raw.overLimitAction)    ? raw.overLimitAction : 'UNSPECIFIED',
+    forfeitSource:      VALID_FORFEIT.includes(raw.forfeitSource)   ? raw.forfeitSource   : null,
+    penaltyType:        VALID_PEN.includes(raw.penaltyType)         ? raw.penaltyType     : 'NONE',
+    penaltyCalcBase:    VALID_CALC.includes(raw.penaltyCalcBase)    ? raw.penaltyCalcBase : 'GROUP_PRICE',
+    refundable:         VALID_REF.includes(raw.refundable)          ? raw.refundable      : 'UNSPECIFIED',
+  }
+}
+
 function ensureNewPolicies(cond: AppCondition): AppCondition {
   return {
     ...cond,
@@ -63,6 +86,7 @@ function ensureNewPolicies(cond: AppCondition): AppCondition {
     // Policies
     baggagePolicy:       migrateBaggagePolicy((cond as any).baggagePolicy ?? null) ?? defaultBaggagePolicy(),
     seatReductionPolicy: migrateSeatReductionPolicy((cond as any).seatReductionPolicy ?? null),
+    cancelGroupTerms:    migrateCancelGroupTerms((cond as any).cancelGroupTerms ?? null),
     seatReturnPolicy:    cond.seatReturnPolicy     ?? defaultSeatReturnPolicy(),
     refundPolicy:        cond.refundPolicy         ?? defaultRefundPolicy(),
     refundTerms:         migrateRefundTerms((cond as any).refundTerms ?? null),

@@ -73,6 +73,9 @@ export const COND_REFUNDABLE_LABELS: Record<CondRefundableType, string> = {
 
 export type CondDueType =
   | 'TRAVEL_MINUS_DAYS'
+  | 'SEAT_CONFIRMED_PLUS_DAYS'
+  | 'NAME_DEADLINE_MINUS_DAYS'
+  | 'TICKET_ISSUE_MINUS_DAYS'
   | 'CREATED_PLUS_DAYS'
   | 'PREV_DUE_PLUS_DAYS'
   | 'PREV_PAID_PLUS_DAYS'
@@ -80,13 +83,22 @@ export type CondDueType =
   | 'TBD'
 
 export const COND_DUE_TYPE_LABELS: Record<CondDueType, string> = {
-  TRAVEL_MINUS_DAYS:   'ก่อนวันเดินทาง N วัน',
-  CREATED_PLUS_DAYS:   'หลังสร้าง Series N วัน',
-  PREV_DUE_PLUS_DAYS:  'หลังครบกำหนดงวดก่อน N วัน',
-  PREV_PAID_PLUS_DAYS: 'หลังชำระงวดก่อน N วัน',
-  CUSTOM_DATE:         'วันที่กำหนดเอง',
-  TBD:                 'กำหนดภายหลัง (TBD)',
+  TRAVEL_MINUS_DAYS:        'ก่อนวันเดินทาง N วัน',
+  SEAT_CONFIRMED_PLUS_DAYS: 'หลังวันที่ Confirm ที่นั่ง N วัน',
+  NAME_DEADLINE_MINUS_DAYS: 'ก่อนวันส่งชื่อ (TTL) N วัน',
+  TICKET_ISSUE_MINUS_DAYS:  'ก่อนวันออกตั๋ว N วัน',
+  CREATED_PLUS_DAYS:        'หลังสร้าง Series N วัน',
+  PREV_DUE_PLUS_DAYS:       'หลังครบกำหนดงวดก่อน N วัน',
+  PREV_PAID_PLUS_DAYS:      'หลังชำระงวดก่อน N วัน',
+  CUSTOM_DATE:              'วันที่กำหนดเอง',
+  TBD:                      'กำหนดภายหลัง (TBD)',
 }
+
+export const DAY_BASED_DUE_TYPES: CondDueType[] = [
+  'TRAVEL_MINUS_DAYS', 'SEAT_CONFIRMED_PLUS_DAYS',
+  'NAME_DEADLINE_MINUS_DAYS', 'TICKET_ISSUE_MINUS_DAYS',
+  'CREATED_PLUS_DAYS', 'PREV_DUE_PLUS_DAYS', 'PREV_PAID_PLUS_DAYS',
+]
 
 export interface CondStage {
   stageId: string
@@ -102,6 +114,7 @@ export interface CondStage {
   dueType: CondDueType
   dueDays: number
   dueTime: string
+  dueTimeUnspecified?: boolean   // true = no specific time (omit time from display)
   dueDate: string
   creditTowardFare: boolean
   refundable: CondRefundableType
@@ -178,12 +191,36 @@ export const COND_FEE_TYPE_LABELS: Record<CondFeeType, string> = {
 
 export type CondSeatReductionAllow  = 'ALLOW' | 'UNSPECIFIED'
 export type CondSeatBasis           = 'INITIAL_SEAT' | 'REMAINING_SEAT'
+export type CondSeatNoticeDaysBase  = 'DEPARTURE_DATE' | 'TICKET_ISSUE' | 'SEAT_CONFIRMED'
 export type CondSeatReductionMode   = 'SINGLE' | 'STEP_RULE'
 export type CondSeatRangeType       = 'FROM_DAY_UP' | 'BETWEEN' | 'UNTIL_DAY'
-export type CondSingleOverLimit     = 'NO_FORFEIT' | 'FORFEIT' | 'PENALTY'
-export type CondRuleOverLimitAction = 'NO_FORFEIT' | 'FORFEIT' | 'PENALTY'
+export type CondSingleOverLimit     = 'UNSPECIFIED' | 'NO_FORFEIT' | 'FORFEIT' | 'PENALTY' | 'REQUIRE_APPROVAL'
+export type CondRuleOverLimitAction = 'UNSPECIFIED' | 'NO_FORFEIT' | 'FORFEIT' | 'PENALTY' | 'REQUIRE_APPROVAL'
+export type CondForfeitSource       = 'DEPOSIT' | 'RSVN_FEE' | 'ALL'
 export type CondStepPenaltyType     = 'NONE' | 'FIXED' | 'PERCENT' | 'FORFEIT_ALL'
 export type CondStepCalcBase        = 'GROUP_PRICE' | 'FARE' | 'ALLIN' | 'NET_FARE' | 'DEPOSIT' | 'AMOUNT_PAID'
+
+// ─── Cancel Group Policy ──────────────────────────────────────────────────────
+export type CondCancelGroupPolicy       = 'UNSPECIFIED' | 'ALLOW' | 'NOT_ALLOW' | 'REQUIRE_APPROVAL'
+export type CondCancelGroupDeadlineBase = 'DEPARTURE_DATE' | 'TICKET_ISSUE' | 'SEAT_CONFIRMED' | 'CUSTOM_DATE'
+export type CondCancelGroupRefundable   = 'UNSPECIFIED' | 'NON_REFUNDABLE' | 'PARTIAL_REFUND' | 'FULL_REFUND'
+
+export interface CondCancelGroupTerms {
+  enabled: boolean
+  policy: CondCancelGroupPolicy
+  noticeDays: number | null
+  deadlineBase: CondCancelGroupDeadlineBase
+  deadlineCustomDate: string
+  overLimitAction: CondSingleOverLimit
+  forfeitSource: CondForfeitSource | null
+  penaltyType: CondStepPenaltyType
+  penaltyAmount: number | null
+  penaltyPercent: number | null
+  penaltyCurrency: string
+  penaltyCalcBase: CondStepCalcBase
+  refundable: CondCancelGroupRefundable
+  remark: string
+}
 
 export interface CondSeatReductionRule {
   id: string
@@ -192,6 +229,7 @@ export interface CondSeatReductionRule {
   toDays: number | null
   maxReducePercent: number | null
   ruleOverLimitAction: CondRuleOverLimitAction
+  forfeitSource: CondForfeitSource | null  // when ruleOverLimitAction === 'FORFEIT'
   penaltyType: CondStepPenaltyType
   penaltyPercent: number | null
   penaltyAmount: number | null
@@ -204,15 +242,18 @@ export interface CondSeatReductionPolicy {
   enabled: boolean
   mode: CondSeatReductionMode
   allowReduction: CondSeatReductionAllow
-  maxReducePercent: number | null      // SINGLE mode only
+  maxReducePercent: number | null
   basis: CondSeatBasis
-  noticeDays: number | null            // SINGLE mode only
-  singleOverLimitAction: CondSingleOverLimit  // SINGLE mode only
-  singlePenaltyType: CondStepPenaltyType     // SINGLE mode + PENALTY only
-  singlePenaltyPercent: number | null        // SINGLE mode + PENALTY + PERCENT
-  singlePenaltyAmount: number | null         // SINGLE mode + PENALTY + FIXED
-  singleCalcBase: CondStepCalcBase           // SINGLE mode + PENALTY only
-  rules: CondSeatReductionRule[]       // STEP_RULE mode only
+  noticeDays: number | null
+  noticeDaysBase: CondSeatNoticeDaysBase
+  singleOverLimitAction: CondSingleOverLimit
+  singleForfeitSource: CondForfeitSource | null  // SINGLE + FORFEIT only
+  singlePenaltyType: CondStepPenaltyType
+  singlePenaltyPercent: number | null
+  singlePenaltyAmount: number | null
+  singlePenaltyCurrency: string                  // SINGLE + PENALTY + FIXED
+  singleCalcBase: CondStepCalcBase
+  rules: CondSeatReductionRule[]
   remark: string
 }
 
@@ -276,14 +317,16 @@ export type CondPostDeadlineType    = 'NONE' | 'BEFORE_TRAVEL' | 'AFTER_TRAVEL' 
 
 // ─── Refund Tab v2 types ────────────────────────────────────────────────────
 export type CondPostRefundApplyAfter =
-  'AFTER_NAME_SUBMIT' | 'AFTER_TICKETING' | 'AFTER_DEPOSIT' | 'AFTER_DEADLINE' | 'OTHER'
+  'AFTER_NAME_SUBMIT' | 'AFTER_TICKETING' | 'AFTER_DEPOSIT' | 'AFTER_DEADLINE' | 'AFTER_FULL_PAYMENT'
 
 export type CondPostRefundMainPolicy =
   'UNSPECIFIED' | 'NON_REFUNDABLE' | 'PARTIAL_REFUND' | 'FULL_REFUND'
 
-export type CondRefundItem    = 'FARE' | 'TAX' | 'FUEL' | 'YQ' | 'YR' | 'DEPOSIT' | 'OTHER'
+export type CondRefundItem    = 'FARE' | 'TAX' | 'YQ' | 'YR' | 'DEPOSIT' | 'OTHER'
 export type CondRefundFeeUnit = 'PER_SEAT' | 'PER_PNR' | 'PER_GROUP'
 export type CondRefundPenaltyMode = 'NONE' | 'SINGLE' | 'STEP_RULE'
+
+export type CondNameChangePolicy = 'UNSPECIFIED' | 'ALLOW' | 'NOT_ALLOW' | 'REQUIRE_APPROVAL'
 
 export interface CondRefundPenaltyStepRule {
   id: string
@@ -398,6 +441,7 @@ export interface CondPostTicketRefund {
   penaltySingleValue: number | null
   penaltySingleBase: string
   penaltyStepRules: CondRefundPenaltyStepRule[]
+  nameChangePolicy: CondNameChangePolicy
 }
 
 export interface CondRefundTerms {
@@ -449,8 +493,9 @@ export interface AppCondition {
   // § 3 สัมภาระ
   baggagePolicy: CondBaggagePolicy
 
-  // § 4 ลดที่นั่ง
+  // § 4 ลดที่นั่ง / ยกเลิกกรุ๊ป
   seatReductionPolicy: CondSeatReductionPolicy
+  cancelGroupTerms: CondCancelGroupTerms
 
   // § 5 คืนที่นั่ง (legacy — kept for migration)
   seatReturnPolicy: CondSeatReturnPolicy
@@ -621,53 +666,57 @@ export function migrateBaggagePolicy(raw: any): CondBaggagePolicy {
 
 export function formatBaggageSummary(bp: CondBaggagePolicy): string {
   const checkedPart = (): string => {
-    if (bp.checkedBagStatus === 'NOT_INCLUDED') return 'โหลดใต้ท้องเครื่อง: ไม่มี'
+    if (bp.checkedBagStatus === 'NOT_INCLUDED') return 'ไม่รวมสัมภาระ'
     if (bp.checkedBagStatus === 'INCLUDED') {
       switch (bp.checkedMode) {
         case 'SAME_WEIGHT_PER_PIECE':
-          if (bp.pieceCount && bp.weightPerPiece !== null)
-            return `โหลดใต้ท้องเครื่อง: ${bp.pieceCount} ใบ / ใบละ ${bp.weightPerPiece} กก`
+          if (bp.pieceCount && bp.weightPerPiece != null)
+            return `โหลดใต้ท้องเครื่อง ${bp.pieceCount} ใบ น้ำหนักไม่เกิน ${bp.weightPerPiece} กก./ใบ`
+          if (bp.pieceCount)
+            return `โหลดใต้ท้องเครื่อง ${bp.pieceCount} ใบ`
           break
         case 'TOTAL_WEIGHT':
           if (bp.totalWeight)
-            return `โหลดใต้ท้องเครื่อง: ${bp.pieceCount ? bp.pieceCount + ' ใบ / ' : ''}รวมไม่เกิน ${bp.totalWeight} กก`
+            return `โหลดใต้ท้องเครื่อง${bp.pieceCount ? ` ${bp.pieceCount} ใบ` : ''} น้ำหนักรวมไม่เกิน ${bp.totalWeight} ${bp.weightUnit}`
           break
         case 'CUSTOM_PER_PIECE':
           if (bp.checkedPieceList.length)
-            return `โหลดใต้ท้องเครื่อง: ${bp.checkedPieceList.map(p => `ใบที่ ${p.pieceNo}: ${p.weight} กก`).join(' · ')}`
+            return `โหลดใต้ท้องเครื่อง ${bp.checkedPieceList.length} ใบ (${bp.checkedPieceList.map(p => `ใบที่ ${p.pieceNo}: ${p.weight} กก`).join(', ')})`
           break
         case 'TEXT_ONLY':
-          return bp.checkedText.trim() ? `โหลดใต้ท้องเครื่อง: ${bp.checkedText.trim()}` : 'โหลดใต้ท้องเครื่อง: มีสัมภาระ'
+          return bp.checkedText.trim() ? `โหลดใต้ท้องเครื่อง: ${bp.checkedText.trim()}` : 'โหลดใต้ท้องเครื่อง (รอระบุรายละเอียด)'
       }
-      return 'โหลดใต้ท้องเครื่อง: มีสัมภาระ (ยังไม่ครบ)'
+      return 'โหลดใต้ท้องเครื่อง (ยังไม่ครบ)'
     }
     return ''
   }
   const carryPart = (): string => {
-    if (bp.carryOnStatus === 'NOT_INCLUDED') return 'Carry-on: ไม่มี'
+    if (bp.carryOnStatus === 'NOT_INCLUDED') return 'ไม่รวมกระเป๋าถือขึ้นเครื่อง'
     if (bp.carryOnStatus === 'INCLUDED') {
       switch (bp.carryOnMode) {
         case 'SAME_WEIGHT_PER_PIECE':
-          if (bp.carryOnPieces && bp.carryOnWeight !== null)
-            return `Carry-on: ${bp.carryOnPieces} ใบ / ใบละ ${bp.carryOnWeight} กก`
+          if (bp.carryOnPieces && bp.carryOnWeight != null)
+            return `ถือขึ้นเครื่อง ${bp.carryOnPieces} ใบ น้ำหนักไม่เกิน ${bp.carryOnWeight} กก.`
+          if (bp.carryOnPieces)
+            return `ถือขึ้นเครื่อง ${bp.carryOnPieces} ใบ`
           break
         case 'TOTAL_WEIGHT':
           if (bp.carryOnTotalWeight)
-            return `Carry-on: ${bp.carryOnPieces ? bp.carryOnPieces + ' ใบ / ' : ''}รวมไม่เกิน ${bp.carryOnTotalWeight} กก`
+            return `ถือขึ้นเครื่อง${bp.carryOnPieces ? ` ${bp.carryOnPieces} ใบ` : ''} น้ำหนักรวมไม่เกิน ${bp.carryOnTotalWeight} ${bp.carryOnWeightUnit}`
           break
         case 'CUSTOM_PER_PIECE':
           if (bp.carryOnPieceList.length)
-            return `Carry-on: ${bp.carryOnPieceList.map(p => `ใบที่ ${p.pieceNo}: ${p.weight} กก`).join(' · ')}`
+            return `ถือขึ้นเครื่อง ${bp.carryOnPieceList.length} ใบ (${bp.carryOnPieceList.map(p => `ใบที่ ${p.pieceNo}: ${p.weight} กก`).join(', ')})`
           break
         case 'TEXT_ONLY':
-          return bp.carryOnText.trim() ? `Carry-on: ${bp.carryOnText.trim()}` : 'Carry-on: มีสัมภาระ'
+          return bp.carryOnText.trim() ? `ถือขึ้นเครื่อง: ${bp.carryOnText.trim()}` : 'ถือขึ้นเครื่อง (รอระบุรายละเอียด)'
       }
-      return 'Carry-on: มีสัมภาระ (ยังไม่ครบ)'
+      return 'ถือขึ้นเครื่อง (ยังไม่ครบ)'
     }
     return ''
   }
   const parts = [checkedPart(), carryPart()].filter(Boolean)
-  return parts.join(' · ') || 'ยังไม่ระบุ'
+  return parts.join(' · ') || 'ยังไม่ระบุสัมภาระ'
 }
 
 export function newSeatReductionRuleId(): string { return _id('SRR') }
@@ -678,11 +727,31 @@ export function defaultSeatReductionRule(): CondSeatReductionRule {
     rangeType: 'FROM_DAY_UP',
     fromDays: null, toDays: null,
     maxReducePercent: null,
-    ruleOverLimitAction: 'NO_FORFEIT',
+    ruleOverLimitAction: 'UNSPECIFIED',
+    forfeitSource: null,
     penaltyType: 'NONE',
     penaltyPercent: null, penaltyAmount: null,
     currency: 'THB',
     calcBase: 'GROUP_PRICE',
+    remark: '',
+  }
+}
+
+export function defaultCancelGroupTerms(): CondCancelGroupTerms {
+  return {
+    enabled: false,
+    policy: 'UNSPECIFIED',
+    noticeDays: null,
+    deadlineBase: 'DEPARTURE_DATE',
+    deadlineCustomDate: '',
+    overLimitAction: 'UNSPECIFIED',
+    forfeitSource: null,
+    penaltyType: 'NONE',
+    penaltyAmount: null,
+    penaltyPercent: null,
+    penaltyCurrency: '',
+    penaltyCalcBase: 'GROUP_PRICE',
+    refundable: 'UNSPECIFIED',
     remark: '',
   }
 }
@@ -695,10 +764,13 @@ export function defaultSeatReductionPolicy(): CondSeatReductionPolicy {
     maxReducePercent: null,
     basis: 'INITIAL_SEAT',
     noticeDays: null,
-    singleOverLimitAction: 'NO_FORFEIT',
+    noticeDaysBase: 'DEPARTURE_DATE',
+    singleOverLimitAction: 'UNSPECIFIED',
+    singleForfeitSource: null,
     singlePenaltyType: 'NONE',
     singlePenaltyPercent: null,
     singlePenaltyAmount: null,
+    singlePenaltyCurrency: '',
     singleCalcBase: 'GROUP_PRICE',
     rules: [],
     remark: '',
@@ -717,11 +789,14 @@ export function migrateSeatReductionPolicy(raw: any): CondSeatReductionPolicy {
     const mode: CondSeatReductionMode =
       rawMode === 'STEP_RULE' || rawMode === 'SINGLE' ? rawMode :
       oldOverLimit === 'STEP_RULE' ? 'STEP_RULE' : 'SINGLE'
-    // Normalize singleOverLimitAction (legacy NOT_ALLOW / UNSPECIFIED → NO_FORFEIT)
+    // Normalize singleOverLimitAction — accept all 5 valid values, preserve legacy NO_FORFEIT
     const rawSingle = raw.singleOverLimitAction as string | undefined
+    const VALID_SINGLE: CondSingleOverLimit[] = ['UNSPECIFIED', 'NO_FORFEIT', 'FORFEIT', 'PENALTY', 'REQUIRE_APPROVAL']
     const singleOverLimitAction: CondSingleOverLimit =
-      rawSingle === 'FORFEIT' || rawSingle === 'PENALTY' ? rawSingle : 'NO_FORFEIT'
-    // Normalize per-rule new fields; map legacy REQUIRE_APPROVAL → NOT_ALLOW
+      VALID_SINGLE.includes(rawSingle as CondSingleOverLimit) ? rawSingle as CondSingleOverLimit : 'NO_FORFEIT'
+    // Normalize per-rule fields
+    const VALID_RULE: CondRuleOverLimitAction[] = ['UNSPECIFIED', 'NO_FORFEIT', 'FORFEIT', 'PENALTY', 'REQUIRE_APPROVAL']
+    const VALID_FORFEIT: CondForfeitSource[] = ['DEPOSIT', 'RSVN_FEE', 'ALL']
     const rules: CondSeatReductionRule[] = (raw.rules as any[]).map(r => {
       const rFrom = r.fromDays ?? null
       const rTo   = r.toDays   ?? null
@@ -735,8 +810,10 @@ export function migrateSeatReductionPolicy(raw: any): CondSeatReductionPolicy {
         ...defaultSeatReductionRule(), ...r,
         rangeType,
         maxReducePercent: r.maxReducePercent ?? null,
-        ruleOverLimitAction: (r.ruleOverLimitAction as string | undefined) === 'FORFEIT' || (r.ruleOverLimitAction as string | undefined) === 'PENALTY'
-          ? (r.ruleOverLimitAction as CondRuleOverLimitAction) : 'NO_FORFEIT',
+        ruleOverLimitAction: VALID_RULE.includes(r.ruleOverLimitAction as CondRuleOverLimitAction)
+          ? r.ruleOverLimitAction as CondRuleOverLimitAction : 'NO_FORFEIT',
+        forfeitSource: VALID_FORFEIT.includes(r.forfeitSource as CondForfeitSource)
+          ? r.forfeitSource as CondForfeitSource : null,
       }
     })
     const rawPenType = raw.singlePenaltyType as string | undefined
@@ -747,11 +824,16 @@ export function migrateSeatReductionPolicy(raw: any): CondSeatReductionPolicy {
       mode,
       allowReduction: raw.allowReduction === 'ALLOW' ? 'ALLOW' : 'UNSPECIFIED',
       basis: raw.basis === 'REMAINING_SEAT' ? 'REMAINING_SEAT' : 'INITIAL_SEAT',
+      noticeDaysBase: (['DEPARTURE_DATE', 'TICKET_ISSUE', 'SEAT_CONFIRMED'] as CondSeatNoticeDaysBase[]).includes(raw.noticeDaysBase)
+        ? raw.noticeDaysBase as CondSeatNoticeDaysBase : 'DEPARTURE_DATE',
       singleOverLimitAction,
+      singleForfeitSource: VALID_FORFEIT.includes(raw.singleForfeitSource as CondForfeitSource)
+        ? raw.singleForfeitSource as CondForfeitSource : null,
       singlePenaltyType,
-      singlePenaltyPercent: raw.singlePenaltyPercent ?? null,
-      singlePenaltyAmount:  raw.singlePenaltyAmount  ?? null,
-      singleCalcBase:       (raw.singleCalcBase as CondStepCalcBase | undefined) ?? 'GROUP_PRICE',
+      singlePenaltyPercent:  raw.singlePenaltyPercent  ?? null,
+      singlePenaltyAmount:   raw.singlePenaltyAmount   ?? null,
+      singlePenaltyCurrency: raw.singlePenaltyCurrency ?? '',
+      singleCalcBase:        (raw.singleCalcBase as CondStepCalcBase | undefined) ?? 'GROUP_PRICE',
       rules,
     }
   }
@@ -806,12 +888,17 @@ export function formatSeatReductionSummary(sp: CondSeatReductionPolicy): string 
     ALLOW: 'อนุญาต', UNSPECIFIED: 'ยังไม่ระบุ',
   }
   const overLimitLabel: Record<CondSingleOverLimit, string> = {
-    NO_FORFEIT: 'ไม่ยึดเงิน', FORFEIT: 'ยึดเงิน', PENALTY: 'คิดค่าปรับ',
+    UNSPECIFIED: 'ยังไม่กำหนด', NO_FORFEIT: 'ไม่ยึดเงิน',
+    FORFEIT: 'ยึดเงิน', PENALTY: 'คิดค่าปรับ', REQUIRE_APPROVAL: 'ต้องขออนุมัติ',
   }
   const parts: string[] = ['ลดที่นั่ง:', allowLabel[sp.allowReduction] ?? 'ยังไม่ระบุ']
   if (sp.maxReducePercent != null) parts.push(`ลดได้ ${sp.maxReducePercent}%`)
   if (sp.noticeDays != null) parts.push(`แจ้งลดไม่น้อยกว่า ${sp.noticeDays} วันก่อนเดินทาง`)
   parts.push(`เกินเงื่อนไข: ${overLimitLabel[sp.singleOverLimitAction]}`)
+  if (sp.singleOverLimitAction === 'FORFEIT' && sp.singleForfeitSource) {
+    const fl: Record<CondForfeitSource, string> = { DEPOSIT: 'Deposit', RSVN_FEE: 'RSVN Fee', ALL: 'ทั้งหมด' }
+    parts.push(`(ยึด${fl[sp.singleForfeitSource]})`)
+  }
   if (sp.singleOverLimitAction === 'PENALTY') {
     if (sp.singlePenaltyType === 'PERCENT' && sp.singlePenaltyPercent != null)
       parts.push(`ปรับ ${sp.singlePenaltyPercent}%`)
@@ -873,6 +960,7 @@ export function defaultPostTicketRefund(): CondPostTicketRefund {
     refundFeeUnit: 'PER_SEAT', refundFeeCurrency: '',
     penaltyMode: 'NONE', penaltySingleType: 'PERCENT',
     penaltySingleValue: null, penaltySingleBase: 'GROUP_PRICE', penaltyStepRules: [],
+    nameChangePolicy: 'UNSPECIFIED',
   }
 }
 
@@ -900,10 +988,15 @@ export function migrateRefundTerms(raw: any): CondRefundTerms {
   if ((merged.postTicket.refundMainPolicy as string) === 'ONLY_TAX_FUEL') {
     merged.postTicket.refundMainPolicy = 'PARTIAL_REFUND'
     if (merged.postTicket.refundableItems.length === 0)
-      merged.postTicket.refundableItems = ['TAX', 'FUEL']
+      merged.postTicket.refundableItems = ['TAX', 'YQ']
     if (merged.postTicket.nonRefundableItems.length === 0)
       merged.postTicket.nonRefundableItems = ['FARE', 'YR']
   }
+  // Migrate legacy FUEL → YQ in item lists
+  const migrateFuel = (items: string[]) =>
+    items.map(i => i === 'FUEL' ? 'YQ' : i) as CondRefundItem[]
+  merged.postTicket.refundableItems    = migrateFuel(merged.postTicket.refundableItems)
+  merged.postTicket.nonRefundableItems = migrateFuel(merged.postTicket.nonRefundableItems)
   const oldAction = merged.utilization.exceedAction as string
   if (oldAction === 'REQUIRE_APPROVAL' || oldAction === 'CHECK_AIRLINE') {
     merged.utilization.exceedAction = 'NO_PENALTY'
@@ -979,6 +1072,7 @@ export function defaultCondition(partial?: Partial<AppCondition>): AppCondition 
     ttlRule:             defaultTtlRule(),
     baggagePolicy:       defaultBaggagePolicy(),
     seatReductionPolicy: defaultSeatReductionPolicy(),
+    cancelGroupTerms:    defaultCancelGroupTerms(),
     seatReturnPolicy:    defaultSeatReturnPolicy(),
     refundPolicy:        defaultRefundPolicy(),
     refundTerms:         defaultRefundTerms(),
@@ -1005,7 +1099,14 @@ export function defaultTemplate(partial?: Partial<AppConditionTemplate>): AppCon
 export function calcStageDueDate(
   stage: CondStage,
   travelStart: string,
-  opts?: { seriesCreatedAt?: string; prevStageDue?: string; prevStagePaid?: string },
+  opts?: {
+    seriesCreatedAt?: string
+    prevStageDue?: string
+    prevStagePaid?: string
+    seatConfirmedDate?: string
+    nameDeadline?: string
+    ticketIssueDeadline?: string
+  },
 ): string | null {
   const parseD = (s: string) => (s ? new Date(s) : null)
   const applyTime = (d: Date, t: string) => {
@@ -1015,6 +1116,19 @@ export function calcStageDueDate(
   switch (stage.dueType) {
     case 'TRAVEL_MINUS_DAYS': {
       const d = parseD(travelStart); if (!d) return null
+      d.setDate(d.getDate() - stage.dueDays); applyTime(d, stage.dueTime); return d.toISOString()
+    }
+    case 'SEAT_CONFIRMED_PLUS_DAYS': {
+      // ถ้าไม่มีวันที่ Confirm ที่นั่ง → ห้ามคำนวณมั่ว → คืน null (แสดงสถานะ "รอวันที่ Confirm ที่นั่ง")
+      const d = parseD(opts?.seatConfirmedDate ?? ''); if (!d) return null
+      d.setDate(d.getDate() + stage.dueDays); applyTime(d, stage.dueTime); return d.toISOString()
+    }
+    case 'NAME_DEADLINE_MINUS_DAYS': {
+      const d = parseD(opts?.nameDeadline ?? ''); if (!d) return null
+      d.setDate(d.getDate() - stage.dueDays); applyTime(d, stage.dueTime); return d.toISOString()
+    }
+    case 'TICKET_ISSUE_MINUS_DAYS': {
+      const d = parseD(opts?.ticketIssueDeadline ?? ''); if (!d) return null
       d.setDate(d.getDate() - stage.dueDays); applyTime(d, stage.dueTime); return d.toISOString()
     }
     case 'CREATED_PLUS_DAYS': {

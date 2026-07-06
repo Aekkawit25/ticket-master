@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import AppLayout from '@/components/layout/AppLayout'
 import { Card, CardContent } from '@/components/ui/card'
@@ -33,6 +33,11 @@ const AIRLINE_OPTIONS = [
   { value: 'MH', label: 'MH — Malaysia Airlines' },
   { value: 'CX', label: 'CX — Cathay Pacific' },
   { value: 'JL', label: 'JL — Japan Airlines' },
+  { value: 'CI', label: 'CI — China Airlines' },
+  { value: 'NH', label: 'NH — All Nippon Airways' },
+  { value: 'KE', label: 'KE — Korean Air' },
+  { value: 'BR', label: 'BR — EVA Air' },
+  { value: 'CA', label: 'CA — Air China' },
 ]
 
 const CURRENCY_OPTIONS = [
@@ -44,19 +49,24 @@ const CURRENCY_OPTIONS = [
 
 export default function AddConditionTemplatePage() {
   const router = useRouter()
+  const [isMounted, setIsMounted] = useState(false)
+  const [template, setTemplate] = useState<AppConditionTemplate>(() => defaultTemplate())
 
-  const existingCodes = getConditionTemplates().map(t => t.condition.conditionCode)
-  const [template, setTemplate] = useState<AppConditionTemplate>(() =>
-    defaultTemplate({
+  useEffect(() => {
+    const existingCodes = getConditionTemplates().map(t => t.condition.conditionCode)
+    setTemplate(defaultTemplate({
       condition: {
         ...defaultTemplate().condition,
         conditionCode: generateTemplateCode(existingCodes),
       },
-    }),
-  )
+    }))
+    setIsMounted(true)
+  }, [])
 
   const setMeta = <K extends keyof AppConditionTemplate>(k: K, v: AppConditionTemplate[K]) =>
     setTemplate(prev => ({ ...prev, [k]: v }))
+
+  if (!isMounted) return null
 
   const handleSave = (cond: AppCondition) => {
     const now = new Date().toISOString()
@@ -77,7 +87,7 @@ export default function AddConditionTemplatePage() {
 
   return (
     <AppLayout title="สร้าง Template Condition">
-      <div className="max-w-3xl mx-auto space-y-4">
+      <div className="max-w-[1400px] mx-auto space-y-4">
         {/* Template Metadata */}
         <Card>
           <CardContent className="pt-4">

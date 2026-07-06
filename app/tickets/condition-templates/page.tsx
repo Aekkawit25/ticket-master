@@ -34,6 +34,8 @@ const AIRLINE_NAMES: Record<string, string> = {
   TG: 'Thai Airways', VZ: 'Thai VietJet', FD: 'Thai AirAsia',
   SQ: 'Singapore Airlines', QR: 'Qatar Airways', EK: 'Emirates',
   MH: 'Malaysia Airlines', CX: 'Cathay Pacific', JL: 'Japan Airlines',
+  CI: 'China Airlines', NH: 'All Nippon Airways', KE: 'Korean Air',
+  BR: 'EVA Air', CA: 'Air China',
 }
 
 export default function ConditionTemplatesPage() {

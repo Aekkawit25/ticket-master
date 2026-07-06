@@ -52,59 +52,28 @@ function cn(...cls: (string | false | null | undefined)[]) { return cls.filter(B
 
 // ─── Summary Bar (top of modal) ───────────────────────────────────────────────
 
-function Chip({ color, children }: { color: string; children: React.ReactNode }) {
-  const colors: Record<string, string> = {
-    blue:   'bg-blue-100   text-blue-700',
-    purple: 'bg-purple-100 text-purple-700',
-    orange: 'bg-orange-100 text-orange-700',
-    teal:   'bg-teal-100   text-teal-700',
-    red:    'bg-red-100    text-red-700',
-    green:  'bg-emerald-100 text-emerald-700',
-    amber:  'bg-amber-100  text-amber-700',
-  }
-  return (
-    <span className={cn('px-2 py-0.5 rounded-full text-[10px] font-semibold shrink-0', colors[color] ?? colors.blue)}>
-      {children}
-    </span>
-  )
-}
-
 function SummaryBar({ value, currency }: { value: AppCondition; currency: string }) {
-  const stageCount    = value.stages.length
-  const hasBaggage    = value.baggagePolicy.checkedBagStatus !== 'UNSPECIFIED' || value.baggagePolicy.carryOnStatus !== 'UNSPECIFIED'
-  const hasRefund     = value.refundTerms?.enabled ?? false
-  const hasSeatReduce = value.seatReductionPolicy.enabled
-  const hasCode       = value.conditionCode.trim()
-  const hasName       = value.conditionName.trim()
-  const hasAny        = stageCount > 0 || hasBaggage || hasRefund || hasSeatReduce
+  const hasCode = value.conditionCode.trim()
+  const hasName = value.conditionName.trim()
 
   return (
-    <div className="flex items-center gap-2 px-5 py-2 bg-slate-50 border-b border-slate-200 flex-wrap min-h-[40px] shrink-0">
+    <div className="flex items-center gap-2 px-5 py-2 bg-slate-50 border-b border-slate-200 flex-wrap shrink-0">
       <span className={cn('font-mono text-xs font-bold', hasCode ? 'text-slate-700' : 'text-slate-300')}>
         {hasCode || 'XXXX'}
       </span>
-      <span className="text-slate-300 text-xs">·</span>
-      <span className={cn('text-xs font-medium truncate max-w-[200px]', hasName ? 'text-slate-700' : 'text-slate-400 italic')}>
+      <span className="text-slate-300 text-xs select-none">·</span>
+      <span className={cn('text-xs font-medium truncate max-w-[240px]', hasName ? 'text-slate-700' : 'text-slate-400 italic')}>
         {hasName || 'ยังไม่มีชื่อ'}
       </span>
-      <span className="text-slate-300 text-xs">·</span>
+      <span className="text-slate-300 text-xs select-none">·</span>
       <span className={cn(
         'text-[10px] px-1.5 py-0.5 rounded-full font-semibold shrink-0',
         value.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500',
       )}>
         {value.status}
       </span>
-      <span className="text-slate-300 text-xs">·</span>
+      <span className="text-slate-300 text-xs select-none">·</span>
       <span className="text-xs text-slate-500 font-medium shrink-0">{currency}</span>
-      <div className="flex items-center gap-1.5 flex-wrap ml-1">
-        {stageCount > 0  && <Chip color="blue">{stageCount} งวด</Chip>}
-        {hasBaggage      && <Chip color="purple">สัมภาระ ✓</Chip>}
-        {hasSeatReduce   && <Chip color="orange">ลดที่นั่ง ✓</Chip>}
-        {hasRefund       && <Chip color="teal">คืน ✓</Chip>}
-        {!hasAny && (
-          <span className="text-[10px] text-slate-400 italic">ยังไม่ได้ตั้งค่า</span>
-        )}
-      </div>
     </div>
   )
 }
@@ -498,7 +467,7 @@ export default function ConditionEditorModal({
         )}
         style={mode === 'modal' ? { scrollbarWidth: 'thin', scrollbarColor: '#94a3b8 transparent' } as React.CSSProperties : undefined}
       >
-        <div className="max-w-5xl mx-auto px-6 py-5">
+        <div className={cn(mode === 'modal' ? 'max-w-5xl mx-auto' : '', 'px-6 py-5')}>
           {/* Tab Content Header */}
           <TabContentHeader
             tabKey={activeTab}
