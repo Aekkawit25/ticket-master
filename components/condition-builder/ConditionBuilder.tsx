@@ -3394,13 +3394,13 @@ export function CombinedRefundSection({ value, onChange, readOnly, currency, err
     const lines: { text: string; missing: boolean }[] = []
     if (post.enabled) {
       const applyAfterLabel: Record<CondPostRefundApplyAfter, string> = {
-        AFTER_NAME_SUBMIT: 'หลังส่งชื่อแล้ว',
-        AFTER_TICKETING:   'หลังออกตั๋วแล้ว',
-        AFTER_DEPOSIT:     'หลังชำระมัดจำแล้ว',
-        AFTER_DEADLINE:    'หลังครบกำหนดออกตั๋วแล้ว',
-        OTHER:             '',
+        AFTER_NAME_SUBMIT:    'หลังส่งชื่อแล้ว',
+        AFTER_TICKETING:      'หลังออกตั๋วแล้ว',
+        AFTER_DEPOSIT:        'หลังชำระมัดจำแล้ว',
+        AFTER_DEADLINE:       'หลังครบกำหนดออกตั๋วแล้ว',
+        AFTER_FULL_PAYMENT:   'หลังชำระเต็มจำนวนแล้ว',
       }
-      const applyPrefix = post.applyAfter && post.applyAfter !== 'OTHER' ? applyAfterLabel[post.applyAfter] + ' ' : ''
+      const applyPrefix = post.applyAfter ? applyAfterLabel[post.applyAfter] + ' ' : ''
       if (post.refundMainPolicy === 'NON_REFUNDABLE') {
         lines.push({ text: `${applyPrefix}ไม่สามารถ Refund ได้`, missing: false })
       } else if (post.refundMainPolicy === 'FULL_REFUND') {
