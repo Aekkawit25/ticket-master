@@ -498,7 +498,7 @@ export default function ConditionEditorModal({
         )}
         style={mode === 'modal' ? { scrollbarWidth: 'thin', scrollbarColor: '#94a3b8 transparent' } as React.CSSProperties : undefined}
       >
-        <div className="max-w-4xl mx-auto px-6 py-5">
+        <div className="max-w-5xl mx-auto px-6 py-5">
           {/* Tab Content Header */}
           <TabContentHeader
             tabKey={activeTab}
@@ -602,7 +602,7 @@ export default function ConditionEditorModal({
         >
           <div
             className="bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden"
-            style={{ width: '90vw', height: '90vh', maxWidth: '1200px' }}
+            style={{ width: '96vw', height: '96vh', maxWidth: '1600px' }}
             onClick={e => e.stopPropagation()}
           >
             {inner}
