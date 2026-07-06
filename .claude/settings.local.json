@@ -1,0 +1,37 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\admin-aekkawit.k\\\\Desktop\\\\ticket-master\\\\ticket-master\" -Recurse -Directory)",
+      "Bash(Select-Object FullName)",
+      "Bash(echo \"Exit code: $?\")",
+      "Bash(node -e ' *)",
+      "Bash(xargs grep -l \"Supplier\\\\|airline.*detail\")",
+      "Bash(xargs grep -l \"Airline\\\\|airline_code\")",
+      "Bash(mkdir -p \"c:\\\\Users\\\\admin-aekkawit.k\\\\Desktop\\\\ticket-master\\\\ticket-master\\\\app\\\\settings\\\\airlines\\\\[id]\" && echo \"Done\")",
+      "Bash(powershell -Command ' *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" \"http://localhost:3000/tickets/condition-templates/add\")",
+      "Bash(curl -s -v \"http://localhost:3000/tickets/condition-templates/add\")",
+      "Bash(find app/tickets -name \"layout.tsx\" -o -name \"middleware.ts\")",
+      "Bash(find app *)",
+      "Bash(curl -s \"http://localhost:3000/tickets/condition-templates\" -o /dev/null -w \"%{http_code}\")",
+      "Bash(curl -s \"http://localhost:3000/tickets/condition-templates/add\" -o /dev/null -w \"%{http_code}\")",
+      "Bash(python3 -c ' *)",
+      "PowerShell(cd \"C:\\\\Users\\\\admin-aekkawit.k\\\\Desktop\\\\ticket-master\\\\ticket-master\"; npx tsc --noEmit 2>&1 | Where-Object { $_ -match \"error TS\" } | Select-Object -First 15)",
+      "PowerShell(cd \"C:\\\\Users\\\\admin-aekkawit.k\\\\Desktop\\\\ticket-master\\\\ticket-master\"; npx tsc --noEmit 2>&1 | Where-Object { $_ -match \"error TS\" } | Select-Object -First 10)",
+      "PowerShell(cd \"C:\\\\Users\\\\admin-aekkawit.k\\\\Desktop\\\\ticket-master\\\\ticket-master\"; npm run build 2>&1 | Select-String -Pattern \"error|Error|failed|Failed\" | Where-Object { $_ -notmatch \"ErrorRecord|Cannot find\" } | Select-Object -First 10)",
+      "PowerShell(cd \"C:\\\\Users\\\\admin-aekkawit.k\\\\Desktop\\\\ticket-master\\\\ticket-master\"; npx tsc --noEmit 2>&1 | Where-Object { $_ -match \"error TS\" } | Select-Object -First 20)",
+      "PowerShell(cd \"C:\\\\Users\\\\admin-aekkawit.k\\\\Desktop\\\\ticket-master\\\\ticket-master\"; npm run build 2>&1 | Select-String -Pattern \"error|Error|failed\" | Where-Object { $_ -notmatch \"ErrorRecord|Cannot find\" } | Select-Object -First 10)",
+      "Bash(grep -A 30 \"condition-templates\\\\\\\\\\\\\\\\\\\\[id\\\\]\\\\\\\\\\\\\\\\page\\\\|condition-templates\\\\\\\\\\\\\\\\ConditionTemplateForm\\\\|template-storage.ts\")",
+      "Bash(grep -A 4 \"condition-templates\\\\\\\\\\\\\\\\\\\\[id\\\\]\\\\\\\\\\\\\\\\page.tsx$\\\\|ConditionTemplateForm.tsx$\")",
+      "Bash(grep -n \"ALLOWED: all detail fields\\\\|seatReduction.policy === 'ALLOWED'\\\\|{/\\\\* Main 4-col grid\\\\|{/\\\\* Summary \\\\*/}\\\\|setSeatReductionMode\\\\|seatReductionMode\" components/condition-templates/ConditionTemplateForm.tsx)",
+      "Bash(grep -n \"seatReductionCondition\\\\|satisfies SeatReductionCondition\\\\|templateId: 'ctmpl-ci-001'\\\\|^  },$\\\\|baggageCondition:\" lib/template-storage.ts)",
+      "Bash(grep -iE \"Tier|seatReduction|ConditionTemplateForm.tsx$|template-storage.ts$\")",
+      "Bash(grep -A 30 \"ConditionTemplateForm.tsx$\")",
+      "Bash(node -e \"const pkg=require\\('./node_modules/lucide-react/package.json'\\);console.log\\(pkg.version\\)\")",
+      "Bash(node -e \"const l=require\\('C:/Users/admin-aekkawit.k/Desktop/ticket-master/ticket-master/node_modules/lucide-react'\\);console.log\\('PlaneTakeoff' in l, 'Plane' in l\\)\")"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\admin-aekkawit.k\\Desktop\\ticket-master\\ticket-master\\app\\settings\\airlines"
+    ]
+  }
+}
