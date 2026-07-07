@@ -1099,7 +1099,7 @@ export function buildPaymentSchedule(stock: DemoStock): PaymentScheduleItem[] {
           const yq = pnr.yq ?? 0
           const base =
             stage.calcBase === 'FARE'     ? pnr.fare :
-            stage.calcBase === 'FARE_TAX' ? (pnr.fare + pnr.tax) :
+            stage.calcBase === 'FARE_TAX' ? pnr.total :
             stage.calcBase === 'FARE_YQ'  ? (pnr.fare + yq) :
             pnr.total
           amount = Math.round(base * stage.percent / 100)
