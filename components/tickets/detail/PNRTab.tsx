@@ -7,7 +7,7 @@ import { Badge, PNRStatusBadge } from '@/components/ui/badge'
 import { Table, TableHead, TableBody, Th, Td, TableRow, EmptyRow } from '@/components/ui/table'
 import { Modal } from '@/components/ui/modal'
 import {
-  PlusCircle, Pencil, Trash2, Copy, RefreshCw, X, CheckCircle2, AlertTriangle, PlusSquare, Route, ChevronDown,
+  PlusCircle, Pencil, Trash2, Copy, RefreshCw, X, CheckCircle2, AlertTriangle, PlusSquare, Route, ChevronDown, Info,
 } from 'lucide-react'
 import { BulkPnrBuilder } from '@/components/shared/BulkPnrBuilder'
 import type { BulkPnrFlightSet, BulkPnrCondition } from '@/components/shared/BulkPnrBuilder'
@@ -347,6 +347,7 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
   const [condChangeConfirm, setCondChangeConfirm] = useState<{ pnrIds: string[]; newCode: string } | null>(null)
   const [showBulkCond, setShowBulkCond]     = useState(false)
   const [bulkCondCode, setBulkCondCode]     = useState('')
+  const [detailPnr, setDetailPnr]           = useState<PNRRow | null>(null)
 
   // Custom Flight state
   const [showCFModal, setShowCFModal]           = useState(false)
@@ -1104,10 +1105,10 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
               <Th className="text-right">Seat</Th>
               <Th className="text-right">Used</Th>
               <Th className="text-right">Bal.</Th>
-              <Th className="text-center">Price Type</Th>
-              <Th className="text-right">Received</Th>
-              <Th>Price Detail</Th>
-              <Th className="text-right">Total</Th>
+              <Th className="text-center whitespace-nowrap">รูปแบบราคา</Th>
+              <Th className="text-right whitespace-nowrap">Fare ที่ได้รับ</Th>
+              <Th className="whitespace-nowrap">YQ / Tax เพิ่มเติม</Th>
+              <Th className="text-right whitespace-nowrap">ยอดสุทธิ</Th>
               <Th>Condition</Th>
               <Th>TTL Date</Th>
               <Th>Status</Th>
@@ -1116,7 +1117,7 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
           </TableHead>
           <TableBody>
             {pnrRows.length === 0 ? (
-              <EmptyRow cols={canEdit ? 18 : 16} message="ยังไม่มีข้อมูล PNR" />
+              <EmptyRow cols={canEdit ? 17 : 15} message="ยังไม่มีข้อมูล PNR" />
             ) : (
               pnrRows.map(p => {
                 const demoPnr = liveStock?.pnrs.find(dp => dp.pnrId === p.id)
@@ -1152,41 +1153,61 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                         {p.seat_balance}
                       </span>
                     </Td>
-                    {/* Price Type */}
+                    {/* รูปแบบราคา */}
                     <Td className="text-center">
-                      <div className="flex flex-col items-center gap-0.5">
+                      <div className="inline-flex flex-col items-center gap-0.5">
                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${
                           p.price_format === 'FARE'    ? 'bg-slate-100 text-slate-600' :
                           p.price_format === 'FARE_YQ' ? 'bg-amber-100 text-amber-700' :
-                                                         'bg-blue-100 text-blue-700'
+                                                          'bg-blue-100 text-blue-700'
                         }`}>
                           {p.price_format === 'FARE' ? 'FARE' : p.price_format === 'FARE_YQ' ? 'FARE + YQ' : 'ALL IN'}
                         </span>
-                        <span className="text-[9px] text-slate-400 whitespace-nowrap">
-                          {p.price_format === 'FARE' ? 'ไม่รวม YQ/Tax' : p.price_format === 'FARE_YQ' ? 'ไม่รวม Tax' : 'รวมทั้งหมด'}
-                        </span>
+                        {p.price_format === 'FARE_YQ' && <span className="text-[9px] text-slate-400">รวม YQ แล้ว</span>}
+                        {p.price_format === 'ALL_IN'  && <span className="text-[9px] text-slate-400">รวมทั้งหมดแล้ว</span>}
                       </div>
                     </Td>
-                    {/* Received Price */}
-                    <Td className="text-right text-xs font-semibold">
+                    {/* Fare ที่ได้รับ */}
+                    <Td className="text-right text-sm font-semibold tabular-nums">
                       {formatNumber(p.price_format === 'ALL_IN' ? p.total_amount : p.fare)}
                     </Td>
-                    {/* Price Detail */}
-                    <Td className="text-[10px] text-slate-500 whitespace-nowrap">
-                      {p.price_format === 'FARE' && (
-                        `YQ ${formatNumber(p.yq)} / Tax ${formatNumber(p.tax)}`
-                      )}
-                      {p.price_format === 'FARE_YQ' && (
-                        `Tax ${formatNumber(p.tax)}`
-                      )}
-                      {p.price_format === 'ALL_IN' && !p.breakdown && (
-                        <span className="italic text-slate-400">ไม่แยกรายละเอียด</span>
-                      )}
-                      {p.price_format === 'ALL_IN' && p.breakdown && (
-                        `Fare ${formatNumber(p.fare)} / YQ ${formatNumber(p.yq)} / Tax ${formatNumber(p.tax)}`
-                      )}
+                    {/* YQ / Tax เพิ่มเติม */}
+                    <Td className="text-xs text-slate-500">
+                      <div className="flex items-center gap-1.5 whitespace-nowrap">
+                        <span>
+                          {p.price_format === 'FARE' && p.yq === 0 && p.tax === 0 && (
+                            <span className="italic text-slate-300">ไม่มี</span>
+                          )}
+                          {p.price_format === 'FARE' && (p.yq > 0 || p.tax > 0) && (
+                            `YQ ${formatNumber(p.yq)} / Tax ${formatNumber(p.tax)}`
+                          )}
+                          {p.price_format === 'FARE_YQ' && p.tax === 0 && (
+                            <span className="italic text-slate-300">ไม่มี</span>
+                          )}
+                          {p.price_format === 'FARE_YQ' && p.tax > 0 && (
+                            `Tax ${formatNumber(p.tax)}`
+                          )}
+                          {p.price_format === 'ALL_IN' && (
+                            <span className="text-slate-400">รวมทั้งหมดแล้ว</span>
+                          )}
+                        </span>
+                        {((p.price_format === 'FARE' && (p.yq > 0 || p.tax > 0)) ||
+                          (p.price_format === 'FARE_YQ' && p.tax > 0) ||
+                          (p.price_format === 'ALL_IN' && p.breakdown)) && (
+                          <button
+                            onClick={() => setDetailPnr(p)}
+                            title="ดูรายละเอียดราคา"
+                            className="p-0.5 text-slate-400 hover:text-[#05a94f] transition-colors rounded"
+                          >
+                            <Info size={13} />
+                          </button>
+                        )}
+                      </div>
                     </Td>
-                    <Td className="text-right text-xs font-bold">{formatNumber(p.total_amount)}</Td>
+                    {/* ยอดสุทธิ */}
+                    <Td className="text-right text-sm font-bold tabular-nums text-slate-800">
+                      {formatNumber(p.total_amount)}
+                    </Td>
                     <Td className="text-xs">
                       {canEdit ? (
                         <div className="relative inline-block min-w-[120px]">
@@ -1863,6 +1884,77 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
           />
         )
       })()}
+
+      {/* Price Breakdown Detail Modal */}
+      <Modal
+        open={!!detailPnr}
+        onClose={() => setDetailPnr(null)}
+        title="รายละเอียดราคา"
+        size="sm"
+        footer={<Button variant="ghost" onClick={() => setDetailPnr(null)}>ปิด</Button>}
+      >
+        {detailPnr && (() => {
+          const p = detailPnr
+          const fmt = p.price_format
+          const sumFromDetail = p.fare + p.yq + p.tax
+          const diff = Math.round(p.total_amount * 100) - Math.round(sumFromDetail * 100)
+          const rows: { label: string; value: number; muted?: boolean }[] = fmt === 'FARE'
+            ? [
+                { label: 'Fare', value: p.fare },
+                { label: 'YQ', value: p.yq },
+                { label: 'Tax', value: p.tax },
+              ]
+            : fmt === 'FARE_YQ'
+              ? [
+                  { label: 'Fare + YQ (รวม)', value: p.fare },
+                  { label: 'Tax', value: p.tax },
+                ]
+              : [
+                  { label: 'Fare', value: p.fare },
+                  { label: 'YQ', value: p.yq },
+                  { label: 'Tax', value: p.tax },
+                  { label: 'รวมจากรายละเอียด', value: sumFromDetail },
+                ]
+          return (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                  fmt === 'FARE' ? 'bg-slate-100 text-slate-600' : fmt === 'FARE_YQ' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'
+                }`}>
+                  {fmt === 'FARE' ? 'FARE' : fmt === 'FARE_YQ' ? 'FARE + YQ' : 'ALL IN'}
+                </span>
+                <span className="text-xs text-slate-500">PNR: {p.pnr_code ?? p.dummy_pnr ?? '—'}</span>
+              </div>
+              <div className="rounded-xl border border-slate-200 overflow-hidden">
+                <table className="w-full text-sm">
+                  <tbody>
+                    {rows.map(r => (
+                      <tr key={r.label} className="border-b border-slate-100 last:border-0">
+                        <td className="px-3 py-2 text-slate-500 text-xs">{r.label}</td>
+                        <td className="px-3 py-2 text-right font-mono font-semibold text-slate-800 tabular-nums">
+                          {formatNumber(r.value)} THB
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {fmt === 'ALL_IN' && p.breakdown && (
+                <div className={`flex items-center justify-between rounded-lg px-3 py-2 text-xs ${
+                  diff === 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'
+                }`}>
+                  <span>ส่วนต่าง (All In − รายละเอียด)</span>
+                  <span className="font-bold tabular-nums">{diff === 0 ? '0' : (diff / 100).toLocaleString('en-US', { minimumFractionDigits: 0 })} THB</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between rounded-xl bg-slate-50 border border-slate-200 px-3 py-2.5">
+                <span className="text-xs font-semibold text-slate-600">ยอดสุทธิ</span>
+                <span className="text-base font-bold text-slate-800 tabular-nums">{formatNumber(p.total_amount)} THB</span>
+              </div>
+            </div>
+          )
+        })()}
+      </Modal>
     </div>
   )
 }
