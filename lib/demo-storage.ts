@@ -1093,9 +1093,11 @@ export function buildPaymentSchedule(stock: DemoStock): PaymentScheduleItem[] {
           amount = stage.amount
           break
         case 'PERCENT_OF_BASE': {
+          const yq = (pnr as { yq?: number }).yq ?? 0
           const base =
-            stage.calcBase === 'FARE' ? pnr.fare :
+            stage.calcBase === 'FARE'     ? pnr.fare :
             stage.calcBase === 'FARE_TAX' ? (pnr.fare + pnr.tax) :
+            stage.calcBase === 'FARE_YQ'  ? (pnr.fare + yq) :
             pnr.total
           amount = Math.round(base * stage.percent / 100)
           break

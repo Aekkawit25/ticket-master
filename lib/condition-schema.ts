@@ -39,12 +39,13 @@ export const COND_CALC_TYPE_LABELS: Record<CondCalcType, string> = {
   PERCENT_OF_BASE:     '% ของยอด (legacy)',
 }
 
-export type CondCalcBase = 'FARE' | 'FARE_TAX' | 'TOTAL_TICKET'
+export type CondCalcBase = 'FARE' | 'FARE_TAX' | 'FARE_YQ' | 'TOTAL_TICKET'
 
 export const COND_CALC_BASE_LABELS: Record<CondCalcBase, string> = {
-  FARE:         'ค่าตั๋ว (Fare)',
-  FARE_TAX:     'ค่าตั๋ว + ภาษี (Fare + Tax)',
-  TOTAL_TICKET: 'ยอดรวมทั้งหมด (Total)',
+  FARE:         'FARE',
+  FARE_TAX:     'FARE + TAX (ALL IN)',
+  FARE_YQ:      'FARE + YQ',
+  TOTAL_TICKET: 'ยอดรวมทั้งหมด',
 }
 
 export type CondQuantityBasis =
@@ -1168,7 +1169,7 @@ export function calcCondTtlDate(rule: CondTtlRule, travelStart: string): string 
 
 export function calcStageAmount(
   stage: CondStage,
-  ctx: { farePerPnr: number; netFarePerPnr?: number; allInPerPnr?: number; taxPerPnr: number; seatCount: number },
+  ctx: { farePerPnr: number; netFarePerPnr?: number; allInPerPnr?: number; taxPerPnr: number; yqPerPnr?: number; seatCount: number },
 ): number {
   const seats = ctx.seatCount
   switch (stage.calcType) {
@@ -1183,6 +1184,7 @@ export function calcStageAmount(
       const base =
         stage.calcBase === 'FARE'     ? ctx.farePerPnr :
         stage.calcBase === 'FARE_TAX' ? ctx.farePerPnr + ctx.taxPerPnr :
+        stage.calcBase === 'FARE_YQ'  ? ctx.farePerPnr + (ctx.yqPerPnr ?? 0) :
                                         ctx.farePerPnr + ctx.taxPerPnr
       return Math.round((base * stage.percent) / 100)
     }
@@ -1200,7 +1202,7 @@ export function formatStageAmount(stage: CondStage, currency = 'THB'): string {
     case 'PERCENT_OF_NET_FARE': return `${stage.percent}% จาก Net Fare`
     case 'PERCENT_OF_ALLIN':    return `${stage.percent}% จาก All-in`
     case 'REMAINING_BALANCE':   return 'ยอดคงเหลือ'
-    case 'PERCENT_OF_BASE':     return `${stage.percent}% ของ${COND_CALC_BASE_LABELS[stage.calcBase ?? 'FARE']}`
+    case 'PERCENT_OF_BASE':     return `${stage.percent}% ของ ${COND_CALC_BASE_LABELS[stage.calcBase ?? 'FARE']}`
     default:                    return '—'
   }
 }

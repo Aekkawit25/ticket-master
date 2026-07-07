@@ -109,7 +109,7 @@ function EditorTabBar({
         const summary  = getTabSummary(tab.key, value, currency, conditionMode, seriesInfo, templateInfo)
 
         const cardCls = cn(
-          'flex-shrink-0 min-w-[176px] rounded-xl border-2 px-4 py-2.5 flex flex-col gap-1 text-left transition-all cursor-pointer',
+          'flex-shrink-0 min-w-[176px] min-h-[64px] rounded-xl border-2 px-4 py-2.5 flex flex-col justify-center gap-1 text-left transition-colors cursor-pointer',
           isActive
             ? 'bg-emerald-50 border-[#05a94f] shadow-sm'
             : status === 'error'
@@ -328,6 +328,13 @@ export default function ConditionEditorModal({
   const [clearTarget,     setClearTarget]     = useState<TabKey | null>(null)
   const [saveAsTemplate,  setSaveAsTemplate]  = useState(false)
 
+  const contentRef = useRef<HTMLDivElement>(null)
+
+  // Reset scroll position inside content area on every tab switch
+  useEffect(() => {
+    contentRef.current?.scrollTo({ top: 0, behavior: 'instant' })
+  }, [activeTab])
+
   // Sync draft whenever the external value changes (fires during user edits too —
   // must NOT touch activeTab here, otherwise editing any field resets the tab).
   // In series mode, always overlay airline/currency from the series.
@@ -429,7 +436,7 @@ export default function ConditionEditorModal({
   // ── Shared inner content ─────────────────────────────────────────────────
 
   const inner = (
-    <div className={cn('flex flex-col', mode === 'modal' ? 'h-full min-h-0' : 'min-h-[80vh]')}>
+    <div className={cn('flex flex-col', mode === 'modal' ? 'h-full min-h-0' : 'min-h-[calc(100vh-280px)]')}>
 
       {/* ── Header ── */}
       <div className="flex items-center justify-between px-5 py-3 border-b border-slate-200 bg-white shrink-0">
@@ -482,11 +489,9 @@ export default function ConditionEditorModal({
 
       {/* ── Scrollable Content ── */}
       <div
-        className={cn(
-          'overflow-x-hidden',
-          mode === 'modal' ? 'flex-1 min-h-0 overflow-y-auto mr-3' : 'flex-1',
-        )}
-        style={mode === 'modal' ? { scrollbarWidth: 'thin', scrollbarColor: '#94a3b8 transparent' } as React.CSSProperties : undefined}
+        ref={contentRef}
+        className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden"
+        style={{ scrollbarWidth: 'thin', scrollbarColor: '#94a3b8 transparent' } as React.CSSProperties}
       >
         <div className={cn(mode === 'modal' ? 'max-w-5xl mx-auto' : '', 'px-6 py-5')}>
           {/* Tab Content Header */}

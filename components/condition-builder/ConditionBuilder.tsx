@@ -12,8 +12,9 @@ import {
   CondSeatReductionPolicy, CondSeatReductionRule, CondRefundTerms,
   COND_PAYMENT_TYPE_LABELS, COND_CALC_TYPE_LABELS, COND_DUE_TYPE_LABELS,
   COND_APPLY_SCOPE_LABELS, COND_QUANTITY_BASIS_LABELS, COND_REFUNDABLE_LABELS,
-  CondPaymentType, CondCalcType, CondDueType, CondTtlCalcType,
+  CondPaymentType, CondCalcType, CondCalcBase, CondDueType, CondTtlCalcType,
   CondApplyScope, CondQuantityBasis, CondRefundableType,
+  COND_CALC_BASE_LABELS,
   CondBaggageStatus, CondBaggageType, CondBaggageAllowanceMode, CondBaggagePiece,
   CondSeatReductionAllow, CondSeatBasis, CondSeatNoticeDaysBase, CondSeatReductionMode, CondSeatRangeType,
   CondSingleOverLimit, CondRuleOverLimitAction, CondForfeitSource, CondStepPenaltyType, CondStepCalcBase,
@@ -999,6 +1000,13 @@ const CALC_TYPE_OPTIONS: { value: CondCalcType; label: string }[] = [
   { value: 'PER_SEAT',          label: 'ต่อ Seat' },
   { value: 'FIXED_PER_PNR',    label: 'ต่อ PNR' },
   { value: 'FIXED_PER_SERIES', label: 'ต่อ Series' },
+  { value: 'PERCENT_OF_BASE',  label: 'คิดเป็นเปอร์เซ็นต์' },
+]
+
+const CALC_BASE_OPTIONS: { value: CondCalcBase; label: string; desc: string }[] = [
+  { value: 'FARE',     label: 'FARE',               desc: 'ค่าตั๋วอย่างเดียว' },
+  { value: 'FARE_TAX', label: 'FARE + TAX (ALL IN)', desc: 'Fare รวม Tax ทั้งหมด' },
+  { value: 'FARE_YQ',  label: 'FARE + YQ',           desc: 'Fare + ค่าน้ำมัน YQ' },
 ]
 
 function isPercentCalc(ct: CondCalcType) {
@@ -1022,6 +1030,7 @@ function buildPreview(stage: CondStage, currency: string): string {
     case 'PERCENT_OF_FARE':     return `${stage.percent}% × Fare × ${qty}`
     case 'PERCENT_OF_NET_FARE': return `${stage.percent}% × Net Fare × ${qty}`
     case 'PERCENT_OF_ALLIN':    return `${stage.percent}% × All-in × ${qty}`
+    case 'PERCENT_OF_BASE':     return `${stage.percent}% × ${COND_CALC_BASE_LABELS[stage.calcBase ?? 'FARE']}`
     default:                    return formatStageAmount(stage, c)
   }
 }
@@ -1144,8 +1153,12 @@ function StageCard({ stage, idx, total, currency, readOnly, open, onToggle, onCh
       {open && (
         <div className="border-t border-slate-100 px-3 pb-3 pt-3 space-y-2.5">
 
-          {/* Row 1: Payment type | Calc method | Amount/Percent */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+          {/* ── Row 1: 5-column fixed grid — ไม่เพิ่ม/ลด column ตามเงื่อนไข ── */}
+          <div
+            className="grid gap-2.5"
+            style={{ gridTemplateColumns: '2fr 1.1fr 1.5fr 1.1fr 1.5fr' }}
+          >
+            {/* Col 1: ประเภทการชำระเงิน */}
             <div className="space-y-1.5">
               <div>
                 <Label required>ประเภทการชำระเงิน</Label>
@@ -1167,33 +1180,98 @@ function StageCard({ stage, idx, total, currency, readOnly, open, onToggle, onCh
                 </div>
               )}
             </div>
+
+            {/* Col 2: คิดต่อ (unit basis) — disabled placeholder เมื่อเลือก % */}
             <div>
-              <Label required>วิธีคิดเงิน</Label>
-              <FSelect<CondCalcType>
-                value={stage.calcType}
-                onChange={v => set('calcType', v as CondCalcType)}
-                options={CALC_TYPE_OPTIONS}
+              <Label>คิดต่อ</Label>
+              {isPercent ? (
+                <div className="h-9 flex items-center px-3 rounded-xl border border-slate-200 bg-slate-50 text-[11px] text-slate-400 italic select-none">
+                  —
+                </div>
+              ) : (
+                <FSelect<CondCalcType>
+                  value={stage.calcType}
+                  onChange={v => set('calcType', v as CondCalcType)}
+                  options={[
+                    { value: 'PER_SEAT'         as CondCalcType, label: 'ต่อ Seat' },
+                    { value: 'FIXED_PER_PNR'    as CondCalcType, label: 'ต่อ PNR' },
+                    { value: 'FIXED_PER_SERIES' as CondCalcType, label: 'ต่อ Series' },
+                  ]}
+                  disabled={readOnly}
+                />
+              )}
+            </div>
+
+            {/* Col 3: วิธีคำนวณยอดเงิน (fixed vs percent) */}
+            <div>
+              <Label>วิธีคำนวณ</Label>
+              <FSelect<'FIXED' | 'PERCENT'>
+                value={isPercent ? 'PERCENT' : 'FIXED'}
+                onChange={v => {
+                  if (v === 'PERCENT') {
+                    onChange({ calcType: 'PERCENT_OF_BASE', calcBase: stage.calcBase ?? 'FARE' })
+                  } else {
+                    const prevFixed: CondCalcType =
+                      stage.calcType === 'PER_SEAT' || stage.calcType === 'FIXED_PER_PNR' || stage.calcType === 'FIXED_PER_SERIES'
+                        ? stage.calcType : 'PER_SEAT'
+                    onChange({ calcType: prevFixed })
+                  }
+                }}
+                options={[
+                  { value: 'FIXED',   label: 'จำนวนเงินคงที่' },
+                  { value: 'PERCENT', label: 'คิดเป็น %' },
+                ]}
                 disabled={readOnly}
               />
             </div>
-            {isAmount && (
-              <div>
-                <Label>จำนวนเงิน ({currency})</Label>
-                <FInput type="number" min={0} value={stage.amount || ''} onChange={v => set('amount', Number(v))} disabled={readOnly} placeholder="0" />
-              </div>
-            )}
-            {isPercent && (
-              <div>
-                <Label>เปอร์เซ็นต์ (%)</Label>
+
+            {/* Col 4: จำนวนเงิน หรือ เปอร์เซ็นต์ — label เปลี่ยน value ไม่ขยับ */}
+            <div>
+              <Label>{isPercent ? 'เปอร์เซ็นต์ (%)' : `จำนวน (${currency})`}</Label>
+              {isPercent ? (
                 <FInput type="number" min={0} max={100} value={stage.percent || ''} onChange={v => set('percent', Number(v))} disabled={readOnly} placeholder="0" />
-              </div>
-            )}
-            {!isAmount && !isPercent && (
-              <div>
-                <Label>จำนวนเงิน</Label>
-                <div className="h-9 flex items-center px-3 rounded-xl border border-slate-200 bg-slate-50 text-[11px] text-slate-400 italic">
-                  คำนวณอัตโนมัติ
+              ) : (
+                <FInput type="number" min={0} value={stage.amount || ''} onChange={v => set('amount', Number(v))} disabled={readOnly} placeholder="0" />
+              )}
+            </div>
+
+            {/* Col 5: คำนวณจาก — dropdown เมื่อ %, disabled placeholder เมื่อคงที่ */}
+            <div>
+              <Label>คำนวณจาก</Label>
+              {isPercent ? (
+                <FSelect<CondCalcBase>
+                  value={stage.calcBase ?? 'FARE'}
+                  onChange={v => set('calcBase', v as CondCalcBase)}
+                  options={CALC_BASE_OPTIONS.map(o => ({ value: o.value, label: o.label }))}
+                  disabled={readOnly}
+                />
+              ) : (
+                <div className="h-9 flex items-center px-3 rounded-xl border border-slate-200 bg-slate-50 text-[11px] text-slate-400 italic select-none">
+                  ไม่ใช้
                 </div>
+              )}
+            </div>
+          </div>
+
+          {/* Preview สูตรการคำนวณ — min-height คงที่ ไม่ดัน layout */}
+          <div className="min-h-[36px]">
+            {isPercent && (
+              <div className="flex flex-wrap items-center gap-2 px-3 py-2 rounded-lg bg-slate-50 border border-slate-200 text-[11px] text-slate-600">
+                <Calculator size={12} className="text-slate-400 shrink-0" />
+                <span>สูตร:</span>
+                <span className="font-mono font-semibold text-slate-800">
+                  {stage.percent || '?'}% × {COND_CALC_BASE_LABELS[stage.calcBase ?? 'FARE']}
+                </span>
+                <span className="text-slate-400">→ ยอดที่ต้องชำระ</span>
+                <span className="ml-auto text-[10px] text-slate-400">
+                  {CALC_BASE_OPTIONS.find(o => o.value === (stage.calcBase ?? 'FARE'))?.desc}
+                </span>
+                {stage.calcBase === 'FARE_YQ' && (
+                  <span className="w-full text-[10px] text-amber-600 flex items-center gap-1 mt-0.5">
+                    <Info size={10} className="shrink-0" />
+                    ต้องระบุค่า YQ ใน Stock/PNR — ถ้ายังไม่มี YQ ระบบจะใช้ FARE อย่างเดียว
+                  </span>
+                )}
               </div>
             )}
           </div>
