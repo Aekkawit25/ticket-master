@@ -48,7 +48,10 @@ export interface BulkPnrRow {
   travelStart: string
   travelEnd: string
   seatTotal: number
+  priceFormat: 'FARE' | 'FARE_YQ' | 'ALL_IN'
   fare: number
+  yq: number
+  breakdown: boolean
   taxType: 'separate' | 'included' | 'pending'
   tax: number
   total: number
@@ -83,8 +86,11 @@ type TaxType = 'separate' | 'included' | 'pending'
 interface SharedCfg {
   seatTotal: number
   flightSetId: string
+  priceFormat: 'FARE' | 'FARE_YQ' | 'ALL_IN'
   fare: string
-  taxType: TaxType
+  yq: string
+  allIn: string
+  breakdown: boolean
   tax: string
   conditionCode: string
   status: string
@@ -98,7 +104,8 @@ interface InternalRow {
   rowId: string; seq: number
   travelStart: string; travelEnd: string
   pnrCode: string; dummyPnr: string
-  seatTotal: number; fare: number; taxType: TaxType; tax: number; total: number
+  seatTotal: number; priceFormat: 'FARE' | 'FARE_YQ' | 'ALL_IN'
+  fare: number; yq: number; taxType: TaxType; tax: number; breakdown: boolean; total: number
   conditionCode: string; status: string; remark: string
   isDummy: boolean
   paymentDueDate: string | null; ttlDateTime: string | null
@@ -109,15 +116,11 @@ interface InternalRow {
 
 const DAY_ABBR = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'] as const
 const STATUS_OPTS = ['Pending', 'Confirmed', 'Ticketed', 'Cancelled']
-const TAX_TYPE_OPTS: { v: TaxType; label: string }[] = [
-  { v: 'separate', label: 'แยก Tax' },
-  { v: 'included', label: 'รวมใน Fare' },
-  { v: 'pending',  label: 'รอระบุ' },
-]
 
 const INIT_SHARED: SharedCfg = {
-  seatTotal: 0, flightSetId: '', fare: '', taxType: 'included', tax: '',
-  conditionCode: '', status: 'Pending', remark: '',
+  seatTotal: 0, flightSetId: '',
+  priceFormat: 'FARE', fare: '', yq: '', allIn: '', breakdown: false,
+  tax: '', conditionCode: '', status: 'Pending', remark: '',
 }
 const INIT_COUNT: CountCfg = { startDate: '', count: 1, intervalDays: 1 }
 const INIT_WD: WdCfg = { startDate: '', endDate: '', weekdays: new Set() }
@@ -238,9 +241,33 @@ function buildInternalRows(
     starts = calDates
   }
 
-  const fare   = Math.max(0, Number(shared.fare)  || 0)
-  const tax    = shared.taxType === 'separate' ? Math.max(0, Number(shared.tax) || 0) : 0
-  const cond   = conditions.find(c => c.code === shared.conditionCode)
+  const priceFormat = shared.priceFormat ?? 'FARE'
+  let fareAmt: number, yqAmt: number, taxAmt: number, taxType: TaxType, totalAmt: number, bdwn: boolean
+  if (priceFormat === 'FARE') {
+    fareAmt = Math.max(0, Number(shared.fare) || 0)
+    yqAmt   = Math.max(0, Number(shared.yq)   || 0)
+    taxAmt  = Math.max(0, Number(shared.tax)  || 0)
+    taxType = 'separate'; bdwn = false
+    totalAmt = fareAmt + yqAmt + taxAmt
+  } else if (priceFormat === 'FARE_YQ') {
+    fareAmt = Math.max(0, Number(shared.fare) || 0)
+    yqAmt   = 0
+    taxAmt  = Math.max(0, Number(shared.tax)  || 0)
+    taxType = 'separate'; bdwn = false
+    totalAmt = fareAmt + taxAmt
+  } else {
+    totalAmt = Math.max(0, Number(shared.allIn) || 0)
+    bdwn = shared.breakdown
+    if (bdwn) {
+      fareAmt = Math.max(0, Number(shared.fare) || 0)
+      yqAmt   = Math.max(0, Number(shared.yq)   || 0)
+      taxAmt  = Math.max(0, Number(shared.tax)  || 0)
+      taxType = 'separate'
+    } else {
+      fareAmt = 0; yqAmt = 0; taxAmt = 0; taxType = 'included'
+    }
+  }
+  const cond    = conditions.find(c => c.code === shared.conditionCode)
   const usedSet = new Set<string>()
 
   return starts.map((s, i) => {
@@ -253,7 +280,7 @@ function buildInternalRows(
       pnrCode: '', dummyPnr: dummy,
       isDummy: !!dummy,
       seatTotal: shared.seatTotal,
-      fare, taxType: shared.taxType, tax, total: fare + tax,
+      priceFormat, fare: fareAmt, yq: yqAmt, taxType, tax: taxAmt, breakdown: bdwn, total: totalAmt,
       conditionCode: shared.conditionCode, status: shared.status, remark: shared.remark,
       paymentDueDate: calcPaymentDue(s, travelEnd, cond),
       ttlDateTime: calcTTL(s, travelEnd, cond),
@@ -272,6 +299,7 @@ function validateInternalRows(
   return rows.map((row, idx) => {
     const errors: string[] = []
     if (row.seatTotal <= 0)  errors.push('ที่นั่ง / PNR ต้องมากกว่า 0')
+    if (row.total <= 0)      errors.push('ยอดสุทธิต้องมากกว่า 0')
     if (row.fare < 0)        errors.push('Fare ต้องไม่ติดลบ')
     if (row.taxType === 'separate' && row.tax < 0) errors.push('Tax ต้องไม่ติดลบ')
 
@@ -453,8 +481,6 @@ export function BulkPnrBuilder({
 
   // Bulk toolbar
   const [bSeat, setBSeat]   = useState('')
-  const [bFare, setBFare]   = useState('')
-  const [bTax,  setBTax]    = useState('')
   const [bCond, setBCond]   = useState('')
   const [bStat, setBStat]   = useState('')
 
@@ -482,9 +508,18 @@ export function BulkPnrBuilder({
     return target.dayOffset
   }, [effectiveSectors])
 
-  const fare  = Number(shared.fare)  || 0
-  const tax   = shared.taxType === 'separate' ? Number(shared.tax) || 0 : 0
-  const total = fare + tax
+  const sharedFare  = Number(shared.fare)  || 0
+  const sharedYq    = Number(shared.yq)    || 0
+  const sharedTax   = Number(shared.tax)   || 0
+  const sharedAllIn = Number(shared.allIn) || 0
+  const displayFare = shared.priceFormat === 'ALL_IN' ? sharedAllIn : sharedFare
+  const computedTotal =
+    shared.priceFormat === 'FARE'    ? sharedFare + sharedYq + sharedTax :
+    shared.priceFormat === 'FARE_YQ' ? sharedFare + sharedTax :
+    sharedAllIn
+  const breakdownMismatch = shared.priceFormat === 'ALL_IN' && shared.breakdown
+    ? Math.round(sharedFare * 100) + Math.round(sharedYq * 100) + Math.round(sharedTax * 100) !== Math.round(sharedAllIn * 100)
+    : false
 
   const allSelected = rows.length > 0 && rows.every(r => r.selected)
   const numSelected = rows.filter(r => r.selected).length
@@ -499,7 +534,7 @@ export function BulkPnrBuilder({
     } catch { return 0 }
   }, [method, wdCfg])
 
-  const hasSummaryData = shared.seatTotal > 0 || fare > 0
+  const hasSummaryData = shared.seatTotal > 0 || computedTotal > 0
 
   const hasDateInput =
     method === 'count'   ? !!countCfg.startDate :
@@ -552,13 +587,11 @@ export function BulkPnrBuilder({
     }))
   }
 
-  const applyBulk = (field: 'seat' | 'fare' | 'tax' | 'cond' | 'status') => {
+  const applyBulk = (field: 'seat' | 'cond' | 'status') => {
     setRows(prev => prev.map(r => {
       if (!r.selected) return r
       let m = { ...r }
       if (field === 'seat')   { m.seatTotal = Math.max(1, Number(bSeat) || r.seatTotal) }
-      if (field === 'fare')   { m.fare = Math.max(0, Number(bFare) || 0); m.total = m.fare + (m.taxType === 'separate' ? m.tax : 0) }
-      if (field === 'tax')    { m.tax  = Math.max(0, Number(bTax) || 0);  m.total = m.fare + (m.taxType === 'separate' ? m.tax  : 0) }
       if (field === 'cond') {
         m.conditionCode = bCond
         const cond = conditions.find(c => c.code === bCond)
@@ -602,6 +635,10 @@ export function BulkPnrBuilder({
       if (last.sectorType !== 'Arrival' && last.sectorType !== 'Departure') { setFormErr('Sector สุดท้ายของ Flight Set ต้องเป็น Arrival'); return }
     }
 
+    // Price validation
+    if (computedTotal <= 0) { setFormErr('กรุณาระบุราคา / ยอดสุทธิมากกว่า 0'); return }
+    if (breakdownMismatch)  { setFormErr('Fare + YQ + Tax ไม่เท่ากับ All In / Total'); return }
+
     const calDates = [...calItems].sort((a, b) => a.date.localeCompare(b.date)).map(it => it.date)
     const generated = buildInternalRows(method, shared, countCfg, wdCfg, calDates, effectiveSectors, conditions, stock)
     if (!generated.length) {
@@ -630,7 +667,10 @@ export function BulkPnrBuilder({
       travelStart:   r.travelStart,
       travelEnd:     r.travelEnd,
       seatTotal:     r.seatTotal,
+      priceFormat:   r.priceFormat,
       fare:          r.fare,
+      yq:            r.yq,
+      breakdown:     r.breakdown,
       taxType:       r.taxType,
       tax:           r.tax,
       total:         r.total,
@@ -678,7 +718,10 @@ export function BulkPnrBuilder({
         seatTotal:      r.seatTotal,
         seatUsed:       0,
         seatBalance:    r.seatTotal,
+        priceFormat:    r.priceFormat,
         fare:           r.fare,
+        yq:             r.yq,
+        breakdown:      r.breakdown,
         taxType:        r.taxType,
         tax:            r.tax,
         fareIncludesTax: r.taxType === 'included',
@@ -916,13 +959,19 @@ export function BulkPnrBuilder({
                       </div>
                       {hasSummaryData ? (
                         <p className="mt-0.5 text-[11px] leading-4 text-slate-500">
-                          {shared.seatTotal} ที่นั่ง · Fare {fare.toLocaleString('en-US')} · Tax{' '}
-                          <span className={shared.taxType === 'included' ? 'text-emerald-600' : shared.taxType === 'pending' ? 'text-amber-500' : ''}>
-                            {shared.taxType === 'included' ? 'รวม' : shared.taxType === 'pending' ? 'รอระบุ' : tax.toLocaleString('en-US')}
-                          </span>
-                          {travelDays > 1 && ` · ${travelDays} วัน`}
+                          {shared.seatTotal} ที่นั่ง
                           {' · '}
-                          <span className="font-semibold text-emerald-700">Total {total.toLocaleString('en-US')} {currency}</span>
+                          <span className={`font-semibold px-1.5 py-0.5 rounded-full text-[10px] ${
+                            shared.priceFormat === 'FARE' ? 'bg-slate-100 text-slate-600' :
+                            shared.priceFormat === 'FARE_YQ' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'
+                          }`}>
+                            {shared.priceFormat === 'FARE' ? 'FARE' : shared.priceFormat === 'FARE_YQ' ? 'FARE+YQ' : 'ALL IN'}
+                          </span>
+                          {displayFare > 0 && ` · ${displayFare.toLocaleString('en-US')}`}
+                          {travelDays > 1 && ` · ${travelDays} วัน`}
+                          {computedTotal > 0 && (
+                            <span className="font-semibold text-emerald-700"> · ยอดสุทธิ {computedTotal.toLocaleString('en-US')} {currency}</span>
+                          )}
                         </p>
                       ) : (
                         <p className="mt-0.5 text-[11px] text-slate-400 italic">รอกรอกข้อมูลที่นั่ง / ราคา</p>
@@ -972,33 +1021,132 @@ export function BulkPnrBuilder({
                       </FL>
                     )}
 
-                    {/* Row 2: Fare | Tax Type */}
-                    <FL label={`Fare (${currency})`} required>
-                      <input type="number" min={0} placeholder="0" value={shared.fare}
-                        onChange={e => setShared(s => ({ ...s, fare: e.target.value }))}
-                        className={cn(iCls, 'text-right')} />
-                    </FL>
-                    <FL label="Tax Type" required>
-                      <select value={shared.taxType}
-                        onChange={e => setShared(s => ({ ...s, taxType: e.target.value as TaxType, tax: e.target.value !== 'separate' ? '0' : s.tax }))}
-                        className={iCls}>
-                        {TAX_TYPE_OPTS.map(o => <option key={o.v} value={o.v}>{o.label}</option>)}
-                      </select>
-                    </FL>
+                    {/* Price Format Section */}
+                    <div className="col-span-2 space-y-3">
+                      <FL label="รูปแบบราคาที่ได้รับ" required>
+                        <div className="grid grid-cols-3 overflow-hidden rounded-lg border border-slate-200">
+                          {(['FARE', 'FARE_YQ', 'ALL_IN'] as const).map((fmt, i) => (
+                            <button key={fmt} type="button"
+                              onClick={() => setShared(s => ({ ...s, priceFormat: fmt, fare: '', yq: '', allIn: '', tax: '', breakdown: false }))}
+                              className={cn(
+                                'h-9 text-xs font-medium transition',
+                                i < 2 && 'border-r border-slate-200',
+                                shared.priceFormat === fmt
+                                  ? 'bg-emerald-600 text-white'
+                                  : 'text-slate-600 hover:bg-slate-50'
+                              )}>
+                              {fmt === 'FARE' ? 'FARE' : fmt === 'FARE_YQ' ? 'FARE + YQ' : 'ALL IN'}
+                            </button>
+                          ))}
+                        </div>
+                      </FL>
 
-                    {/* Row 3: Tax | Condition */}
-                    <FL label={`Tax (${currency})`}>
-                      {shared.taxType === 'included' ? (
-                        <div className={cn(iCls, 'flex items-center text-emerald-600 italic bg-emerald-50 border-emerald-200 cursor-default select-none')}>รวมใน Fare</div>
-                      ) : shared.taxType === 'pending' ? (
-                        <div className={cn(iCls, 'flex items-center text-amber-500 italic bg-amber-50 border-amber-200 cursor-default select-none')}>รอระบุ</div>
-                      ) : (
-                        <input type="number" min={0} placeholder="0" value={shared.tax}
-                          onChange={e => setShared(s => ({ ...s, tax: e.target.value }))}
-                          className={cn(iCls, 'text-right')} />
+                      {shared.priceFormat === 'FARE' && (
+                        <div className="grid grid-cols-2 gap-x-3 gap-y-3">
+                          <FL label={`Fare (${currency})`} required>
+                            <input type="number" min={0} placeholder="0" value={shared.fare}
+                              onChange={e => setShared(s => ({ ...s, fare: e.target.value }))}
+                              className={cn(iCls, 'text-right')} />
+                          </FL>
+                          <FL label={`YQ (${currency})`}>
+                            <input type="number" min={0} placeholder="0" value={shared.yq}
+                              onChange={e => setShared(s => ({ ...s, yq: e.target.value }))}
+                              className={cn(iCls, 'text-right')} />
+                          </FL>
+                          <FL label={`Tax (${currency})`}>
+                            <input type="number" min={0} placeholder="0" value={shared.tax}
+                              onChange={e => setShared(s => ({ ...s, tax: e.target.value }))}
+                              className={cn(iCls, 'text-right')} />
+                          </FL>
+                          <FL label={`ยอดสุทธิ (${currency})`}>
+                            <div className={cn(iCls, 'flex items-center justify-end font-bold text-emerald-700 bg-emerald-50 border-emerald-200 cursor-default select-none')}>
+                              {computedTotal > 0 ? computedTotal.toLocaleString('en-US') : '—'}
+                            </div>
+                          </FL>
+                        </div>
                       )}
-                    </FL>
-                    <FL label="Condition">
+
+                      {shared.priceFormat === 'FARE_YQ' && (
+                        <div className="grid grid-cols-2 gap-x-3 gap-y-3">
+                          <FL label={`Fare + YQ (${currency})`} required>
+                            <input type="number" min={0} placeholder="0" value={shared.fare}
+                              onChange={e => setShared(s => ({ ...s, fare: e.target.value }))}
+                              className={cn(iCls, 'text-right')} />
+                          </FL>
+                          <FL label={`Tax (${currency})`}>
+                            <input type="number" min={0} placeholder="0" value={shared.tax}
+                              onChange={e => setShared(s => ({ ...s, tax: e.target.value }))}
+                              className={cn(iCls, 'text-right')} />
+                          </FL>
+                          <FL label={`ยอดสุทธิ (${currency})`} className="col-span-2">
+                            <div className={cn(iCls, 'flex items-center justify-end font-bold text-emerald-700 bg-emerald-50 border-emerald-200 cursor-default select-none')}>
+                              {computedTotal > 0 ? computedTotal.toLocaleString('en-US') : '—'}
+                            </div>
+                          </FL>
+                        </div>
+                      )}
+
+                      {shared.priceFormat === 'ALL_IN' && (
+                        <div className="space-y-2">
+                          <FL label={`All In / Total (${currency})`} required>
+                            <input type="number" min={0} placeholder="0" value={shared.allIn}
+                              onChange={e => setShared(s => ({ ...s, allIn: e.target.value }))}
+                              className={cn(iCls, 'text-right font-bold')} />
+                          </FL>
+                          {!shared.breakdown ? (
+                            <button type="button"
+                              onClick={() => setShared(s => ({ ...s, breakdown: true }))}
+                              className="text-xs text-[#05a94f] hover:text-[#048a40] hover:underline transition-colors">
+                              + เพิ่มรายละเอียด Fare / YQ / Tax
+                            </button>
+                          ) : (
+                            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
+                              <div className="flex items-center justify-between">
+                                <p className="text-[11px] font-semibold text-slate-600">รายละเอียด Fare / YQ / Tax</p>
+                                <button type="button"
+                                  onClick={() => setShared(s => ({ ...s, breakdown: false, fare: '', yq: '', tax: '' }))}
+                                  className="text-[10px] text-slate-400 hover:text-red-500 transition-colors">
+                                  ✕ ยกเลิก
+                                </button>
+                              </div>
+                              <div className="grid grid-cols-3 gap-2">
+                                <FL label={`Fare`}>
+                                  <input type="number" min={0} placeholder="0" value={shared.fare}
+                                    onChange={e => setShared(s => ({ ...s, fare: e.target.value }))}
+                                    className={cn(iCls, 'text-right text-xs h-9')} />
+                                </FL>
+                                <FL label={`YQ`}>
+                                  <input type="number" min={0} placeholder="0" value={shared.yq}
+                                    onChange={e => setShared(s => ({ ...s, yq: e.target.value }))}
+                                    className={cn(iCls, 'text-right text-xs h-9')} />
+                                </FL>
+                                <FL label={`Tax`}>
+                                  <input type="number" min={0} placeholder="0" value={shared.tax}
+                                    onChange={e => setShared(s => ({ ...s, tax: e.target.value }))}
+                                    className={cn(iCls, 'text-right text-xs h-9')} />
+                                </FL>
+                              </div>
+                              {(() => {
+                                const detailSum = (Number(shared.fare)||0) + (Number(shared.yq)||0) + (Number(shared.tax)||0)
+                                const allInTotal = Number(shared.allIn) || 0
+                                const centDiff = Math.round(allInTotal*100) - Math.round((Number(shared.fare)||0)*100) - Math.round((Number(shared.yq)||0)*100) - Math.round((Number(shared.tax)||0)*100)
+                                return (
+                                  <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-200">
+                                    <span className="text-slate-500">รวมจากรายละเอียด: <strong>{detailSum.toLocaleString('en-US')}</strong></span>
+                                    <span className={cn('font-semibold', centDiff === 0 ? 'text-emerald-600' : 'text-red-500')}>
+                                      ส่วนต่าง: {centDiff === 0 ? '0' : (allInTotal - detailSum).toLocaleString('en-US')}{centDiff !== 0 && ' ⚠'}
+                                    </span>
+                                  </div>
+                                )
+                              })()}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Condition */}
+                    <FL label="Condition" className="col-span-2">
                       <select value={shared.conditionCode}
                         onChange={e => setShared(s => ({ ...s, conditionCode: e.target.value }))}
                         className={iCls}>
@@ -1064,8 +1212,6 @@ export function BulkPnrBuilder({
                   <span className="text-xs font-semibold text-blue-700">เลือก {numSelected} รายการ — แก้ไขพร้อมกัน:</span>
                   {[
                     { label: 'Seat', state: bSeat, set: setBSeat, field: 'seat' as const, w: 'w-16', type: 'number' },
-                    { label: 'Fare', state: bFare, set: setBFare, field: 'fare' as const, w: 'w-24', type: 'number' },
-                    { label: 'Tax',  state: bTax,  set: setBTax,  field: 'tax'  as const, w: 'w-24', type: 'number' },
                   ].map(item => (
                     <div key={item.label} className="flex items-center gap-1.5">
                       <span className="text-xs text-blue-600 font-medium">{item.label}:</span>
@@ -1111,14 +1257,14 @@ export function BulkPnrBuilder({
                         <input type="checkbox" checked={allSelected} onChange={toggleAll}
                           className="rounded border-slate-300 text-emerald-600" />
                       </th>
-                      {['#','PNR / Dummy','Travel Start','Travel End','Seat','Fare','Tax','Total','Condition','Payment Due','TTL','Status',''].map(h => (
+                      {['#','PNR / Dummy','Travel Start','Travel End','Seat','รูปแบบราคา','Fare ที่ได้รับ','YQ / Tax เพิ่มเติม','ยอดสุทธิ','Condition','Payment Due','TTL','Status',''].map(h => (
                         <th key={h} className="px-2 h-10 text-xs font-semibold text-slate-500 text-left whitespace-nowrap">{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {rows.length === 0 && (
-                      <tr><td colSpan={14} className="py-12 text-center text-sm text-slate-400">ไม่มีรายการ — ย้อนกลับเพื่อเลือกวัน</td></tr>
+                      <tr><td colSpan={15} className="py-12 text-center text-sm text-slate-400">ไม่มีรายการ — ย้อนกลับเพื่อเลือกวัน</td></tr>
                     )}
                     {rows.map(row => {
                       const hasErr = row.errors.length > 0
@@ -1159,24 +1305,31 @@ export function BulkPnrBuilder({
                               onChange={e => updateRow(row.rowId, { seatTotal: Math.max(1, Number(e.target.value)) })}
                               className="w-14 h-7 border border-slate-300 rounded-lg px-2 text-xs text-center focus:outline-none focus:ring-1 focus:ring-emerald-500" />
                           </td>
-                          {/* Fare */}
-                          <td className="px-1 py-2">
-                            <input type="number" min={0} value={row.fare}
-                              onChange={e => updateRow(row.rowId, { fare: Number(e.target.value) || 0 })}
-                              className="w-20 h-7 border border-slate-300 rounded-lg px-2 text-xs text-right focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+                          {/* รูปแบบราคา */}
+                          <td className="px-2 py-2 text-center">
+                            <span className={cn(
+                              'text-[9px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap',
+                              row.priceFormat === 'FARE'    ? 'bg-slate-100 text-slate-600' :
+                              row.priceFormat === 'FARE_YQ' ? 'bg-amber-100 text-amber-700' :
+                                                               'bg-blue-100 text-blue-700'
+                            )}>
+                              {row.priceFormat === 'FARE' ? 'FARE' : row.priceFormat === 'FARE_YQ' ? 'FARE+YQ' : 'ALL IN'}
+                            </span>
                           </td>
-                          {/* Tax */}
-                          <td className="px-1 py-2">
-                            {row.taxType === 'separate'
-                              ? <input type="number" min={0} value={row.tax}
-                                  onChange={e => updateRow(row.rowId, { tax: Number(e.target.value) || 0 })}
-                                  className="w-20 h-7 border border-slate-300 rounded-lg px-2 text-xs text-right focus:outline-none focus:ring-1 focus:ring-emerald-500" />
-                              : <span className={cn('text-[10px] italic whitespace-nowrap', row.taxType === 'included' ? 'text-emerald-600' : 'text-amber-500')}>
-                                  {row.taxType === 'included' ? 'รวมใน Fare' : 'รอระบุ'}
-                                </span>}
+                          {/* Fare ที่ได้รับ */}
+                          <td className="px-2 py-2 text-xs text-right font-semibold tabular-nums whitespace-nowrap">
+                            {(row.priceFormat === 'ALL_IN' ? row.total : row.fare).toLocaleString('en-US')}
                           </td>
-                          {/* Total */}
-                          <td className="px-2 py-2 text-xs font-bold text-right text-emerald-700 bg-emerald-50/60 whitespace-nowrap">
+                          {/* YQ / Tax เพิ่มเติม */}
+                          <td className="px-2 py-2 text-[10px] text-slate-500 whitespace-nowrap">
+                            {row.priceFormat === 'FARE' && row.yq === 0 && row.tax === 0 && <span className="italic text-slate-300">ไม่มี</span>}
+                            {row.priceFormat === 'FARE' && (row.yq > 0 || row.tax > 0) && `YQ ${row.yq.toLocaleString('en-US')} / Tax ${row.tax.toLocaleString('en-US')}`}
+                            {row.priceFormat === 'FARE_YQ' && row.tax === 0 && <span className="italic text-slate-300">ไม่มี</span>}
+                            {row.priceFormat === 'FARE_YQ' && row.tax > 0 && `Tax ${row.tax.toLocaleString('en-US')}`}
+                            {row.priceFormat === 'ALL_IN' && <span className="text-slate-400">รวมทั้งหมดแล้ว</span>}
+                          </td>
+                          {/* ยอดสุทธิ */}
+                          <td className="px-2 py-2 text-xs font-bold text-right tabular-nums text-slate-800 bg-emerald-50/60 whitespace-nowrap">
                             {row.total > 0 ? row.total.toLocaleString('en-US') : '—'}
                           </td>
                           {/* Condition */}

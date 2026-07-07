@@ -223,6 +223,9 @@ export interface FlightPNRFormData {
   tax_type: TaxType
   tax: number
   total_amount: number
+  price_format?: 'FARE' | 'FARE_YQ' | 'ALL_IN'
+  yq?: number
+  breakdown?: boolean
   condition_id: string
   status: PNRStatus
   remark: string
