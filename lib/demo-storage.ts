@@ -327,7 +327,9 @@ export interface DemoPNR {
   seatTotal: number
   seatUsed: number
   seatBalance: number
+  priceFormat?: 'FARE' | 'FARE_YQ' | 'ALL_IN'
   fare: number
+  yq?: number
   taxType: string
   tax: number
   fareIncludesTax: boolean
@@ -1094,7 +1096,7 @@ export function buildPaymentSchedule(stock: DemoStock): PaymentScheduleItem[] {
           amount = stage.amount
           break
         case 'PERCENT_OF_BASE': {
-          const yq = (pnr as { yq?: number }).yq ?? 0
+          const yq = pnr.yq ?? 0
           const base =
             stage.calcBase === 'FARE'     ? pnr.fare :
             stage.calcBase === 'FARE_TAX' ? (pnr.fare + pnr.tax) :

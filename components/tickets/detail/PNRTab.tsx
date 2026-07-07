@@ -31,9 +31,11 @@ interface PNRRow {
   seat_used: number
   seat_balance: number
   fare: number
+  yq: number
   tax_type: string
   tax: number
   total_amount: number
+  price_format: 'FARE' | 'FARE_YQ' | 'ALL_IN'
   condition: string | null
   condition_code: string | null
   next_ttl: string | null
@@ -45,7 +47,11 @@ interface PNRFormState {
   travelStart: string
   flightSetId: string
   seatTotal: string
+  priceFormat: 'FARE' | 'FARE_YQ' | 'ALL_IN'
   fare: string
+  yq: string
+  allIn: string
+  breakdown: boolean
   taxType: string
   tax: string
   conditionCode: string
@@ -54,7 +60,8 @@ interface PNRFormState {
 }
 
 const EMPTY_FORM: PNRFormState = {
-  pnrCode: '', travelStart: '', flightSetId: '', seatTotal: '', fare: '',
+  pnrCode: '', travelStart: '', flightSetId: '', seatTotal: '',
+  priceFormat: 'FARE', fare: '', yq: '', allIn: '', breakdown: false,
   taxType: 'separate', tax: '', conditionCode: '', status: 'Pending', remark: '',
 }
 
@@ -383,12 +390,18 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
   const openEdit = (pnr: DemoPNR) => {
     const firstFlightSetId = liveStock ? getStockFlightSets(liveStock)[0]?.flightSetId ?? '' : ''
     setEditingPnrId(pnr.pnrId)
+    const fmt = pnr.priceFormat ?? 'FARE'
+    const hasBreakdown = fmt === 'ALL_IN' && pnr.fare > 0
     setForm({
       pnrCode:       pnr.pnrCode || '',
       travelStart:   pnr.travelStart || '',
       flightSetId:   pnr.flightSetId || firstFlightSetId,
       seatTotal:     String(pnr.seatTotal),
-      fare:          String(pnr.fare),
+      priceFormat:   fmt,
+      fare:          fmt === 'ALL_IN' && !hasBreakdown ? '' : String(pnr.fare),
+      yq:            String(pnr.yq ?? 0),
+      allIn:         fmt === 'ALL_IN' ? String(pnr.total) : '',
+      breakdown:     hasBreakdown,
       taxType:       pnr.taxType || 'separate',
       tax:           String(pnr.tax),
       conditionCode: pnr.conditionCode || '',
@@ -413,10 +426,35 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
     const stock = liveStock!
     const travelStart  = form.travelStart
     const seatTotal    = Number(form.seatTotal)
-    const fare         = Number(form.fare)
-    const taxType      = form.taxType
-    const tax          = taxType === 'separate' ? Number(form.tax) : 0
-    const total        = taxType === 'separate' ? fare + tax : fare
+    const priceFormat  = form.priceFormat ?? 'FARE'
+
+    let fare: number, yqAmt: number, tax: number, total: number, taxType: string
+    if (priceFormat === 'FARE_YQ') {
+      fare    = Number(form.fare) || 0
+      yqAmt   = Number(form.yq)  || 0
+      tax     = Number(form.tax) || 0
+      taxType = 'separate'
+      total   = fare + yqAmt + tax
+    } else if (priceFormat === 'ALL_IN') {
+      total   = Number(form.allIn) || 0
+      if (form.breakdown) {
+        fare    = Number(form.fare) || 0
+        yqAmt   = Number(form.yq)  || 0
+        tax     = Number(form.tax) || 0
+        taxType = 'separate'
+      } else {
+        fare    = 0
+        yqAmt   = 0
+        tax     = 0
+        taxType = 'included'
+      }
+    } else { // FARE
+      fare    = Number(form.fare) || 0
+      yqAmt   = 0
+      taxType = form.taxType || 'separate'
+      tax     = taxType === 'separate' ? (Number(form.tax) || 0) : 0
+      total   = fare + tax
+    }
     const isReal       = !!form.pnrCode.trim()
     const pnrCode      = isReal ? form.pnrCode.trim() : ''
     const pnrDisplay   = isReal ? pnrCode : (existingPnr?.dummyPnr || generateDummy(travelStart, stock))
@@ -472,7 +510,9 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
       seatTotal,
       seatUsed:       existingPnr?.seatUsed ?? 0,
       seatBalance:    seatTotal - (existingPnr?.seatUsed ?? 0),
+      priceFormat,
       fare,
+      yq:             yqAmt,
       taxType,
       tax,
       fareIncludesTax: taxType === 'included',
@@ -491,9 +531,16 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
     const errs: Record<string, string> = {}
     if (!form.travelStart) errs.travelStart = 'กรุณาระบุ Travel Start'
     if (!form.seatTotal || Number(form.seatTotal) <= 0) errs.seatTotal = 'กรุณาระบุ Seat Total (> 0)'
-    if (form.fare === '' || isNaN(Number(form.fare)) || Number(form.fare) < 0) errs.fare = 'กรุณาระบุ Fare (≥ 0)'
-    if (form.taxType === 'separate' && (form.tax === '' || isNaN(Number(form.tax)) || Number(form.tax) < 0)) {
-      errs.tax = 'กรุณาระบุ Tax (≥ 0)'
+    const fmt = form.priceFormat ?? 'FARE'
+    if (fmt === 'FARE') {
+      if (form.fare === '' || isNaN(Number(form.fare)) || Number(form.fare) < 0) errs.fare = 'กรุณาระบุ Fare (≥ 0)'
+      if (form.taxType === 'separate' && (form.tax === '' || isNaN(Number(form.tax)) || Number(form.tax) < 0))
+        errs.tax = 'กรุณาระบุ Tax (≥ 0)'
+    } else if (fmt === 'FARE_YQ') {
+      if (form.fare === '' || isNaN(Number(form.fare)) || Number(form.fare) < 0) errs.fare = 'กรุณาระบุ Fare (≥ 0)'
+      if (form.yq === '' || isNaN(Number(form.yq)) || Number(form.yq) < 0) errs.yq = 'กรุณาระบุ YQ (≥ 0)'
+    } else { // ALL_IN
+      if (form.allIn === '' || isNaN(Number(form.allIn)) || Number(form.allIn) <= 0) errs.allIn = 'กรุณาระบุ All In (> 0)'
     }
     if (form.pnrCode.trim()) {
       const dup = checkPNRDuplicatesInSystem([{ pnr_code: form.pnrCode.trim() }])
@@ -916,9 +963,11 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
         seat_total: p.seatTotal,
         seat_used: p.seatUsed,
         seat_balance: p.seatBalance,
-        fare: p.fare,
+        price_format: p.priceFormat ?? 'FARE',
+        fare: p.priceFormat === 'ALL_IN' ? p.total : p.fare,
+        yq: p.yq ?? 0,
         tax_type: p.taxType,
-        tax: p.tax,
+        tax: p.priceFormat === 'FARE_YQ' ? (p.yq ?? 0) + p.tax : p.tax,
         total_amount: p.total,
         condition: liveStock.conditions.find(c => c.condition.conditionCode === p.conditionCode)?.condition.conditionName || null,
         condition_code: p.conditionCode || null,
@@ -1041,7 +1090,7 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
               <Th className="text-right">Used</Th>
               <Th className="text-right">Bal.</Th>
               <Th className="text-right">Fare</Th>
-              <Th className="text-right">Tax</Th>
+              <Th className="text-right">Tax/YQ</Th>
               <Th className="text-right">Total</Th>
               <Th>Condition</Th>
               <Th>TTL Date</Th>
@@ -1087,7 +1136,17 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                         {p.seat_balance}
                       </span>
                     </Td>
-                    <Td className="text-right text-xs">{formatNumber(p.fare)}</Td>
+                    <Td className="text-right text-xs">
+                      <div className="flex flex-col items-end gap-0.5">
+                        {formatNumber(p.fare)}
+                        {p.price_format === 'ALL_IN' && (
+                          <span className="text-[9px] bg-blue-100 text-blue-600 font-bold px-1.5 py-0 rounded-full leading-4">ALL IN</span>
+                        )}
+                        {p.price_format === 'FARE_YQ' && (
+                          <span className="text-[9px] bg-amber-100 text-amber-600 font-bold px-1.5 py-0 rounded-full leading-4">+YQ</span>
+                        )}
+                      </div>
+                    </Td>
                     <Td className="text-right text-xs"><TaxCell taxType={p.tax_type} tax={p.tax} /></Td>
                     <Td className="text-right text-xs font-bold">{formatNumber(p.total_amount)}</Td>
                     <Td className="text-xs">
@@ -1255,46 +1314,159 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
             </div>
           </div>
 
-          {/* Fare + Tax */}
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">Fare ({currency}) <span className="text-red-500">*</span></label>
-              <input type="number" min="0" placeholder="0" value={form.fare}
-                onChange={e => setForm(f => ({ ...f, fare: e.target.value }))}
-                className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30 ${errors.fare ? 'border-red-400' : 'border-slate-300'}`}
-              />
-              {errors.fare && <p className="text-xs text-red-500 mt-1">{errors.fare}</p>}
+          {/* Price Format Selector */}
+          <div>
+            <label className="block text-xs font-medium text-slate-700 mb-1.5">รูปแบบราคาที่ได้รับ</label>
+            <div className="flex gap-2">
+              {([
+                { v: 'FARE',    label: 'FARE',        desc: 'ค่าตั๋วอย่างเดียว' },
+                { v: 'FARE_YQ', label: 'FARE + YQ',   desc: 'Fare + ค่าน้ำมัน YQ' },
+                { v: 'ALL_IN',  label: 'ALL IN',       desc: 'รวมภาษีทั้งหมด' },
+              ] as const).map(opt => (
+                <button
+                  key={opt.v}
+                  type="button"
+                  onClick={() => setForm(f => ({ ...f, priceFormat: opt.v }))}
+                  className={`flex-1 border-2 rounded-lg px-2 py-2 text-center transition-all ${
+                    form.priceFormat === opt.v
+                      ? 'border-[#05a94f] bg-emerald-50 text-[#05a94f]'
+                      : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'
+                  }`}
+                >
+                  <div className="text-xs font-bold">{opt.label}</div>
+                  <div className="text-[10px] opacity-60">{opt.desc}</div>
+                </button>
+              ))}
             </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">Tax Type</label>
-              <select value={form.taxType} onChange={e => setForm(f => ({ ...f, taxType: e.target.value }))}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30">
-                <option value="separate">แยก Tax</option>
-                <option value="included">รวมใน Fare</option>
-                <option value="pending">รอระบุ</option>
-              </select>
-            </div>
-            {form.taxType === 'separate' && (
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">Tax ({currency}) <span className="text-red-500">*</span></label>
-                <input type="number" min="0" placeholder="0" value={form.tax}
-                  onChange={e => setForm(f => ({ ...f, tax: e.target.value }))}
-                  className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30 ${errors.tax ? 'border-red-400' : 'border-slate-300'}`}
-                />
-                {errors.tax && <p className="text-xs text-red-500 mt-1">{errors.tax}</p>}
-              </div>
-            )}
           </div>
 
-          {/* Total preview */}
-          {form.fare !== '' && (
-            <div className="bg-slate-50 rounded-lg px-3 py-2 text-xs flex items-center justify-between">
-              <span className="text-slate-500">Total ({currency})</span>
-              <span className="font-bold text-slate-800">
-                {formatNumber(
-                  (Number(form.fare) || 0) + (form.taxType === 'separate' ? Number(form.tax) || 0 : 0),
-                  0
-                )}
+          {/* FARE mode */}
+          {form.priceFormat === 'FARE' && (
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">Fare ({currency}) <span className="text-red-500">*</span></label>
+                <input type="number" min="0" placeholder="0" value={form.fare}
+                  onChange={e => setForm(f => ({ ...f, fare: e.target.value }))}
+                  className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30 ${errors.fare ? 'border-red-400' : 'border-slate-300'}`}
+                />
+                {errors.fare && <p className="text-xs text-red-500 mt-1">{errors.fare}</p>}
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">รายละเอียดภาษี/ค่าธรรมเนียม</label>
+                <select value={form.taxType} onChange={e => setForm(f => ({ ...f, taxType: e.target.value }))}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30">
+                  <option value="separate">แยก Tax</option>
+                  <option value="included">รวมใน Fare</option>
+                  <option value="pending">รอระบุ</option>
+                </select>
+              </div>
+              {form.taxType === 'separate' && (
+                <div>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">Tax ({currency}) <span className="text-red-500">*</span></label>
+                  <input type="number" min="0" placeholder="0" value={form.tax}
+                    onChange={e => setForm(f => ({ ...f, tax: e.target.value }))}
+                    className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30 ${errors.tax ? 'border-red-400' : 'border-slate-300'}`}
+                  />
+                  {errors.tax && <p className="text-xs text-red-500 mt-1">{errors.tax}</p>}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* FARE + YQ mode */}
+          {form.priceFormat === 'FARE_YQ' && (
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">Fare ({currency}) <span className="text-red-500">*</span></label>
+                <input type="number" min="0" placeholder="0" value={form.fare}
+                  onChange={e => setForm(f => ({ ...f, fare: e.target.value }))}
+                  className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30 ${errors.fare ? 'border-red-400' : 'border-slate-300'}`}
+                />
+                {errors.fare && <p className="text-xs text-red-500 mt-1">{errors.fare}</p>}
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">YQ ({currency}) <span className="text-red-500">*</span></label>
+                <input type="number" min="0" placeholder="0" value={form.yq}
+                  onChange={e => setForm(f => ({ ...f, yq: e.target.value }))}
+                  className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30 ${errors.yq ? 'border-red-400' : 'border-slate-300'}`}
+                />
+                {errors.yq && <p className="text-xs text-red-500 mt-1">{errors.yq}</p>}
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">Tax อื่น ๆ ({currency})</label>
+                <input type="number" min="0" placeholder="0 (optional)" value={form.tax}
+                  onChange={e => setForm(f => ({ ...f, tax: e.target.value }))}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* ALL IN mode */}
+          {form.priceFormat === 'ALL_IN' && (
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">All In / Total ({currency}) <span className="text-red-500">*</span></label>
+                <input type="number" min="0" placeholder="0" value={form.allIn}
+                  onChange={e => setForm(f => ({ ...f, allIn: e.target.value }))}
+                  className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30 ${errors.allIn ? 'border-red-400' : 'border-slate-300'}`}
+                />
+                {errors.allIn && <p className="text-xs text-red-500 mt-1">{errors.allIn}</p>}
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={form.breakdown} onChange={e => setForm(f => ({ ...f, breakdown: e.target.checked }))}
+                  className="rounded border-slate-300 accent-[#05a94f]"
+                />
+                <span className="text-xs text-slate-600">ระบุรายละเอียด Fare / YQ / Tax</span>
+              </label>
+              {form.breakdown && (
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">Fare ({currency})</label>
+                    <input type="number" min="0" placeholder="0" value={form.fare}
+                      onChange={e => setForm(f => ({ ...f, fare: e.target.value }))}
+                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">YQ ({currency})</label>
+                    <input type="number" min="0" placeholder="0" value={form.yq}
+                      onChange={e => setForm(f => ({ ...f, yq: e.target.value }))}
+                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">Tax อื่น ๆ ({currency})</label>
+                    <input type="number" min="0" placeholder="0" value={form.tax}
+                      onChange={e => setForm(f => ({ ...f, tax: e.target.value }))}
+                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30"
+                    />
+                  </div>
+                </div>
+              )}
+              {form.breakdown && form.allIn !== '' && (
+                (() => {
+                  const bkSum = (Number(form.fare)||0) + (Number(form.yq)||0) + (Number(form.tax)||0)
+                  const allIn = Number(form.allIn)||0
+                  return bkSum !== allIn && allIn > 0 ? (
+                    <div className="flex items-center gap-1.5 text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+                      <AlertTriangle size={11} />
+                      <span>Fare + YQ + Tax = {formatNumber(bkSum)} ≠ All In {formatNumber(allIn)}</span>
+                    </div>
+                  ) : null
+                })()
+              )}
+            </div>
+          )}
+
+          {/* Total preview (readonly) */}
+          {(form.priceFormat === 'FARE' ? form.fare !== '' : form.priceFormat === 'FARE_YQ' ? form.fare !== '' || form.yq !== '' : form.allIn !== '') && (
+            <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs flex items-center justify-between">
+              <span className="text-slate-500 font-medium">Total ({currency})</span>
+              <span className="font-bold text-slate-800 text-sm">
+                {form.priceFormat === 'FARE' && formatNumber((Number(form.fare)||0) + (form.taxType === 'separate' ? Number(form.tax)||0 : 0))}
+                {form.priceFormat === 'FARE_YQ' && formatNumber((Number(form.fare)||0) + (Number(form.yq)||0) + (Number(form.tax)||0))}
+                {form.priceFormat === 'ALL_IN' && formatNumber(Number(form.allIn)||0)}
               </span>
             </div>
           )}
