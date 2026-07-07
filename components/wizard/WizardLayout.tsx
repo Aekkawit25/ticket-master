@@ -23,6 +23,7 @@ interface WizardLayoutProps {
   saving?: boolean
   isLastStep?: boolean
   confirmDisabled?: boolean
+  nextDisabled?: boolean
   cancelHref?: string
   onBack: () => void
   onNext: () => void
@@ -47,6 +48,7 @@ export default function WizardLayout({
   saving,
   isLastStep = false,
   confirmDisabled = false,
+  nextDisabled = false,
   cancelHref = '/tickets',
   onBack,
   onNext,
@@ -138,7 +140,7 @@ export default function WizardLayout({
             Confirm & Save
           </Button>
         ) : (
-          <Button icon={<ChevronRight size={16} />} onClick={onNext}>
+          <Button icon={<ChevronRight size={16} />} onClick={onNext} disabled={nextDisabled}>
             ถัดไป
           </Button>
         )}

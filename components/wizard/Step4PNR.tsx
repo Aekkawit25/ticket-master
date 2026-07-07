@@ -141,6 +141,7 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
   const [importOpen, setImportOpen] = useState(false)
   const [priceEditIdx, setPriceEditIdx] = useState<number | null>(null)
   const [priceForm, setPriceForm] = useState<PriceForm | null>(null)
+  const [deleteConfirmIdx, setDeleteConfirmIdx] = useState<number | null>(null)
 
   // Collect all existing PNR codes for duplicate check (current draft + system)
   const existingPnrCodes = useMemo(() => {
@@ -324,8 +325,13 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
   }))
 
   const deleteRow = (idx: number) => {
-    if (pnrs.length <= 1) return
-    onChange(pnrs.filter((_, i) => i !== idx))
+    setDeleteConfirmIdx(idx)
+  }
+
+  const confirmDelete = () => {
+    if (deleteConfirmIdx === null) return
+    onChange(pnrs.filter((_, i) => i !== deleteConfirmIdx))
+    setDeleteConfirmIdx(null)
   }
 
   const duplicateRow = (idx: number) => {
@@ -433,8 +439,28 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
               {/* Empty state */}
               {pnrs.length === 0 && (
                 <tr>
-                  <td colSpan={16} className="border border-slate-200 text-center py-10 text-slate-400">
-                    ยังไม่มี PNR — กดปุ่ม &ldquo;เพิ่ม PNR&rdquo; ด้านบน
+                  <td colSpan={16} className="border border-slate-200 py-12 px-4">
+                    <div className="flex flex-col items-center gap-3">
+                      <div className="text-slate-200">
+                        <PlusCircle size={36} strokeWidth={1} />
+                      </div>
+                      <div className="text-center">
+                        <p className="text-sm font-semibold text-slate-500">ยังไม่มีรายการ PNR</p>
+                        <p className="text-xs text-slate-400 mt-1">กรุณาเพิ่ม PNR อย่างน้อย 1 รายการก่อนดำเนินการต่อ</p>
+                      </div>
+                      <div className="flex items-center gap-2 mt-1">
+                        <button type="button" onClick={addRow}
+                          className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-[#05a94f] hover:bg-[#048f43] rounded-lg transition-colors shadow-sm">
+                          <PlusCircle size={13} />
+                          + เพิ่ม PNR
+                        </button>
+                        <button type="button" onClick={() => setBulkOpen(true)}
+                          className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-[#05a94f] border border-[#05a94f] hover:bg-green-50 rounded-lg transition-colors">
+                          <CalendarDays size={13} />
+                          หลาย PNR
+                        </button>
+                      </div>
+                    </div>
                   </td>
                 </tr>
               )}
@@ -648,12 +674,8 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
                           <Copy size={12} />
                         </button>
                         <button type="button" onClick={() => deleteRow(idx)}
-                          title={pnrs.length <= 1 ? 'ต้องมีอย่างน้อย 1 PNR' : 'ลบ PNR นี้'}
-                          disabled={pnrs.length <= 1}
-                          className={cn(
-                            'p-1.5 rounded transition-colors',
-                            pnrs.length <= 1 ? 'text-slate-200 cursor-not-allowed' : 'text-slate-300 hover:text-red-500 hover:bg-red-50'
-                          )}>
+                          title="ลบ PNR นี้"
+                          className="p-1.5 rounded transition-colors text-slate-300 hover:text-red-500 hover:bg-red-50">
                           <Trash2 size={12} />
                         </button>
                       </div>
@@ -703,6 +725,29 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
           <span className="ml-auto text-slate-300 shrink-0">* จำเป็นต้องกรอก</span>
         </div>
       </div>
+
+      {/* ─── Delete Confirm Modal ────────────────────────────────────── */}
+      <Modal
+        open={deleteConfirmIdx !== null}
+        onClose={() => setDeleteConfirmIdx(null)}
+        title="ยืนยันการลบ PNR"
+        size="sm"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setDeleteConfirmIdx(null)}>ยกเลิก</Button>
+            <Button variant="danger" onClick={confirmDelete}>ลบ PNR นี้</Button>
+          </div>
+        }
+      >
+        <p className="text-sm text-slate-600">
+          คุณต้องการลบ PNR รายการที่ <strong>{deleteConfirmIdx !== null ? deleteConfirmIdx + 1 : ''}</strong> ออกจากรายการหรือไม่?
+        </p>
+        {pnrs.length === 1 && (
+          <p className="mt-2 text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2">
+            นี่คือ PNR รายการสุดท้าย หากลบแล้วจะต้องเพิ่ม PNR ใหม่ก่อนดำเนินการต่อ
+          </p>
+        )}
+      </Modal>
 
       {/* ─── Price Edit Modal ─────────────────────────────────────────── */}
       {priceEditIdx !== null && priceForm && (() => {

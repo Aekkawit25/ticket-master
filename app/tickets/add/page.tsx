@@ -102,6 +102,11 @@ function AddStockPageInner() {
     return checkPNRDuplicatesInSystem(pnrsToCheck).hasConflicts
   }, [step, state.pnrs])
 
+  const nextDisabled = step === 4 && (
+    state.pnrs.length === 0 ||
+    state.pnrs.some(p => !p.travel_start || (p.seat_total ?? 0) <= 0 || (p.total_amount ?? 0) <= 0)
+  )
+
   const updateStockInfo = useCallback((patch: Partial<FlightSeriesFormData>) => {
     setState(prev => {
       const updated = { ...prev.stockInfo, ...patch }
@@ -208,6 +213,7 @@ function AddStockPageInner() {
         saving={saving}
         isLastStep={step === 5}
         confirmDisabled={hasDuplicatePNRs}
+        nextDisabled={nextDisabled}
         onBack={goBack}
         onNext={goNext}
         onSaveDraft={saveDraft}
