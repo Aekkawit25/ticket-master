@@ -539,10 +539,15 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
     } else { // ALL_IN
       if (form.allIn === '' || isNaN(Number(form.allIn)) || Number(form.allIn) <= 0) errs.allIn = 'กรุณาระบุ All In (> 0)'
       if (form.breakdown) {
-        const bkSum = (Number(form.fare)||0) + (Number(form.yq)||0) + (Number(form.tax)||0)
-        const allIn = Number(form.allIn)||0
-        if (allIn > 0 && bkSum !== allIn)
-          errs.breakdown = `Fare + YQ + Tax (${formatNumber(bkSum)}) ≠ All In (${formatNumber(allIn)})`
+        const fareC  = Math.round((Number(form.fare)||0) * 100)
+        const yqC    = Math.round((Number(form.yq)||0)  * 100)
+        const taxC   = Math.round((Number(form.tax)||0)  * 100)
+        const allInC = Math.round((Number(form.allIn)||0) * 100)
+        const bkC    = fareC + yqC + taxC
+        if (allInC > 0 && bkC !== allInC) {
+          const diff = (bkC - allInC) / 100
+          errs.breakdown = `ส่วนต่าง ${diff > 0 ? '+' : ''}${formatNumber(diff)} — รวม Fare+YQ+Tax ต้องเท่ากับ All In`
+        }
       }
     }
     if (form.pnrCode.trim()) {
@@ -1031,6 +1036,10 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
     showToast(newCode ? `เปลี่ยน Condition เป็น "${condName}" (${pnrIds.length} PNR)` : `ลบ Condition ออก (${pnrIds.length} PNR)`)
   }
 
+  const breakdownMismatch = form.priceFormat === 'ALL_IN' && form.breakdown
+    ? Math.round((Number(form.fare)||0)*100) + Math.round((Number(form.yq)||0)*100) + Math.round((Number(form.tax)||0)*100) !== Math.round((Number(form.allIn)||0)*100)
+    : false
+
   return (
     <div className="space-y-3">
       {/* Toast */}
@@ -1230,7 +1239,7 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
         footer={
           <>
             <Button variant="ghost" onClick={closeModal}>ยกเลิก</Button>
-            <Button onClick={handleSavePNR} disabled={saving}>
+            <Button onClick={handleSavePNR} disabled={saving || breakdownMismatch}>
               {saving ? 'กำลังบันทึก...' : editingPnrId ? 'บันทึกการเปลี่ยนแปลง' : 'เพิ่ม PNR'}
             </Button>
           </>
@@ -1402,58 +1411,97 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                 </div>
               )}
 
-              {/* ALL IN mode: total input + optional breakdown */}
-              {form.priceFormat === 'ALL_IN' && (
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-xs font-medium text-slate-700 mb-1">All In / Total ({currency}) <span className="text-red-500">*</span></label>
-                    <input type="number" min="0" placeholder="0" value={form.allIn}
-                      onChange={e => setForm(f => ({ ...f, allIn: e.target.value }))}
-                      className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30 ${errors.allIn ? 'border-red-400' : 'border-slate-300'}`}
-                    />
-                    {errors.allIn && <p className="text-xs text-red-500 mt-1">{errors.allIn}</p>}
-                  </div>
-                  <label className="flex items-center gap-2 cursor-pointer select-none">
-                    <input type="checkbox" checked={form.breakdown}
-                      onChange={e => setForm(f => ({ ...f, breakdown: e.target.checked, fare: '', yq: '', tax: '' }))}
-                      className="rounded border-slate-300 accent-[#05a94f]"
-                    />
-                    <span className="text-xs text-slate-600">ต้องการแยกรายละเอียด Fare / YQ / Tax</span>
-                  </label>
-                  {form.breakdown && (
-                    <div className="space-y-2.5 pl-5">
-                      <div className="grid grid-cols-3 gap-3">
-                        <div>
-                          <label className="block text-xs font-medium text-slate-700 mb-1">Fare ({currency})</label>
-                          <input type="number" min="0" placeholder="0" value={form.fare}
-                            onChange={e => setForm(f => ({ ...f, fare: e.target.value }))}
-                            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30"
-                          />
+              {/* ALL IN mode */}
+              {form.priceFormat === 'ALL_IN' && (() => {
+                const fareC  = Math.round((Number(form.fare)||0) * 100)
+                const yqC    = Math.round((Number(form.yq)||0)  * 100)
+                const taxC   = Math.round((Number(form.tax)||0)  * 100)
+                const allInC = Math.round((Number(form.allIn)||0) * 100)
+                const bkC    = fareC + yqC + taxC
+                const diffC  = bkC - allInC
+                const bkSum  = bkC / 100
+                const diff   = diffC / 100
+                const isMatch = allInC > 0 && diffC === 0
+                return (
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700 mb-1">All In / Total ({currency}) <span className="text-red-500">*</span></label>
+                      <input type="number" min="0" placeholder="0" value={form.allIn}
+                        onChange={e => setForm(f => ({ ...f, allIn: e.target.value }))}
+                        className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30 ${errors.allIn ? 'border-red-400' : 'border-slate-300'}`}
+                      />
+                      {errors.allIn && <p className="text-xs text-red-500 mt-1">{errors.allIn}</p>}
+                    </div>
+                    {!form.breakdown ? (
+                      <button type="button"
+                        onClick={() => setForm(f => ({ ...f, breakdown: true }))}
+                        className="flex items-center gap-1.5 text-xs text-[#05a94f] hover:text-emerald-700 font-medium transition-colors"
+                      >
+                        <PlusCircle size={12} /> เพิ่มรายละเอียดแยก Fare / YQ / Tax
+                      </button>
+                    ) : (
+                      <div className="border border-slate-200 rounded-xl overflow-hidden">
+                        <div className="flex items-center justify-between bg-slate-50 border-b border-slate-200 px-3 py-2">
+                          <span className="text-xs font-medium text-slate-700">รายละเอียดราคา</span>
+                          <button type="button"
+                            onClick={() => setForm(f => ({ ...f, breakdown: false, fare: '', yq: '', tax: '' }))}
+                            className="text-[10px] text-slate-400 hover:text-red-500 transition-colors"
+                          >
+                            ยกเลิกรายละเอียด
+                          </button>
                         </div>
-                        <div>
-                          <label className="block text-xs font-medium text-slate-700 mb-1">YQ ({currency})</label>
-                          <input type="number" min="0" placeholder="0" value={form.yq}
-                            onChange={e => setForm(f => ({ ...f, yq: e.target.value }))}
-                            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-slate-700 mb-1">Tax ({currency})</label>
-                          <input type="number" min="0" placeholder="0" value={form.tax}
-                            onChange={e => setForm(f => ({ ...f, tax: e.target.value }))}
-                            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30"
-                          />
+                        <div className="p-3 space-y-3">
+                          <div className="grid grid-cols-3 gap-3">
+                            <div>
+                              <label className="block text-xs font-medium text-slate-700 mb-1">Fare ({currency})</label>
+                              <input type="number" min="0" placeholder="0" value={form.fare}
+                                onChange={e => setForm(f => ({ ...f, fare: e.target.value }))}
+                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-slate-700 mb-1">YQ ({currency})</label>
+                              <input type="number" min="0" placeholder="0" value={form.yq}
+                                onChange={e => setForm(f => ({ ...f, yq: e.target.value }))}
+                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-slate-700 mb-1">Tax ({currency})</label>
+                              <input type="number" min="0" placeholder="0" value={form.tax}
+                                onChange={e => setForm(f => ({ ...f, tax: e.target.value }))}
+                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30"
+                              />
+                            </div>
+                          </div>
+                          <div className="border-t border-slate-100 pt-2 space-y-1">
+                            <div className="flex items-center justify-between text-xs text-slate-500 px-0.5">
+                              <span>รวมจากรายละเอียด</span>
+                              <span className="font-semibold text-slate-700">{formatNumber(bkSum)}</span>
+                            </div>
+                            <div className="flex items-center justify-between text-xs text-slate-500 px-0.5">
+                              <span>All In / Total</span>
+                              <span className="font-semibold text-slate-700">{formatNumber(Number(form.allIn)||0)}</span>
+                            </div>
+                            <div className={`flex items-center justify-between text-xs font-bold rounded-lg px-2.5 py-1.5 ${
+                              allInC === 0 ? 'bg-slate-50 text-slate-400'
+                              : isMatch   ? 'bg-emerald-50 text-[#05a94f]'
+                              :             'bg-red-50 text-red-600'
+                            }`}>
+                              <span className="flex items-center gap-1">
+                                {isMatch && <CheckCircle2 size={11} />}
+                                {!isMatch && allInC > 0 && <AlertTriangle size={11} />}
+                                ส่วนต่าง
+                              </span>
+                              <span>{diffC === 0 ? '0 ✓' : `${diff > 0 ? '+' : ''}${formatNumber(diff)}`}</span>
+                            </div>
+                          </div>
                         </div>
                       </div>
-                      {errors.breakdown && (
-                        <div className="flex items-center gap-1.5 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1.5">
-                          <AlertTriangle size={11} /> {errors.breakdown}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
+                    )}
+                  </div>
+                )
+              })()}
 
               {/* Total (readonly) */}
               <div className={`flex items-center justify-between rounded-lg px-3 py-2 text-xs ${
