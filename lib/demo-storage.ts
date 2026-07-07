@@ -328,6 +328,7 @@ export interface DemoPNR {
   seatUsed: number
   seatBalance: number
   priceFormat?: 'FARE' | 'FARE_YQ' | 'ALL_IN'
+  breakdown?: boolean
   fare: number
   yq?: number
   taxType: string

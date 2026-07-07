@@ -36,6 +36,7 @@ interface PNRRow {
   tax: number
   total_amount: number
   price_format: 'FARE' | 'FARE_YQ' | 'ALL_IN'
+  breakdown: boolean
   condition: string | null
   condition_code: string | null
   next_ttl: string | null
@@ -391,7 +392,7 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
     const firstFlightSetId = liveStock ? getStockFlightSets(liveStock)[0]?.flightSetId ?? '' : ''
     setEditingPnrId(pnr.pnrId)
     const fmt = pnr.priceFormat ?? 'FARE'
-    const hasBreakdown = fmt === 'ALL_IN' && pnr.fare > 0
+    const hasBreakdown = fmt === 'ALL_IN' && (pnr.breakdown ?? (pnr.fare > 0))
     setForm({
       pnrCode:       pnr.pnrCode || '',
       travelStart:   pnr.travelStart || '',
@@ -511,6 +512,7 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
       seatUsed:       existingPnr?.seatUsed ?? 0,
       seatBalance:    seatTotal - (existingPnr?.seatUsed ?? 0),
       priceFormat,
+      breakdown:      priceFormat === 'ALL_IN' ? form.breakdown : undefined,
       fare,
       yq:             yqAmt,
       taxType,
@@ -972,10 +974,11 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
         seat_used: p.seatUsed,
         seat_balance: p.seatBalance,
         price_format: p.priceFormat ?? 'FARE',
-        fare: p.priceFormat === 'ALL_IN' ? p.total : p.fare,
+        breakdown: p.breakdown ?? false,
+        fare: p.fare,
         yq: p.yq ?? 0,
         tax_type: p.taxType,
-        tax: p.priceFormat === 'FARE_YQ' ? (p.yq ?? 0) + p.tax : p.tax,
+        tax: p.tax,
         total_amount: p.total,
         condition: liveStock.conditions.find(c => c.condition.conditionCode === p.conditionCode)?.condition.conditionName || null,
         condition_code: p.conditionCode || null,
@@ -1101,8 +1104,9 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
               <Th className="text-right">Seat</Th>
               <Th className="text-right">Used</Th>
               <Th className="text-right">Bal.</Th>
-              <Th className="text-right">Fare</Th>
-              <Th className="text-right">Tax/YQ</Th>
+              <Th className="text-center">Price Type</Th>
+              <Th className="text-right">Received</Th>
+              <Th>Price Detail</Th>
               <Th className="text-right">Total</Th>
               <Th>Condition</Th>
               <Th>TTL Date</Th>
@@ -1112,7 +1116,7 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
           </TableHead>
           <TableBody>
             {pnrRows.length === 0 ? (
-              <EmptyRow cols={canEdit ? 16 : 14} message="ยังไม่มีข้อมูล PNR" />
+              <EmptyRow cols={canEdit ? 18 : 16} message="ยังไม่มีข้อมูล PNR" />
             ) : (
               pnrRows.map(p => {
                 const demoPnr = liveStock?.pnrs.find(dp => dp.pnrId === p.id)
@@ -1148,18 +1152,40 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                         {p.seat_balance}
                       </span>
                     </Td>
-                    <Td className="text-right text-xs">
-                      <div className="flex flex-col items-end gap-0.5">
-                        {formatNumber(p.fare)}
-                        {p.price_format === 'ALL_IN' && (
-                          <span className="text-[9px] bg-blue-100 text-blue-600 font-bold px-1.5 py-0 rounded-full leading-4">ALL IN</span>
-                        )}
-                        {p.price_format === 'FARE_YQ' && (
-                          <span className="text-[9px] bg-amber-100 text-amber-600 font-bold px-1.5 py-0 rounded-full leading-4">+YQ</span>
-                        )}
+                    {/* Price Type */}
+                    <Td className="text-center">
+                      <div className="flex flex-col items-center gap-0.5">
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${
+                          p.price_format === 'FARE'    ? 'bg-slate-100 text-slate-600' :
+                          p.price_format === 'FARE_YQ' ? 'bg-amber-100 text-amber-700' :
+                                                         'bg-blue-100 text-blue-700'
+                        }`}>
+                          {p.price_format === 'FARE' ? 'FARE' : p.price_format === 'FARE_YQ' ? 'FARE + YQ' : 'ALL IN'}
+                        </span>
+                        <span className="text-[9px] text-slate-400 whitespace-nowrap">
+                          {p.price_format === 'FARE' ? 'ไม่รวม YQ/Tax' : p.price_format === 'FARE_YQ' ? 'ไม่รวม Tax' : 'รวมทั้งหมด'}
+                        </span>
                       </div>
                     </Td>
-                    <Td className="text-right text-xs"><TaxCell taxType={p.tax_type} tax={p.tax} /></Td>
+                    {/* Received Price */}
+                    <Td className="text-right text-xs font-semibold">
+                      {formatNumber(p.price_format === 'ALL_IN' ? p.total_amount : p.fare)}
+                    </Td>
+                    {/* Price Detail */}
+                    <Td className="text-[10px] text-slate-500 whitespace-nowrap">
+                      {p.price_format === 'FARE' && (
+                        `YQ ${formatNumber(p.yq)} / Tax ${formatNumber(p.tax)}`
+                      )}
+                      {p.price_format === 'FARE_YQ' && (
+                        `Tax ${formatNumber(p.tax)}`
+                      )}
+                      {p.price_format === 'ALL_IN' && !p.breakdown && (
+                        <span className="italic text-slate-400">ไม่แยกรายละเอียด</span>
+                      )}
+                      {p.price_format === 'ALL_IN' && p.breakdown && (
+                        `Fare ${formatNumber(p.fare)} / YQ ${formatNumber(p.yq)} / Tax ${formatNumber(p.tax)}`
+                      )}
+                    </Td>
                     <Td className="text-right text-xs font-bold">{formatNumber(p.total_amount)}</Td>
                     <Td className="text-xs">
                       {canEdit ? (
