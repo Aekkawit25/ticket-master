@@ -101,52 +101,73 @@ function EditorTabBar({
   templateInfo?: TemplateInfo
 }) {
   return (
-    <div className="flex items-stretch overflow-x-auto border-b border-slate-200 shrink-0 bg-white">
+    <div className="flex gap-3 overflow-x-auto px-4 py-3 border-b border-slate-200 bg-slate-50 shrink-0">
       {visibleTabs.map(tab => {
         const isActive = activeTab === tab.key
         const status   = getTabStatus(tab.key, value, errors[tab.key] ?? [], conditionMode, seriesInfo, templateInfo)
         const cfg      = STATUS_CONFIG[status]
         const summary  = getTabSummary(tab.key, value, currency, conditionMode, seriesInfo, templateInfo)
+
+        const cardCls = cn(
+          'flex-shrink-0 min-w-[176px] rounded-xl border-2 px-4 py-2.5 flex flex-col gap-1 text-left transition-all cursor-pointer',
+          isActive
+            ? 'bg-emerald-50 border-[#05a94f] shadow-sm'
+            : status === 'error'
+              ? 'bg-red-50 border-red-300 hover:border-red-400'
+              : status === 'incomplete'
+                ? 'bg-amber-50 border-amber-300 hover:border-amber-400'
+                : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50',
+        )
+
+        const stepCls = cn(
+          'w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0',
+          isActive
+            ? 'bg-[#05a94f] text-white'
+            : status === 'error'
+              ? 'bg-red-400 text-white'
+              : status === 'incomplete'
+                ? 'bg-amber-400 text-white'
+                : status === 'complete'
+                  ? 'bg-emerald-500 text-white'
+                  : 'bg-slate-200 text-slate-500',
+        )
+
+        const labelCls = cn(
+          'text-xs font-semibold leading-snug',
+          isActive         ? 'text-[#05a94f]'   :
+          status === 'error'      ? 'text-red-700'    :
+          status === 'incomplete' ? 'text-amber-700'  :
+          'text-slate-700',
+        )
+
+        const statusCls = cn(
+          'text-[10px] font-medium leading-none',
+          status === 'empty'      ? 'text-slate-400'   :
+          status === 'incomplete' ? 'text-amber-600'   :
+          status === 'complete'   ? 'text-emerald-600' :
+          'text-red-600',
+        )
+
         return (
           <button
             key={tab.key}
             type="button"
             onClick={() => onSelect(tab.key)}
-            title={`${STATUS_CONFIG[status].label}: ${summary}`}
-            className={cn(
-              'flex flex-col items-start gap-0.5 px-3.5 py-2.5 border-b-2 transition-all shrink-0 min-w-0 text-left',
-              isActive
-                ? 'border-[#05a94f] bg-emerald-50/40'
-                : 'border-transparent hover:bg-slate-50',
-            )}
+            title={`${cfg.label}: ${summary}`}
+            className={cardCls}
           >
-            <div className="flex items-center gap-1.5">
-              <span className={cn(
-                'w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold shrink-0',
-                isActive ? 'bg-[#05a94f]/15 text-[#05a94f]' : 'bg-slate-100 text-slate-400',
-              )}>
-                {tab.no}
-              </span>
-              <span className={cn(
-                'text-xs font-medium whitespace-nowrap',
-                isActive ? 'text-[#05a94f]' : 'text-slate-600',
-              )}>
-                {tab.label}
-              </span>
+            {/* Row 1: step circle + label */}
+            <div className="flex items-center gap-2">
+              <span className={stepCls}>{tab.no}</span>
+              <span className={labelCls}>{tab.label}</span>
+            </div>
+            {/* Row 2: status text */}
+            <div className="flex items-center gap-1.5 pl-7">
               {cfg.dot && (
                 <span className={cn('w-1.5 h-1.5 rounded-full shrink-0', cfg.dot)} />
               )}
+              <span className={statusCls}>{cfg.label}</span>
             </div>
-            {/* Status label row */}
-            <span className={cn(
-              'text-[9px] font-medium whitespace-nowrap ml-5.5 leading-none',
-              status === 'empty'      ? 'text-slate-400' :
-              status === 'incomplete' ? 'text-amber-500' :
-              status === 'complete'   ? 'text-emerald-600' :
-              'text-red-500',
-            )}>
-              {cfg.label}
-            </span>
           </button>
         )
       })}

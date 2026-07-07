@@ -52,9 +52,10 @@ export default function ConditionTemplatesPage() {
   useEffect(load, [])
 
   const filtered = useMemo(() => {
-    if (!search.trim()) return templates
+    const groupOnly = templates.filter(t => t.ticketType === 'Group' || t.ticketType === 'All')
+    if (!search.trim()) return groupOnly
     const q = search.toLowerCase()
-    return templates.filter(t =>
+    return groupOnly.filter(t =>
       t.condition.conditionCode.toLowerCase().includes(q) ||
       t.condition.conditionName.toLowerCase().includes(q) ||
       (t.condition.description ?? '').toLowerCase().includes(q) ||
@@ -83,18 +84,23 @@ export default function ConditionTemplatesPage() {
   }
 
   return (
-    <AppLayout title="Condition Templates">
+    <AppLayout title="Template Condition">
       <div className="space-y-4">
         {/* Top bar */}
         <div className="flex items-center justify-between gap-3">
-          <div className="relative flex-1 max-w-sm">
-            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="ค้นหา Template..."
-              className="w-full pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30 focus:border-[#05a94f]"
-            />
+          <div className="flex items-center gap-3 flex-1">
+            <div className="relative flex-1 max-w-sm">
+              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="ค้นหา Template..."
+                className="w-full pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30 focus:border-[#05a94f]"
+              />
+            </div>
+            <span className="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full font-medium whitespace-nowrap">
+              Group Booking เท่านั้น
+            </span>
           </div>
           <Button icon={<PlusCircle size={14} />} onClick={() => router.push('/tickets/condition-templates/add')}>
             สร้าง Template

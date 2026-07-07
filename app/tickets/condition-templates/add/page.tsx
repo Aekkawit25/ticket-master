@@ -9,18 +9,10 @@ import ConditionEditorModal from '@/components/condition-builder/ConditionEditor
 import {
   type AppConditionTemplate,
   type AppCondition,
-  type CondTemplateTicketType,
   defaultTemplate,
   generateTemplateCode,
 } from '@/lib/condition-schema'
 import { getConditionTemplates, saveConditionTemplate } from '@/lib/condition-storage'
-
-const TICKET_TYPE_OPTIONS: { value: CondTemplateTicketType; label: string }[] = [
-  { value: 'All',         label: 'ทุกประเภท' },
-  { value: 'Group',       label: 'Group' },
-  { value: 'FIT',         label: 'FIT' },
-  { value: 'Ticket+Land', label: 'Ticket + Land' },
-]
 
 const AIRLINE_OPTIONS = [
   { value: '',   label: 'ทุกสายการบิน' },
@@ -55,6 +47,7 @@ export default function AddConditionTemplatePage() {
   useEffect(() => {
     const existingCodes = getConditionTemplates().map(t => t.condition.conditionCode)
     setTemplate(defaultTemplate({
+      ticketType: 'Group',
       condition: {
         ...defaultTemplate().condition,
         conditionCode: generateTemplateCode(existingCodes),
@@ -91,7 +84,12 @@ export default function AddConditionTemplatePage() {
         {/* Template Metadata */}
         <Card>
           <CardContent className="pt-4">
-            <p className="text-xs font-semibold text-slate-500 mb-3">ข้อมูล Template</p>
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs font-semibold text-slate-500">ข้อมูล Template</p>
+              <span className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full font-medium">
+                เงื่อนไขนี้ใช้กับ Group Booking เท่านั้น
+              </span>
+            </div>
             <div className="grid grid-cols-3 gap-3">
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1">สายการบิน</label>
@@ -103,11 +101,10 @@ export default function AddConditionTemplatePage() {
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1">ประเภทตั๋ว</label>
-                <Select
-                  value={template.ticketType}
-                  onChange={e => setMeta('ticketType', e.target.value as CondTemplateTicketType)}
-                  options={TICKET_TYPE_OPTIONS}
-                />
+                <div className="flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3">
+                  <span className="text-sm font-semibold text-[#05a94f]">Group</span>
+                  <span className="text-[10px] text-slate-400 ml-auto">Group Ticket</span>
+                </div>
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1">สกุลเงิน</label>
