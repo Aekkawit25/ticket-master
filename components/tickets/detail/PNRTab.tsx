@@ -7,7 +7,7 @@ import { Badge, PNRStatusBadge } from '@/components/ui/badge'
 import { Table, TableHead, TableBody, Th, Td, TableRow, EmptyRow } from '@/components/ui/table'
 import { Modal } from '@/components/ui/modal'
 import {
-  PlusCircle, Pencil, Trash2, Copy, RefreshCw, X, CheckCircle2, AlertTriangle, PlusSquare, Route,
+  PlusCircle, Pencil, Trash2, Copy, RefreshCw, X, CheckCircle2, AlertTriangle, PlusSquare, Route, ChevronDown,
 } from 'lucide-react'
 import { BulkPnrBuilder } from '@/components/shared/BulkPnrBuilder'
 import type { BulkPnrFlightSet, BulkPnrCondition } from '@/components/shared/BulkPnrBuilder'
@@ -335,6 +335,11 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
   const [saving, setSaving] = useState(false)
   const [toast, setToast]   = useState('')
 
+  const [selectedPnrIds, setSelectedPnrIds] = useState<Set<string>>(new Set())
+  const [condChangeConfirm, setCondChangeConfirm] = useState<{ pnrIds: string[]; newCode: string } | null>(null)
+  const [showBulkCond, setShowBulkCond]     = useState(false)
+  const [bulkCondCode, setBulkCondCode]     = useState('')
+
   // Custom Flight state
   const [showCFModal, setShowCFModal]           = useState(false)
   const [cfMode, setCfMode]                     = useState<'create' | 'edit'>('create')
@@ -366,8 +371,10 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
 
   const openAdd = () => {
     const firstFlightSetId = liveStock ? getStockFlightSets(liveStock)[0]?.flightSetId ?? '' : ''
+    const activeConds = (liveStock?.conditions ?? []).filter(c => c.condition.status === 'Active')
+    const autoCode = activeConds.length === 1 ? activeConds[0].condition.conditionCode : (liveStock?.defaultConditionCode ?? '')
     setEditingPnrId(null)
-    setForm({ ...EMPTY_FORM, flightSetId: firstFlightSetId })
+    setForm({ ...EMPTY_FORM, flightSetId: firstFlightSetId, conditionCode: autoCode })
     setErrors({})
     setShowPNRModal(true)
     onDirtyChange(true)
@@ -923,6 +930,55 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
   const conditions = liveStock?.conditions ?? []
   const pnrStatuses = ['Pending', 'Confirmed', 'Ticketed', 'Cancelled', 'Expired', 'Closed']
 
+  const activeConditions = conditions.filter(c => c.condition.status === 'Active')
+  const noCond = (liveStock?.pnrs ?? []).filter(p => !p.conditionCode)
+
+  const calcTtlFromCode = (pnr: DemoPNR, condCode: string) => {
+    const sc = conditions.find(c => c.condition.conditionCode === condCode)
+    const rule = sc?.condition.ttlRule
+    if (!rule) return { ttlDate: null as string | null, ttlTime: null as string | null, ttlDateTime: null as string | null }
+    let ttlDT: string | null = null
+    if (rule.calcType === 'TRAVEL_MINUS_DAYS') {
+      ttlDT = calcTTLDatetime(pnr.travelStart, 'Travel Start', rule.daysBefore, rule.time)
+    } else if (rule.calcType === 'MANUAL_DATE' && rule.fixedDate) {
+      const [h, m] = (rule.time || '18:00').split(':').map(Number)
+      const d = new Date(rule.fixedDate); d.setHours(h, m, 0, 0)
+      ttlDT = d.toISOString()
+    }
+    let ttlDate = null as string | null, ttlTime = null as string | null
+    if (ttlDT) {
+      try {
+        const d = parseISO(ttlDT)
+        if (isValid(d)) { ttlDate = fnsFormat(d, 'yyyy-MM-dd'); ttlTime = fnsFormat(d, 'HH:mm') }
+      } catch { /* */ }
+    }
+    return { ttlDate, ttlTime, ttlDateTime: ttlDT }
+  }
+
+  const applyConditionChange = (pnrIds: string[], newCode: string) => {
+    if (!liveStock) return
+    const now = new Date().toISOString()
+    const condName = conditions.find(c => c.condition.conditionCode === newCode)?.condition.conditionName ?? newCode
+    const updatedPnrs = liveStock.pnrs.map(p => {
+      if (!pnrIds.includes(p.pnrId)) return p
+      const ttl = newCode ? calcTtlFromCode(p, newCode) : { ttlDate: null, ttlTime: null, ttlDateTime: null }
+      return { ...p, conditionCode: newCode, ...ttl }
+    })
+    const log: DemoLog = {
+      logId: newId('LOG'),
+      action: 'เปลี่ยน Condition',
+      message: newCode ? `เปลี่ยน Condition เป็น "${condName}" (${pnrIds.length} PNR)` : `ลบ Condition ออก (${pnrIds.length} PNR)`,
+      createdAt: now, createdBy: 'System',
+    }
+    const updated: DemoStock = { ...liveStock, pnrs: updatedPnrs, summary: calculateStockSummary(updatedPnrs), updatedAt: now, logs: [log, ...liveStock.logs] }
+    saveDemoStock(updated)
+    onUpdate(updated)
+    setSelectedPnrIds(new Set())
+    setCondChangeConfirm(null)
+    setShowBulkCond(false)
+    showToast(newCode ? `เปลี่ยน Condition เป็น "${condName}" (${pnrIds.length} PNR)` : `ลบ Condition ออก (${pnrIds.length} PNR)`)
+  }
+
   return (
     <div className="space-y-3">
       {/* Toast */}
@@ -934,10 +990,29 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
 
       {/* Action Bar */}
       {canEdit && (
-        <div className="flex items-center gap-2 flex-wrap">
-          <Button size="sm" icon={<PlusCircle size={13} />} onClick={openAdd}>เพิ่ม PNR</Button>
-          <Button size="sm" variant="outline" icon={<PlusSquare size={13} />} onClick={() => setShowBulkAdd(true)}>เพิ่มหลาย PNR</Button>
-          <Button size="sm" variant="outline" disabled title="Coming soon">Import PNR</Button>
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button size="sm" icon={<PlusCircle size={13} />} onClick={openAdd}>เพิ่ม PNR</Button>
+            <Button size="sm" variant="outline" icon={<PlusSquare size={13} />} onClick={() => setShowBulkAdd(true)}>เพิ่มหลาย PNR</Button>
+            <Button size="sm" variant="outline" disabled title="Coming soon">Import PNR</Button>
+            {selectedPnrIds.size > 0 && (
+              <>
+                <span className="text-xs text-slate-500 ml-1">เลือก {selectedPnrIds.size} PNR</span>
+                <Button size="sm" variant="outline" onClick={() => { setBulkCondCode(''); setShowBulkCond(true) }}>
+                  เปลี่ยน Condition
+                </Button>
+                <button onClick={() => setSelectedPnrIds(new Set())} className="p-1 rounded hover:bg-slate-100 text-slate-400">
+                  <X size={12} />
+                </button>
+              </>
+            )}
+          </div>
+          {noCond.length > 0 && (
+            <div className="flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+              <AlertTriangle size={12} />
+              <span>{noCond.length} PNR ยังไม่ได้ระบุ Condition</span>
+            </div>
+          )}
         </div>
       )}
 
@@ -946,6 +1021,17 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
         <Table>
           <TableHead>
             <tr>
+              {canEdit && (
+                <Th className="w-8 text-center">
+                  <input
+                    type="checkbox"
+                    checked={pnrRows.length > 0 && selectedPnrIds.size === pnrRows.length}
+                    ref={el => { if (el) el.indeterminate = selectedPnrIds.size > 0 && selectedPnrIds.size < pnrRows.length }}
+                    onChange={e => setSelectedPnrIds(e.target.checked ? new Set(pnrRows.map(r => r.id)) : new Set())}
+                    className="rounded border-slate-300 accent-[#05a94f]"
+                  />
+                </Th>
+              )}
               <Th>PNR</Th>
               <Th>Flight Set</Th>
               <Th className="text-center w-[60px]">Day</Th>
@@ -965,12 +1051,26 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
           </TableHead>
           <TableBody>
             {pnrRows.length === 0 ? (
-              <EmptyRow cols={canEdit ? 15 : 14} message="ยังไม่มีข้อมูล PNR" />
+              <EmptyRow cols={canEdit ? 16 : 14} message="ยังไม่มีข้อมูล PNR" />
             ) : (
               pnrRows.map(p => {
                 const demoPnr = liveStock?.pnrs.find(dp => dp.pnrId === p.id)
                 return (
-                  <TableRow key={p.id}>
+                  <TableRow key={p.id} className={selectedPnrIds.has(p.id) ? 'bg-emerald-50/40' : ''}>
+                    {canEdit && (
+                      <Td className="text-center">
+                        <input
+                          type="checkbox"
+                          checked={selectedPnrIds.has(p.id)}
+                          onChange={e => setSelectedPnrIds(prev => {
+                            const s = new Set(prev)
+                            e.target.checked ? s.add(p.id) : s.delete(p.id)
+                            return s
+                          })}
+                          className="rounded border-slate-300 accent-[#05a94f]"
+                        />
+                      </Td>
+                    )}
                     <Td><PNRCell code={p.pnr_code} dummy={p.dummy_pnr} type={p.pnr_type} /></Td>
                     <Td className="text-xs">
                       <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[11px] font-medium whitespace-nowrap">
@@ -991,7 +1091,36 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                     <Td className="text-right text-xs"><TaxCell taxType={p.tax_type} tax={p.tax} /></Td>
                     <Td className="text-right text-xs font-bold">{formatNumber(p.total_amount)}</Td>
                     <Td className="text-xs">
-                      {p.condition ? <Badge variant="green">{p.condition}</Badge> : <span className="text-slate-300 italic text-[10px]">ไม่ระบุ</span>}
+                      {canEdit ? (
+                        <div className="relative inline-block min-w-[120px]">
+                          <select
+                            value={p.condition_code ?? ''}
+                            onChange={e => {
+                              const v = e.target.value
+                              if (v !== (p.condition_code ?? ''))
+                                setCondChangeConfirm({ pnrIds: [p.id], newCode: v })
+                            }}
+                            className={`text-[10px] font-semibold rounded-full pl-2.5 pr-6 py-0.5 border appearance-none cursor-pointer w-full ${
+                              p.condition_code
+                                ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:border-emerald-400'
+                                : 'bg-slate-100 border-slate-200 text-slate-400 hover:border-slate-400'
+                            }`}
+                          >
+                            <option value="">— ไม่ระบุ —</option>
+                            {activeConditions.map(c => (
+                              <option key={c.condition.conditionCode} value={c.condition.conditionCode}>
+                                {c.condition.conditionName}
+                              </option>
+                            ))}
+                            {p.condition_code && !activeConditions.find(c => c.condition.conditionCode === p.condition_code) && (
+                              <option value={p.condition_code ?? ''}>{p.condition} (ปิดใช้งาน)</option>
+                            )}
+                          </select>
+                          <ChevronDown size={9} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400" />
+                        </div>
+                      ) : (
+                        p.condition ? <Badge variant="green">{p.condition}</Badge> : <span className="text-slate-300 italic text-[10px]">ไม่ระบุ</span>
+                      )}
                     </Td>
                     <Td className="text-xs text-slate-700">
                       {p.next_ttl ? formatDateTime(p.next_ttl) : '—'}
@@ -1367,6 +1496,80 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
             <p className="text-slate-500 text-xs">คุณต้องการใช้ Flight Set เดิมหรือสร้างใหม่?</p>
           </div>
         )}
+      </Modal>
+
+      {/* Confirm Condition Change */}
+      {condChangeConfirm && (
+        <Modal
+          open={true}
+          onClose={() => setCondChangeConfirm(null)}
+          title="ยืนยันการเปลี่ยน Condition"
+          size="sm"
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setCondChangeConfirm(null)}>ยกเลิก</Button>
+              <Button onClick={() => applyConditionChange(condChangeConfirm.pnrIds, condChangeConfirm.newCode)}>ดำเนินการต่อ</Button>
+            </>
+          }
+        >
+          <div className="space-y-3">
+            <p className="text-sm">
+              {condChangeConfirm.newCode
+                ? <>เปลี่ยน Condition เป็น <strong>"{conditions.find(c => c.condition.conditionCode === condChangeConfirm.newCode)?.condition.conditionName ?? condChangeConfirm.newCode}"</strong> สำหรับ {condChangeConfirm.pnrIds.length} PNR</>
+                : <>ลบ Condition ออกจาก {condChangeConfirm.pnrIds.length} PNR</>
+              }
+            </p>
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs space-y-1">
+              <p className="font-semibold text-amber-700 flex items-center gap-1.5"><AlertTriangle size={12} /> ผลกระทบ</p>
+              <ul className="space-y-0.5 text-amber-600 list-disc list-inside">
+                <li>TTL Date จะถูกคำนวณใหม่ตาม Condition ที่เลือก</li>
+                <li>Payment Schedule อาจเปลี่ยนแปลง</li>
+                <li>เงื่อนไข Refund และ No-show จะใช้ตาม Condition ใหม่</li>
+              </ul>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Bulk Condition Change Modal */}
+      <Modal
+        open={showBulkCond}
+        onClose={() => setShowBulkCond(false)}
+        title={`เปลี่ยน Condition — ${selectedPnrIds.size} PNR`}
+        size="sm"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setShowBulkCond(false)}>ยกเลิก</Button>
+            <Button
+              disabled={bulkCondCode === ''}
+              onClick={() => {
+                setShowBulkCond(false)
+                setCondChangeConfirm({ pnrIds: Array.from(selectedPnrIds), newCode: bulkCondCode })
+              }}
+            >
+              ดำเนินการต่อ
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-xs text-slate-500">เลือก Condition ที่ต้องการใช้กับ {selectedPnrIds.size} PNR ที่เลือกไว้</p>
+          <div>
+            <label className="block text-xs font-medium text-slate-700 mb-1">Condition <span className="text-red-500">*</span></label>
+            <select
+              value={bulkCondCode}
+              onChange={e => setBulkCondCode(e.target.value)}
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30"
+            >
+              <option value="">— เลือก Condition —</option>
+              {activeConditions.map(c => (
+                <option key={c.condition.conditionCode} value={c.condition.conditionCode}>
+                  {c.condition.conditionName}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
       </Modal>
 
       {/* Bulk Add PNR — shared BulkPnrBuilder */}

@@ -391,6 +391,7 @@ export interface DemoStock {
   reopenReason?: string
   reopenAllowedSections?: string[]
   reopenEvents?: DemoReopenEvent[]
+  defaultConditionCode?: string
 }
 
 // ============================================================
