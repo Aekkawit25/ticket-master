@@ -4,26 +4,12 @@ import { Input, Select, Textarea } from '@/components/ui/input'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import type { FlightSeriesFormData } from '@/types'
+import { MASTER_AIRLINES } from '@/lib/master-data'
 
-// ─── Master data (mock — จะดึงจาก Supabase เมื่อเชื่อมต่อ DB) ──────────────
-
-const AIRLINES = [
-  { value: 'TG', label: 'TG — Thai Airways', subtitle: 'Thai Airways International' },
-  { value: 'FD', label: 'FD — Thai AirAsia', subtitle: 'Thai AirAsia' },
-  { value: 'DD', label: 'DD — Nok Air', subtitle: 'Nok Airlines' },
-  { value: 'PG', label: 'PG — Bangkok Airways', subtitle: 'Bangkok Airways' },
-  { value: 'JL', label: 'JL — Japan Airlines', subtitle: 'Japan Airlines' },
-  { value: 'NH', label: 'NH — ANA', subtitle: 'All Nippon Airways' },
-  { value: 'KE', label: 'KE — Korean Air', subtitle: 'Korean Air' },
-  { value: 'OZ', label: 'OZ — Asiana Airlines', subtitle: 'Asiana Airlines' },
-  { value: 'CX', label: 'CX — Cathay Pacific', subtitle: 'Cathay Pacific Airways' },
-  { value: 'SQ', label: 'SQ — Singapore Airlines', subtitle: 'Singapore Airlines' },
-  { value: 'MH', label: 'MH — Malaysia Airlines', subtitle: 'Malaysia Airlines' },
-  { value: 'EK', label: 'EK — Emirates', subtitle: 'Emirates Airlines' },
-  { value: 'QR', label: 'QR — Qatar Airways', subtitle: 'Qatar Airways' },
-  { value: 'BA', label: 'BA — British Airways', subtitle: 'British Airways' },
-  { value: 'LH', label: 'LH — Lufthansa', subtitle: 'Deutsche Lufthansa' },
-]
+const AIRLINES = MASTER_AIRLINES.map(a => ({
+  value: a.code,
+  label: `${a.code} — ${a.name}`,
+}))
 
 
 // ─── Component ────────────────────────────────────────────────────────────────

@@ -10,38 +10,30 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Modal } from '@/components/ui/modal'
 import { PlusCircle, Pencil, Trash2, Search, Plane, ExternalLink } from 'lucide-react'
+import { MASTER_AIRLINES } from '@/lib/master-data'
 
-const mockAirlines = [
-  { airline_code: 'TG', airline_name: 'Thai Airways International', status: 'Active' },
-  { airline_code: 'FD', airline_name: 'Thai AirAsia', status: 'Active' },
-  { airline_code: 'DD', airline_name: 'Nok Airlines', status: 'Active' },
-  { airline_code: 'PG', airline_name: 'Bangkok Airways', status: 'Active' },
-  { airline_code: 'JL', airline_name: 'Japan Airlines', status: 'Active' },
-  { airline_code: 'NH', airline_name: 'All Nippon Airways', status: 'Active' },
-  { airline_code: 'KE', airline_name: 'Korean Air', status: 'Active' },
-  { airline_code: 'OZ', airline_name: 'Asiana Airlines', status: 'Active' },
-  { airline_code: 'CX', airline_name: 'Cathay Pacific', status: 'Active' },
-  { airline_code: 'SQ', airline_name: 'Singapore Airlines', status: 'Active' },
-  { airline_code: 'MH', airline_name: 'Malaysia Airlines', status: 'Active' },
-  { airline_code: 'EK', airline_name: 'Emirates', status: 'Active' },
-  { airline_code: 'QR', airline_name: 'Qatar Airways', status: 'Active' },
-  { airline_code: 'BA', airline_name: 'British Airways', status: 'Active' },
-  { airline_code: 'LH', airline_name: 'Lufthansa', status: 'Active' },
-]
+type AirlineRow = { airline_code: string; airline_name: string; status: string }
+
+const baseAirlines: AirlineRow[] = MASTER_AIRLINES.map(a => ({
+  airline_code: a.code,
+  airline_name: a.name,
+  status: 'Active',
+}))
 
 export default function AirlinesPage() {
   const router = useRouter()
+  const [airlines, setAirlines] = useState<AirlineRow[]>(baseAirlines)
   const [search, setSearch] = useState('')
   const [modal, setModal] = useState(false)
-  const [editItem, setEditItem] = useState<{ airline_code: string; airline_name: string; status: string } | null>(null)
+  const [editItem, setEditItem] = useState<AirlineRow | null>(null)
 
-  const filtered = mockAirlines.filter(a =>
+  const filtered = airlines.filter(a =>
     a.airline_code.toLowerCase().includes(search.toLowerCase()) ||
     a.airline_name.toLowerCase().includes(search.toLowerCase())
   )
 
   const openAdd = () => { setEditItem({ airline_code: '', airline_name: '', status: 'Active' }); setModal(true) }
-  const openEdit = (a: typeof mockAirlines[0]) => { setEditItem({ ...a }); setModal(true) }
+  const openEdit = (a: AirlineRow) => { setEditItem({ ...a }); setModal(true) }
 
   return (
     <AppLayout title="Airlines">
