@@ -440,7 +440,8 @@ export function normalizeFlightNo(airlineCode: string, flightNo: string): string
     const esc = airlineCode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     n = n.replace(new RegExp(`^${esc}`, 'i'), '')
   }
-  n = n.replace(/^[A-Za-z]{2,3}/, '').replace(/\s+/g, '')
+  // Strip everything that's not a digit (handles Thai, symbols, spaces, leftover Latin)
+  n = n.replace(/\D/g, '')
   return n
 }
 

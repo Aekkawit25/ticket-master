@@ -133,7 +133,7 @@ function SectorEditTable({ sectors, minSectors, errors, defaultAirlineCode, onCh
                 />
               </td>
               <td className="px-1 py-1.5">
-                <input value={s.flightNo} onChange={e => update(i, { flightNo: e.target.value.replace(/[A-Za-z\s]/g, '') })}
+                <input value={s.flightNo} onChange={e => update(i, { flightNo: e.target.value.replace(/\D/g, '') })}
                   className={`w-full border rounded-md px-1.5 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-[#05a94f] ${errors[`flightNo_${i}`] ? 'border-red-400' : 'border-slate-300'}`}
                   placeholder="701" inputMode="numeric" />
               </td>

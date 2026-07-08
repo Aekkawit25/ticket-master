@@ -245,7 +245,7 @@ function CfSectorTable({ sectors, errors, defaultAirlineCode, onChange }: CfSect
               </td>
               <td className="px-1 py-1">
                 <input value={s.flightNo}
-                  onChange={e => update(i, { flightNo: e.target.value.replace(/[A-Za-z\s]/g, '') })}
+                  onChange={e => update(i, { flightNo: e.target.value.replace(/\D/g, '') })}
                   className={`w-full border rounded px-1 py-0.5 text-[11px] font-mono focus:outline-none focus:ring-1 focus:ring-[#05a94f] ${errors[`flightNo_${i}`] ? 'border-red-400' : 'border-slate-300'}`}
                   placeholder="701" inputMode="numeric" />
               </td>

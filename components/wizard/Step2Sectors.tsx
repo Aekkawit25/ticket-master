@@ -868,7 +868,7 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
                       <XL>
                         <input
                           value={s.flight_no}
-                          onChange={e => update(idx, { flight_no: e.target.value.replace(/[A-Za-z\s]/g, '') })}
+                          onChange={e => update(idx, { flight_no: e.target.value.replace(/\D/g, '') })}
                           placeholder="701"
                           inputMode="numeric"
                           className="w-full h-full px-2 py-[5px] text-xs font-mono bg-transparent outline-none focus:bg-blue-50 placeholder:text-slate-300"
