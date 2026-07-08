@@ -301,6 +301,8 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
 
   // Track schedules where user has manually set Arrival From (Open Jaw intent)
   const arrFromManualRef = useRef(new Set<string>())
+  // Track schedules where user has manually set Arrival To (overriding home-airport default)
+  const arrToManualRef   = useRef(new Set<string>())
 
   const showSuccess = (msg: string) => {
     if (successTimerRef.current) clearTimeout(successTimerRef.current)
@@ -313,7 +315,7 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
   const schedule = schedules[safeIdx] ?? schedules[0]
   const sectors = schedule?.sectors ?? []
 
-  // On tab switch: initialize Open Jaw flag from existing sector data (e.g. duplicated schedules)
+  // On tab switch: initialize Open Jaw / manual-To flags from existing sector data
   useEffect(() => {
     const last = sectors[sectors.length - 1]
     const prev = sectors[sectors.length - 2]
@@ -323,6 +325,10 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
                       last.dep_airport_code !== prev.arr_airport_code
       if (openJaw) arrFromManualRef.current.add(id)
       else arrFromManualRef.current.delete(id)
+      const home = sectors[0]?.dep_airport_code ?? ''
+      const manualTo = last.arr_airport_code !== '' && home !== '' && last.arr_airport_code !== home
+      if (manualTo) arrToManualRef.current.add(id)
+      else arrToManualRef.current.delete(id)
     }
   }, [safeIdx]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -348,15 +354,15 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
       let r = { ...s }
       // Sector 1: Travel Day always 1
       if (i === 0) r.day_offset = 1
-      // Transit sectors: From auto-filled from previous To
-      if (i > 0 && i < lastIdx) r.dep_airport_code = newSectors[i - 1].arr_airport_code
       // Arrival sector (last, multi-sector): From auto-syncs unless user set Open Jaw
       if (i === lastIdx && lastIdx > 0) {
         if (!arrFromManualRef.current.has(schedId)) {
           r.dep_airport_code = newSectors[i - 1].arr_airport_code
         }
-        // To always locked to homeAirport
-        r.arr_airport_code = newSectors[0].dep_airport_code
+        // Arrival To auto-syncs to homeAirport unless user manually changed it
+        if (!arrToManualRef.current.has(schedId)) {
+          r.arr_airport_code = newSectors[0].dep_airport_code
+        }
       }
       return r
     })
@@ -822,9 +828,6 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
                   const rowBg     = idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/40'
                   const typeOpt   = SECTOR_TYPE_OPTIONS.find(o => o.value === s.sector_type)
 
-                  const isLastSector    = idx === sectors.length - 1
-                  const isFromReadOnly  = idx > 0 && !isLastSector  // Transit only; Arrival is editable
-                  const isLastReadOnly  = isLastSector && sectors.length > 1
 
                   return (
                     <tr key={idx} className={cn('group hover:bg-blue-50/30 transition-colors', rowBg)}>
@@ -873,23 +876,14 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
                       </XL>
 
                       {/* From */}
-                      <XL
-                        readOnly={isFromReadOnly}
-                        className={!isFromReadOnly && !s.dep_airport_code ? 'bg-red-50/60' : ''}
-                      >
-                        {isFromReadOnly ? (
-                          <div className="px-2 py-[5px] text-xs font-mono font-semibold text-slate-500 select-none">
-                            {s.dep_airport_code || '—'}
-                          </div>
-                        ) : idx === 0 ? (
-                          // Departure: Thai airports only
+                      <XL className={!s.dep_airport_code ? 'bg-red-50/60' : ''}>
+                        {idx === 0 ? (
                           <AirportCell
                             airports={airports.filter(a => a.countryCode === 'THA')}
                             value={s.dep_airport_code}
                             onChange={v => update(idx, { dep_airport_code: v })}
                           />
-                        ) : (
-                          // Arrival (last sector): full airports list, supports Open Jaw
+                        ) : idx === sectors.length - 1 ? (
                           <AirportCell
                             airports={airports}
                             value={s.dep_airport_code}
@@ -901,26 +895,30 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
                               update(idx, { dep_airport_code: v })
                             }}
                           />
+                        ) : (
+                          <AirportCell
+                            airports={airports}
+                            value={s.dep_airport_code}
+                            onChange={v => update(idx, { dep_airport_code: v })}
+                          />
                         )}
                       </XL>
 
                       {/* To */}
-                      <XL
-                        readOnly={isLastReadOnly}
-                        className={!isLastReadOnly && !s.arr_airport_code ? 'bg-red-50/60' : ''}
-                      >
-                        {isLastReadOnly ? (
-                          <div className="px-2 py-[5px] text-xs font-mono font-semibold text-[#05a94f] select-none flex items-center gap-1.5" title="ล็อคกลับสนามบินต้นทาง">
-                            <span>{s.arr_airport_code || '—'}</span>
-                            <span className="text-[10px] text-green-400">⌂</span>
-                          </div>
-                        ) : (
-                          <AirportCell
-                            airports={airports}
-                            value={s.arr_airport_code}
-                            onChange={v => update(idx, { arr_airport_code: v })}
-                          />
-                        )}
+                      <XL className={!s.arr_airport_code ? 'bg-red-50/60' : ''}>
+                        <AirportCell
+                          airports={airports}
+                          value={s.arr_airport_code}
+                          onChange={v => {
+                            if (idx === sectors.length - 1 && sectors.length > 1) {
+                              const home = sectors[0]?.dep_airport_code ?? ''
+                              const id   = schedule?.scheduleId ?? ''
+                              if (v !== home) arrToManualRef.current.add(id)
+                              else arrToManualRef.current.delete(id)
+                            }
+                            update(idx, { arr_airport_code: v })
+                          }}
+                        />
                       </XL>
 
                       {/* Dep Time */}
@@ -1043,16 +1041,14 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
         </div>
       )}
 
-      {/* Route continuity errors */}
+      {/* Route continuity warnings (non-blocking) */}
       {routeGaps.length > 0 && (
         <div className="space-y-1">
           {routeGaps.map(g => (
-            <div key={`${g.sectorA}-${g.sectorB}`} className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700">
+            <div key={`${g.sectorA}-${g.sectorB}`} className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700">
               <AlertTriangle size={13} className="shrink-0" />
               <span>
-                เส้นทางไม่ต่อเนื่อง: Sector {g.sectorA} สิ้นสุดที่{' '}
-                <strong>{g.codeA}</strong> แต่ Sector {g.sectorB} เริ่มที่{' '}
-                <strong>{g.codeB}</strong>
+                เส้นทางไม่ต่อเนื่องจาก Sector {g.sectorA} (<strong>{g.codeA}</strong>) ถึง Sector {g.sectorB} (<strong>{g.codeB}</strong>) — กรุณาตรวจสอบ
               </span>
             </div>
           ))}
@@ -1069,13 +1065,12 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
         </div>
       ))}
 
-      {/* Return airport mismatch */}
+      {/* Return airport mismatch (non-blocking warning) */}
       {returnMismatch && (
-        <div className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700">
+        <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700">
           <AlertTriangle size={13} className="shrink-0" />
           <span>
-            สนามบินขากลับต้องตรงกับสนามบินต้นทาง: เริ่มต้นที่{' '}
-            <strong>{homeAirport}</strong> ต้องกลับ <strong>{homeAirport}</strong>
+            สนามบินขากลับไม่ตรงกับต้นทาง: เริ่มจาก <strong>{homeAirport}</strong> แต่กลับ <strong>{lastTo}</strong> — กรุณาตรวจสอบ
           </span>
         </div>
       )}
