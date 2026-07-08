@@ -1124,6 +1124,7 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
               <Th className="text-right">Seat</Th>
               <Th className="text-right">Used</Th>
               <Th className="text-right">Bal.</Th>
+              <Th className="text-center whitespace-nowrap">ประเภทราคา</Th>
               <Th className="text-right whitespace-nowrap">Fare</Th>
               <Th className="text-right whitespace-nowrap">Tax</Th>
               <Th className="text-right whitespace-nowrap">YQ</Th>
@@ -1136,7 +1137,7 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
           </TableHead>
           <TableBody>
             {pnrRows.length === 0 ? (
-              <EmptyRow cols={canEdit ? 17 : 15} message="ยังไม่มีข้อมูล PNR" />
+              <EmptyRow cols={canEdit ? 18 : 16} message="ยังไม่มีข้อมูล PNR" />
             ) : (
               pnrRows.map(p => {
                 const demoPnr = liveStock?.pnrs.find(dp => dp.pnrId === p.id)
@@ -1172,17 +1173,33 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                         {p.seat_balance}
                       </span>
                     </Td>
+                    {/* ประเภทราคา */}
+                    <Td className="text-center">
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap ${
+                        p.price_format === 'FARE_YQ' ? 'bg-amber-100 text-amber-700' :
+                        p.price_format === 'ALL_IN'  ? 'bg-blue-100 text-blue-700' :
+                                                        'bg-slate-100 text-slate-600'
+                      }`}>
+                        {p.price_format === 'FARE_YQ' ? 'FARE+YQ' : p.price_format === 'ALL_IN' ? 'ALL IN' : 'FARE'}
+                      </span>
+                    </Td>
                     {/* Fare */}
                     <Td className="text-right text-sm font-semibold tabular-nums">
                       {p.fare > 0 ? formatNumber(p.fare) : <span className="text-slate-300">—</span>}
                     </Td>
                     {/* Tax */}
                     <Td className="text-right text-xs tabular-nums text-slate-600">
-                      {p.tax > 0 ? formatNumber(p.tax) : p.tax === 0 ? '0' : <span className="text-slate-300">—</span>}
+                      {p.price_format === 'ALL_IN'
+                        ? <span className="text-[10px] text-slate-400 italic">รวมแล้ว</span>
+                        : p.tax > 0 ? formatNumber(p.tax) : p.tax === 0 ? '0' : <span className="text-slate-300">—</span>
+                      }
                     </Td>
                     {/* YQ */}
                     <Td className="text-right text-xs tabular-nums text-slate-600">
-                      {p.yq > 0 ? formatNumber(p.yq) : p.yq === 0 ? '0' : <span className="text-slate-300">—</span>}
+                      {(p.price_format === 'FARE_YQ' || p.price_format === 'ALL_IN')
+                        ? <span className="text-[10px] text-slate-400 italic">รวมแล้ว</span>
+                        : p.yq > 0 ? formatNumber(p.yq) : p.yq === 0 ? '0' : <span className="text-slate-300">—</span>
+                      }
                     </Td>
                     {/* ยอดสุทธิ */}
                     <Td className="text-right text-sm font-bold tabular-nums text-slate-800">

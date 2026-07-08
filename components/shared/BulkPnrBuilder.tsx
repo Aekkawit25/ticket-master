@@ -1257,7 +1257,7 @@ export function BulkPnrBuilder({
                         <input type="checkbox" checked={allSelected} onChange={toggleAll}
                           className="rounded border-slate-300 text-emerald-600" />
                       </th>
-                      {['#','PNR / Dummy','Travel Start','Travel End','Seat','Fare','Tax','YQ','ยอดสุทธิ','Condition','Payment Due','TTL','Status',''].map(h => (
+                      {['#','PNR / Dummy','Travel Start','Travel End','Seat','ประเภทราคา','Fare','Tax','YQ','ยอดสุทธิ','Condition','Payment Due','TTL','Status',''].map(h => (
                         <th key={h} className="px-2 h-10 text-xs font-semibold text-slate-500 text-left whitespace-nowrap">{h}</th>
                       ))}
                     </tr>
@@ -1305,17 +1305,32 @@ export function BulkPnrBuilder({
                               onChange={e => updateRow(row.rowId, { seatTotal: Math.max(1, Number(e.target.value)) })}
                               className="w-14 h-7 border border-slate-300 rounded-lg px-2 text-xs text-center focus:outline-none focus:ring-1 focus:ring-emerald-500" />
                           </td>
+                          {/* ประเภทราคา */}
+                          <td className="px-2 py-2 text-center">
+                            <span className={cn(
+                              'text-[9px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap',
+                              row.priceFormat === 'FARE_YQ' ? 'bg-amber-100 text-amber-700' :
+                              row.priceFormat === 'ALL_IN'  ? 'bg-blue-100 text-blue-700' :
+                                                              'bg-slate-100 text-slate-600'
+                            )}>
+                              {row.priceFormat === 'FARE_YQ' ? 'FARE+YQ' : row.priceFormat === 'ALL_IN' ? 'ALL IN' : 'FARE'}
+                            </span>
+                          </td>
                           {/* Fare */}
                           <td className="px-2 py-2 text-xs text-right font-semibold tabular-nums whitespace-nowrap">
                             {row.fare > 0 ? row.fare.toLocaleString('en-US') : <span className="italic text-slate-300">—</span>}
                           </td>
                           {/* Tax */}
                           <td className="px-2 py-2 text-xs text-right tabular-nums whitespace-nowrap text-slate-600">
-                            {row.tax > 0 ? row.tax.toLocaleString('en-US') : '0'}
+                            {row.priceFormat === 'ALL_IN'
+                              ? <span className="text-[9px] text-slate-400 italic">รวมแล้ว</span>
+                              : row.tax > 0 ? row.tax.toLocaleString('en-US') : '0'}
                           </td>
                           {/* YQ */}
                           <td className="px-2 py-2 text-xs text-right tabular-nums whitespace-nowrap text-slate-600">
-                            {row.yq > 0 ? row.yq.toLocaleString('en-US') : '0'}
+                            {(row.priceFormat === 'FARE_YQ' || row.priceFormat === 'ALL_IN')
+                              ? <span className="text-[9px] text-slate-400 italic">รวมแล้ว</span>
+                              : row.yq > 0 ? row.yq.toLocaleString('en-US') : '0'}
                           </td>
                           {/* ยอดสุทธิ */}
                           <td className="px-2 py-2 text-xs font-bold text-right tabular-nums text-slate-800 bg-emerald-50/60 whitespace-nowrap">

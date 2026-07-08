@@ -227,7 +227,10 @@ function normalizeForReview(state: WizardState, excludeStockCode?: string): Wiza
             travel_date: calcSectorDate(p.travel_start, s.day_offset) || '',
           }))
         : p.sector_dates ?? [],
-      total_amount: (p.fare || 0) + (p.tax ?? 0) + (p.yq ?? 0),
+      total_amount: (() => {
+        const f = p.fare || 0; const fmt = p.price_format ?? 'FARE'
+        return fmt === 'ALL_IN' ? f : fmt === 'FARE_YQ' ? f + (p.tax ?? 0) : f + (p.tax ?? 0) + (p.yq ?? 0)
+      })(),
     }
   })
   return { ...state, pnrs: generateDummyPnrs(normalizedPNRs, stockInfo, systemDummies) }

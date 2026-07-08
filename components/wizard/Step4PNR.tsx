@@ -33,6 +33,7 @@ function emptyPNR(): FlightPNRFormData {
     travel_start: '',
     travel_end: '',
     seat_total: 40,
+    price_format: 'FARE',
     fare: 0,
     yq: null,
     tax_type: 'separate',
@@ -43,6 +44,12 @@ function emptyPNR(): FlightPNRFormData {
     remark: '',
     sector_dates: [],
   }
+}
+
+function calcPnrTotal(fmt: string, fare: number, tax: number | null, yq: number | null): number {
+  if (fmt === 'ALL_IN') return fare
+  if (fmt === 'FARE_YQ') return fare + (tax ?? 0)
+  return fare + (tax ?? 0) + (yq ?? 0)
 }
 
 const DAY_ABBR = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
@@ -58,9 +65,10 @@ function dayAbbr(dateStr: string): string {
 
 // ─── PriceForm ────────────────────────────────────────────────────────────────
 interface PriceForm {
+  priceType: 'FARE' | 'FARE_YQ' | 'ALL_IN'
   fare: string   // required; '' treated as 0
-  tax: string    // '' = null (not specified); '0' = explicitly zero
-  yq: string     // '' = null (not specified); '0' = explicitly zero
+  tax: string    // '' = null; disabled when ALL_IN
+  yq: string     // '' = null; disabled when FARE_YQ or ALL_IN
 }
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -153,11 +161,13 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
 
   const openPriceEdit = (idx: number) => {
     const p = pnrs[idx]
+    const fmt = (p.price_format ?? 'FARE') as 'FARE' | 'FARE_YQ' | 'ALL_IN'
     setPriceEditIdx(idx)
     setPriceForm({
+      priceType: fmt,
       fare: p.fare > 0 ? String(p.fare) : '',
-      tax:  p.tax != null ? String(p.tax) : '',
-      yq:   p.yq  != null ? String(p.yq)  : '',
+      tax:  (fmt !== 'ALL_IN' && p.tax != null) ? String(p.tax) : '',
+      yq:   (fmt === 'FARE' && p.yq != null) ? String(p.yq) : '',
     })
   }
 
@@ -168,16 +178,33 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
 
   const applyPriceEdit = () => {
     if (priceEditIdx === null || !priceForm) return
+    const fmt = priceForm.priceType
     const fareAmt = Math.max(0, Number(priceForm.fare) || 0)
-    const taxAmt: number | null  = priceForm.tax.trim() === '' ? null : Math.max(0, Number(priceForm.tax)  || 0)
-    const yqAmt: number | null   = priceForm.yq.trim()  === '' ? null : Math.max(0, Number(priceForm.yq)   || 0)
-    const totalAmt = fareAmt + (taxAmt ?? 0) + (yqAmt ?? 0)
+    const taxAmt: number | null = fmt === 'ALL_IN'
+      ? null
+      : priceForm.tax.trim() === '' ? null : Math.max(0, Number(priceForm.tax) || 0)
+    const yqAmt: number | null = (fmt === 'FARE_YQ' || fmt === 'ALL_IN')
+      ? null
+      : priceForm.yq.trim() === '' ? null : Math.max(0, Number(priceForm.yq) || 0)
     update(priceEditIdx, {
+      price_format: fmt,
       fare: fareAmt, tax: taxAmt, yq: yqAmt,
       tax_type: 'separate',
-      total_amount: totalAmt,
+      total_amount: calcPnrTotal(fmt, fareAmt, taxAmt, yqAmt),
     })
     closePriceEdit()
+  }
+
+  const handlePriceTypeChange = (idx: number, newFmt: 'FARE' | 'FARE_YQ' | 'ALL_IN') => {
+    const p = pnrs[idx]
+    const newYq: number | null = (newFmt === 'FARE_YQ' || newFmt === 'ALL_IN') ? null : (p.yq ?? null)
+    const newTax: number | null = newFmt === 'ALL_IN' ? null : p.tax
+    update(idx, {
+      price_format: newFmt,
+      yq: newYq,
+      tax: newTax,
+      total_amount: calcPnrTotal(newFmt, p.fare, newTax, newYq),
+    })
   }
 
   const update = (idx: number, patch: Partial<FlightPNRFormData>) => {
@@ -228,11 +255,10 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
       }))
       pnr.seat_total   = row.seatTotal
       pnr.price_format = row.priceFormat as 'FARE' | 'FARE_YQ' | 'ALL_IN'
-      pnr.yq           = row.yq
-      pnr.breakdown    = row.breakdown
       pnr.fare         = row.fare
       pnr.tax_type     = row.taxType as TaxType
-      pnr.tax          = row.tax
+      pnr.tax          = (row.priceFormat === 'ALL_IN') ? null : row.tax
+      pnr.yq           = (row.priceFormat === 'FARE_YQ' || row.priceFormat === 'ALL_IN') ? null : row.yq
       pnr.total_amount = row.total
       pnr.condition_id = row.conditionCode
       pnr.status       = (row.status || 'Pending') as PNRStatus
@@ -367,7 +393,7 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
       {/* Table */}
       <div className="border border-slate-300 rounded-xl overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
-          <table className="border-collapse text-xs w-full" style={{ minWidth: 1080 }}>
+          <table className="border-collapse text-xs w-full" style={{ minWidth: 1200 }}>
 
             {/* Header — all cells whitespace-nowrap so nothing wraps to 2 lines */}
             <thead>
@@ -383,6 +409,10 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
                 <th className="border border-slate-300 px-2 text-center text-slate-600 font-semibold whitespace-nowrap" style={{ width: 60 }} title="Seat Total">
                   Seat <span className="text-red-400">*</span>
                 </th>
+                <th className="border border-slate-300 px-2 text-center text-slate-600 font-semibold whitespace-nowrap" style={{ width: 90 }}
+                    title="FARE = แยก Tax+YQ / FARE+YQ = รวม YQ ใน Fare / ALL IN = รวมทุกอย่าง">
+                  ประเภทราคา
+                </th>
                 <th className="border border-slate-300 px-2 text-right text-slate-600 font-semibold whitespace-nowrap" style={{ width: 90 }}>
                   Fare <span className="text-red-400">*</span>
                 </th>
@@ -391,7 +421,7 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
                 <th className="border border-slate-300 px-2 text-right text-slate-600 font-semibold whitespace-nowrap" style={{ width: 80 }}
                     title="YQ — ว่าง = ยังไม่ระบุ (—)">YQ</th>
                 <th className="border border-slate-300 px-2 text-right text-green-700 font-semibold whitespace-nowrap bg-green-50/60" style={{ width: 90 }}
-                    title={`ยอดสุทธิ (${currency}) = Fare + Tax + YQ`}>
+                    title={`ยอดสุทธิ (${currency})`}>
                   ยอดสุทธิ ✦
                 </th>
                 <th className="border border-slate-300 px-2 text-left text-slate-600 font-semibold whitespace-nowrap" style={{ width: 120 }}>Condition</th>
@@ -409,7 +439,7 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
               {/* Empty state */}
               {pnrs.length === 0 && (
                 <tr>
-                  <td colSpan={16} className="border border-slate-200 py-12 px-4">
+                  <td colSpan={17} className="border border-slate-200 py-12 px-4">
                     <div className="flex flex-col items-center gap-3">
                       <div className="text-slate-200">
                         <PlusCircle size={36} strokeWidth={1} />
@@ -518,6 +548,22 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
                       />
                     </td>
 
+                    {/* ประเภทราคา */}
+                    <td className="border border-slate-200 p-0 align-middle">
+                      <select
+                        value={p.price_format ?? 'FARE'}
+                        onChange={e => handlePriceTypeChange(idx, e.target.value as 'FARE' | 'FARE_YQ' | 'ALL_IN')}
+                        className={cn(xi, 'appearance-none cursor-pointer text-center font-semibold',
+                          (!p.price_format || p.price_format === 'FARE') ? 'text-slate-600' :
+                          p.price_format === 'FARE_YQ' ? 'text-amber-700' : 'text-blue-700'
+                        )}
+                      >
+                        <option value="FARE">FARE</option>
+                        <option value="FARE_YQ">FARE+YQ</option>
+                        <option value="ALL_IN">ALL IN</option>
+                      </select>
+                    </td>
+
                     {/* Fare */}
                     <td
                       className="border border-slate-200 text-right cursor-pointer hover:bg-blue-50/40 transition-colors align-middle select-none"
@@ -530,26 +576,38 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
                     </td>
 
                     {/* Tax */}
-                    <td
-                      className="border border-slate-200 text-right cursor-pointer hover:bg-blue-50/40 transition-colors align-middle select-none"
-                      onClick={() => openPriceEdit(idx)}
-                      title="คลิกเพื่อแก้ไขราคา"
-                    >
-                      <span className={cn('px-2 text-xs tabular-nums', p.tax != null ? 'text-slate-600' : 'text-slate-300 italic')}>
-                        {p.tax == null ? '—' : p.tax === 0 ? '0' : p.tax.toLocaleString('en-US')}
-                      </span>
-                    </td>
+                    {p.price_format === 'ALL_IN' ? (
+                      <td className="border border-slate-200 text-center bg-slate-50/70 align-middle select-none">
+                        <span className="px-2 text-[10px] text-slate-400 italic">รวมแล้ว</span>
+                      </td>
+                    ) : (
+                      <td
+                        className="border border-slate-200 text-right cursor-pointer hover:bg-blue-50/40 transition-colors align-middle select-none"
+                        onClick={() => openPriceEdit(idx)}
+                        title="คลิกเพื่อแก้ไขราคา"
+                      >
+                        <span className={cn('px-2 text-xs tabular-nums', p.tax != null ? 'text-slate-600' : 'text-slate-300 italic')}>
+                          {p.tax == null ? '—' : p.tax === 0 ? '0' : p.tax.toLocaleString('en-US')}
+                        </span>
+                      </td>
+                    )}
 
                     {/* YQ */}
-                    <td
-                      className="border border-slate-200 text-right cursor-pointer hover:bg-blue-50/40 transition-colors align-middle select-none"
-                      onClick={() => openPriceEdit(idx)}
-                      title="คลิกเพื่อแก้ไขราคา"
-                    >
-                      <span className={cn('px-2 text-xs tabular-nums', p.yq != null ? 'text-slate-600' : 'text-slate-300 italic')}>
-                        {p.yq == null ? '—' : p.yq === 0 ? '0' : p.yq.toLocaleString('en-US')}
-                      </span>
-                    </td>
+                    {(p.price_format === 'FARE_YQ' || p.price_format === 'ALL_IN') ? (
+                      <td className="border border-slate-200 text-center bg-slate-50/70 align-middle select-none">
+                        <span className="px-2 text-[10px] text-slate-400 italic">รวมแล้ว</span>
+                      </td>
+                    ) : (
+                      <td
+                        className="border border-slate-200 text-right cursor-pointer hover:bg-blue-50/40 transition-colors align-middle select-none"
+                        onClick={() => openPriceEdit(idx)}
+                        title="คลิกเพื่อแก้ไขราคา"
+                      >
+                        <span className={cn('px-2 text-xs tabular-nums', p.yq != null ? 'text-slate-600' : 'text-slate-300 italic')}>
+                          {p.yq == null ? '—' : p.yq === 0 ? '0' : p.yq.toLocaleString('en-US')}
+                        </span>
+                      </td>
+                    )}
 
                     {/* ยอดสุทธิ — computed readonly */}
                     <td className={cn(
@@ -645,6 +703,7 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
                   <td className="border border-slate-300 px-2 py-1.5 text-xs text-slate-400" />
                   <td className="border border-slate-300 px-2 py-1.5 text-xs text-slate-400" />
                   <td className="border border-slate-300 px-2 py-1.5 text-xs text-slate-400" />
+                  <td className="border border-slate-300 px-2 py-1.5 text-xs text-slate-400" />
                   <td className="border border-slate-300 px-2 py-1.5 text-xs text-right text-green-700 font-bold bg-green-50">
                     {totals.total.toLocaleString('en-US')}
                   </td>
@@ -662,13 +721,14 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
           <span>Dep Date = วันออกเดินทาง (กรอกได้) · Arr Date คำนวณจาก Flight Set อัตโนมัติ</span>
           <div className="flex items-center gap-1.5 shrink-0">
             <div className="w-3 h-3 rounded-sm bg-green-100 border border-green-300" />
-            <span>ยอดสุทธิ ✦ = Fare + Tax + YQ · คลิกเซลล์ราคาเพื่อแก้ไข</span>
+            <span>ยอดสุทธิ ✦ = คำนวณตามประเภทราคา · คลิกเซลล์ราคาเพื่อแก้ไข</span>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
             <div className="w-3 h-3 rounded-sm bg-amber-100 border border-amber-300" />
             <span>TTL Date ✦ = คำนวณจาก Condition ที่เลือก</span>
           </div>
-          <span className="text-slate-400 shrink-0">— = ยังไม่ระบุ · 0 = ระบุแล้วว่าเป็นศูนย์</span>
+          <span className="text-slate-400 shrink-0">ประเภทราคา: FARE = Fare+Tax+YQ · FARE+YQ = YQ รวมใน Fare · ALL IN = รวมทุกอย่าง</span>
+          <span className="text-slate-400 shrink-0">— = ยังไม่ระบุ · 0 = ระบุแล้วว่าเป็นศูนย์ · รวมแล้ว = รวมอยู่ในราคาที่ได้รับ</span>
           <span className="text-slate-400 shrink-0">สกุลเงิน: <strong className="text-slate-600">{currency}</strong></span>
           <span className="text-slate-400 shrink-0">PNR ว่างได้ · Dummy PNR สร้างอัตโนมัติตอน Review</span>
           <span className="ml-auto text-slate-300 shrink-0">* จำเป็นต้องกรอก</span>
@@ -700,11 +760,13 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
 
       {/* ─── Price Edit Modal ─────────────────────────────────────────── */}
       {priceEditIdx !== null && priceForm && (() => {
+        const fmt = priceForm.priceType
         const pfFare = Number(priceForm.fare) || 0
-        const pfTax  = priceForm.tax.trim()  === '' ? null : (Number(priceForm.tax)  || 0)
-        const pfYq   = priceForm.yq.trim()   === '' ? null : (Number(priceForm.yq)   || 0)
-        const pfTotal = pfFare + (pfTax ?? 0) + (pfYq ?? 0)
+        const pfTax  = fmt === 'ALL_IN' ? null : (priceForm.tax.trim() === '' ? null : (Number(priceForm.tax) || 0))
+        const pfYq   = (fmt === 'FARE_YQ' || fmt === 'ALL_IN') ? null : (priceForm.yq.trim() === '' ? null : (Number(priceForm.yq) || 0))
+        const pfTotal = calcPnrTotal(fmt, pfFare, pfTax, pfYq)
         const mCls = 'w-full h-9 border border-slate-300 rounded-lg px-3 text-sm text-right focus:outline-none focus:ring-2 focus:ring-emerald-400/60 focus:border-emerald-400'
+        const mDisCls = 'w-full h-9 flex items-center px-3 rounded-lg border border-slate-200 bg-slate-50 text-xs text-slate-400 italic'
         return (
           <Modal
             open={true}
@@ -714,34 +776,63 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
             footer={
               <div className="flex justify-end gap-2">
                 <Button variant="ghost" onClick={closePriceEdit}>ยกเลิก</Button>
-                <Button
-                  disabled={pfFare <= 0}
-                  onClick={applyPriceEdit}
-                >
-                  บันทึกราคา
-                </Button>
+                <Button disabled={pfFare <= 0} onClick={applyPriceEdit}>บันทึกราคา</Button>
               </div>
             }
           >
             <div className="space-y-4">
+              {/* ประเภทราคา selector */}
+              <div>
+                <p className="text-xs font-semibold text-slate-600 mb-1.5">ประเภทราคาที่ได้รับ</p>
+                <div className="grid grid-cols-3 overflow-hidden rounded-lg border border-slate-200">
+                  {(['FARE', 'FARE_YQ', 'ALL_IN'] as const).map((f, i) => (
+                    <button key={f} type="button"
+                      onClick={() => setPriceForm(pf => pf ? {
+                        ...pf, priceType: f,
+                        yq:  (f === 'FARE_YQ' || f === 'ALL_IN') ? '' : pf.yq,
+                        tax: f === 'ALL_IN' ? '' : pf.tax,
+                      } : pf)}
+                      className={cn(
+                        'h-9 text-xs font-medium transition',
+                        i < 2 && 'border-r border-slate-200',
+                        priceForm.priceType === f ? 'bg-emerald-600 text-white' : 'text-slate-600 hover:bg-slate-50'
+                      )}>
+                      {f === 'FARE' ? 'FARE' : f === 'FARE_YQ' ? 'FARE + YQ' : 'ALL IN'}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1">
+                  {fmt === 'FARE' ? 'Total = Fare + Tax + YQ' : fmt === 'FARE_YQ' ? 'YQ รวมอยู่ใน Fare — Total = Fare + Tax' : 'รวมทุกอย่างแล้ว — Total = Fare (All In)'}
+                </p>
+              </div>
+
+              {/* Inputs */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-slate-500 mb-1">Fare ({currency})<span className="text-red-400 ml-0.5">*</span></label>
+                  <label className="block text-xs text-slate-500 mb-1">
+                    {fmt === 'FARE' ? 'Fare' : fmt === 'FARE_YQ' ? 'Fare + YQ' : 'All In'} ({currency})<span className="text-red-400 ml-0.5">*</span>
+                  </label>
                   <input type="number" min={0} placeholder="0" value={priceForm.fare}
-                    onChange={e => setPriceForm(f => f ? { ...f, fare: e.target.value } : f)}
+                    onChange={e => setPriceForm(pf => pf ? { ...pf, fare: e.target.value } : pf)}
                     className={mCls} />
                 </div>
                 <div>
                   <label className="block text-xs text-slate-500 mb-1">Tax ({currency})</label>
-                  <input type="number" min={0} placeholder="ว่าง = ยังไม่ระบุ" value={priceForm.tax}
-                    onChange={e => setPriceForm(f => f ? { ...f, tax: e.target.value } : f)}
-                    className={mCls} />
+                  {fmt === 'ALL_IN'
+                    ? <div className={mDisCls}>รวมอยู่ใน All In แล้ว</div>
+                    : <input type="number" min={0} placeholder="ว่าง = ยังไม่ระบุ" value={priceForm.tax}
+                        onChange={e => setPriceForm(pf => pf ? { ...pf, tax: e.target.value } : pf)}
+                        className={mCls} />
+                  }
                 </div>
                 <div>
                   <label className="block text-xs text-slate-500 mb-1">YQ ({currency})</label>
-                  <input type="number" min={0} placeholder="ว่าง = ยังไม่ระบุ" value={priceForm.yq}
-                    onChange={e => setPriceForm(f => f ? { ...f, yq: e.target.value } : f)}
-                    className={mCls} />
+                  {(fmt === 'FARE_YQ' || fmt === 'ALL_IN')
+                    ? <div className={mDisCls}>{fmt === 'FARE_YQ' ? 'รวมอยู่ใน Fare แล้ว' : 'รวมอยู่ใน All In แล้ว'}</div>
+                    : <input type="number" min={0} placeholder="ว่าง = ยังไม่ระบุ" value={priceForm.yq}
+                        onChange={e => setPriceForm(pf => pf ? { ...pf, yq: e.target.value } : pf)}
+                        className={mCls} />
+                  }
                 </div>
                 <div>
                   <label className="block text-xs text-slate-500 mb-1">ยอดสุทธิ ({currency})</label>
@@ -750,12 +841,8 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
                   </div>
                 </div>
               </div>
-              <p className="text-[10px] text-slate-400">
-                ว่าง = ยังไม่ระบุ (แสดง —) · ใส่ 0 = ระบุแล้วว่าเป็นศูนย์ · ยอดสุทธิ = Fare + Tax + YQ
-              </p>
-              {pfFare <= 0 && (
-                <p className="text-xs text-red-500">กรุณาระบุ Fare (มากกว่า 0)</p>
-              )}
+              <p className="text-[10px] text-slate-400">ว่าง = ยังไม่ระบุ (—) · 0 = ระบุแล้วว่าเป็นศูนย์</p>
+              {pfFare <= 0 && <p className="text-xs text-red-500">กรุณาระบุ Fare (มากกว่า 0)</p>}
             </div>
           </Modal>
         )
