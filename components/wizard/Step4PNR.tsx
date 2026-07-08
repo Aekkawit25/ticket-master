@@ -817,22 +817,68 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
                     className={mCls} />
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-500 mb-1">Tax ({currency})</label>
-                  {fmt === 'ALL_IN'
-                    ? <div className={mDisCls}>รวมอยู่ใน All In แล้ว</div>
-                    : <input type="number" min={0} placeholder="ว่าง = ยังไม่ระบุ" value={priceForm.tax}
-                        onChange={e => setPriceForm(pf => pf ? { ...pf, tax: e.target.value } : pf)}
-                        className={mCls} />
-                  }
+                  {fmt === 'ALL_IN' ? (
+                    <>
+                      <label className="block text-xs text-slate-500 mb-1">Tax ({currency})</label>
+                      <div className={mDisCls}>รวมอยู่ใน All In แล้ว</div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs text-slate-500">Tax ({currency})</label>
+                        <div className="flex rounded overflow-hidden border border-slate-200 text-[10px]">
+                          <button type="button"
+                            onClick={() => setPriceForm(pf => pf ? { ...pf, tax: '' } : pf)}
+                            className={cn('px-2.5 py-1 transition-colors', priceForm.tax === '' ? 'bg-slate-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-50')}>
+                            ไม่ระบุ
+                          </button>
+                          <button type="button"
+                            onClick={() => setPriceForm(pf => pf ? { ...pf, tax: pf.tax !== '' ? pf.tax : '0' } : pf)}
+                            className={cn('px-2.5 py-1 transition-colors border-l border-slate-200', priceForm.tax !== '' ? 'bg-emerald-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-50')}>
+                            ระบุ Tax
+                          </button>
+                        </div>
+                      </div>
+                      {priceForm.tax === ''
+                        ? <div className={cn(mDisCls, 'justify-end text-slate-300')}>—</div>
+                        : <input type="number" min={0} placeholder="0" value={priceForm.tax}
+                            onChange={e => setPriceForm(pf => pf ? { ...pf, tax: e.target.value } : pf)}
+                            className={mCls} />
+                      }
+                    </>
+                  )}
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-500 mb-1">YQ ({currency})</label>
-                  {(fmt === 'FARE_YQ' || fmt === 'ALL_IN')
-                    ? <div className={mDisCls}>{fmt === 'FARE_YQ' ? 'รวมอยู่ใน Fare แล้ว' : 'รวมอยู่ใน All In แล้ว'}</div>
-                    : <input type="number" min={0} placeholder="ว่าง = ยังไม่ระบุ" value={priceForm.yq}
-                        onChange={e => setPriceForm(pf => pf ? { ...pf, yq: e.target.value } : pf)}
-                        className={mCls} />
-                  }
+                  {(fmt === 'FARE_YQ' || fmt === 'ALL_IN') ? (
+                    <>
+                      <label className="block text-xs text-slate-500 mb-1">YQ ({currency})</label>
+                      <div className={mDisCls}>{fmt === 'FARE_YQ' ? 'รวมอยู่ใน Fare แล้ว' : 'รวมอยู่ใน All In แล้ว'}</div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs text-slate-500">YQ ({currency})</label>
+                        <div className="flex rounded overflow-hidden border border-slate-200 text-[10px]">
+                          <button type="button"
+                            onClick={() => setPriceForm(pf => pf ? { ...pf, yq: '' } : pf)}
+                            className={cn('px-2.5 py-1 transition-colors', priceForm.yq === '' ? 'bg-slate-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-50')}>
+                            ไม่ระบุ
+                          </button>
+                          <button type="button"
+                            onClick={() => setPriceForm(pf => pf ? { ...pf, yq: pf.yq !== '' ? pf.yq : '0' } : pf)}
+                            className={cn('px-2.5 py-1 transition-colors border-l border-slate-200', priceForm.yq !== '' ? 'bg-emerald-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-50')}>
+                            ระบุ YQ
+                          </button>
+                        </div>
+                      </div>
+                      {priceForm.yq === ''
+                        ? <div className={cn(mDisCls, 'justify-end text-slate-300')}>—</div>
+                        : <input type="number" min={0} placeholder="0" value={priceForm.yq}
+                            onChange={e => setPriceForm(pf => pf ? { ...pf, yq: e.target.value } : pf)}
+                            className={mCls} />
+                      }
+                    </>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs text-slate-500 mb-1">ยอดสุทธิ ({currency})</label>
@@ -841,7 +887,7 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
                   </div>
                 </div>
               </div>
-              <p className="text-[10px] text-slate-400">ว่าง = ยังไม่ระบุ (—) · 0 = ระบุแล้วว่าเป็นศูนย์</p>
+              <p className="text-[10px] text-slate-400">— = ยังไม่ได้ระบุ · 0 = ระบุแล้วว่าเป็นศูนย์ · รวมแล้ว = รวมอยู่ในราคาที่ได้รับ</p>
               {pfFare <= 0 && <p className="text-xs text-red-500">กรุณาระบุ Fare (มากกว่า 0)</p>}
             </div>
           </Modal>
