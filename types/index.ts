@@ -3,6 +3,7 @@
 // ============================================================
 
 export type TicketType = 'Group' | 'FIT' | 'Ticket + Land'
+export type GroupType  = 'SERIES' | 'ADHOC'
 export type TripType = 'One-way' | 'Round-trip' | 'Multi-city'
 export type StockStatus = 'Draft' | 'Active' | 'Closed' | 'Cancelled' | 'Reopened'
 export type PNRStatus = 'Pending' | 'Confirmed' | 'Ticketed' | 'Cancelled' | 'Expired' | 'Closed'
@@ -42,6 +43,7 @@ export interface FlightSeries {
   id: string
   stock_code: string
   ticket_type: TicketType
+  group_type?: GroupType
   trip_type: TripType
   group_name: string
   country_id: string | null
@@ -72,6 +74,7 @@ export interface FlightSeries {
 
 export interface FlightSeriesFormData {
   ticket_type: TicketType
+  group_type?: GroupType
   trip_type: TripType
   stock_code: string
   group_name: string

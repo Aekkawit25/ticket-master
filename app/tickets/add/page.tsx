@@ -12,7 +12,7 @@ import Step4PNR from '@/components/wizard/Step4PNR'
 import Step5Review from '@/components/wizard/Step5Review'
 import { validateSectors, generateStockCode, generateDummyPnrs, calcTravelEndFromSectors, calcSectorDate } from '@/lib/utils'
 import { wizardStateToDemoStock, saveDemoStock, getDemoStocks, checkPNRDuplicatesInSystem, formatPNRConflictMessage } from '@/lib/demo-storage'
-import type { WizardState, FlightSeriesFormData, FlightSectorFormData, FlightScheduleFormData, TicketType, TripType } from '@/types'
+import type { WizardState, FlightSeriesFormData, FlightSectorFormData, FlightScheduleFormData, TicketType, GroupType, TripType } from '@/types'
 
 function normalizeForReview(state: WizardState): WizardState {
   const { schedules, stockInfo, pnrs } = state
@@ -51,10 +51,12 @@ function getDefaultSchedule(ticketType: TicketType, airlineCode: string): Flight
   return { scheduleId: 'SCH-A', scheduleName: 'ชุดเที่ยวบินหลัก', isMain: true, remark: '', sectors: ticketType === 'FIT' ? [dep] : [dep, arr] }
 }
 
-const PAGE_TITLES: Record<TicketType, string> = {
-  'Group':        'Add Stock — Group Ticket',
-  'FIT':          'Add Stock — FIT Ticket',
-  'Ticket + Land':'Add Stock — Ticket + Land',
+function getPageTitle(ticketType: TicketType, groupType?: GroupType | null): string {
+  if (ticketType === 'Group' && groupType === 'SERIES') return 'Add Stock — Group Series'
+  if (ticketType === 'Group' && groupType === 'ADHOC')  return 'Add Stock — Group Ad Hoc'
+  if (ticketType === 'Group')  return 'Add Stock — Group Ticket'
+  if (ticketType === 'FIT')    return 'Add Stock — FIT Ticket'
+  return 'Add Stock — Ticket + Land'
 }
 
 const STEP_SUBTITLES: Record<number, string> = {
@@ -68,8 +70,8 @@ const STEP_SUBTITLES: Record<number, string> = {
 function AddStockPageInner() {
   const params = useSearchParams()
   const router = useRouter()
-  // lockedType: set when coming from a specific menu; null when entering /tickets/add directly
-  const lockedType = params.get('type') as TicketType | null
+  const lockedType      = params.get('type') as TicketType | null
+  const lockedGroupType = params.get('groupType') as GroupType | null
   const defaultType: TicketType = lockedType ?? 'Group'
 
   const [step, setStep] = useState(1)
@@ -82,6 +84,7 @@ function AddStockPageInner() {
     step: 1,
     stockInfo: {
       ticket_type: defaultType,
+      group_type: lockedGroupType ?? undefined,
       trip_type: defaultType === 'FIT' ? 'One-way' : 'Round-trip',
       stock_code: generateStockCode(defaultType === 'Group' ? 'GRP' : defaultType === 'FIT' ? 'FIT' : 'LND'),
       group_name: '',
@@ -190,23 +193,29 @@ function AddStockPageInner() {
       saveDemoStock(demoStock)
       setSaving(false)
       setSaveMsg('บันทึกข้อมูล Demo สำเร็จ')
-      const redirectMap: Record<string, string> = {
-        'Group': '/tickets/group',
-        'FIT': '/tickets/fit',
-        'Ticket + Land': '/tickets/land',
-      }
-      setTimeout(() => router.push(redirectMap[state.stockInfo.ticket_type] || '/tickets'), 800)
+      const redirectTarget = (() => {
+        if (state.stockInfo.ticket_type === 'Group') {
+          if (state.stockInfo.group_type === 'SERIES') return '/tickets/group/series'
+          if (state.stockInfo.group_type === 'ADHOC')  return '/tickets/group/adhoc'
+          return '/tickets/group'
+        }
+        if (state.stockInfo.ticket_type === 'FIT') return '/tickets/fit'
+        return '/tickets/land'
+      })()
+      setTimeout(() => router.push(redirectTarget), 800)
     } catch {
       setSaving(false)
       setSaveMsg('เกิดข้อผิดพลาดในการบันทึก')
     }
   }
 
+  const pageTitle = getPageTitle(state.stockInfo.ticket_type, state.stockInfo.group_type)
+
   return (
-    <AppLayout title={PAGE_TITLES[state.stockInfo.ticket_type]}>
+    <AppLayout title={pageTitle}>
       <WizardLayout
         step={step}
-        pageTitle={PAGE_TITLES[state.stockInfo.ticket_type]}
+        pageTitle={pageTitle}
         subtitle={STEP_SUBTITLES[step]}
         ticketType={state.stockInfo.ticket_type}
         error={errors._}

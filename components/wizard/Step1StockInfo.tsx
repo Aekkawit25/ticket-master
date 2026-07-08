@@ -21,8 +21,22 @@ interface Step1Props {
 }
 
 export default function Step1StockInfo({ data, onChange, errors = {} }: Step1Props) {
+  const groupTypeLabel = data.group_type === 'SERIES' ? 'Group Series'
+                       : data.group_type === 'ADHOC'  ? 'Group Ad Hoc'
+                       : null
+
   return (
     <div className="space-y-4">
+      {/* Locked Group Type indicator */}
+      {groupTypeLabel && (
+        <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-600">
+          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold ${data.group_type === 'SERIES' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+            {groupTypeLabel}
+          </span>
+          <span>ประเภทนี้ถูกกำหนดแล้ว — ไม่สามารถเปลี่ยนแปลงได้</span>
+        </div>
+      )}
+
       {/* Card: Basic Info */}
       <Card>
         <CardHeader>
@@ -120,6 +134,9 @@ export default function Step1StockInfo({ data, onChange, errors = {} }: Step1Pro
           <li><strong>Series Name</strong> = ชื่อ Series เช่น "Sweden Aurora Mar 26"</li>
           {(data.ticket_type === 'Group' || data.ticket_type === 'Ticket + Land') && (
             <li>{data.ticket_type} ต้องมี Sector ขั้นต่ำ 2 รายการ (Departure + Arrival)</li>
+          )}
+          {data.ticket_type === 'Group' && data.group_type && (
+            <li>Group Type: <strong>{data.group_type === 'SERIES' ? 'Series' : 'Ad Hoc'}</strong> — ล็อคจากเมนูที่เลือก</li>
           )}
           {data.ticket_type === 'FIT' && (
             <li>FIT รองรับ One-way (1 Sector), Round-trip และ Multi-city (≥ 2 Sector)</li>

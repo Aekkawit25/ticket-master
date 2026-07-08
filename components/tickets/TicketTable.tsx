@@ -41,6 +41,7 @@ interface TableFilters {
   search?: string
   status?: string
   airline_code?: string
+  country_code?: string
   period_from?: string
   period_to?: string
 }
@@ -48,6 +49,7 @@ interface TableFilters {
 interface TicketTableProps {
   tickets?: FlightSeries[]
   filterType?: TicketType
+  filterGroupType?: string
   filters?: TableFilters
   loading?: boolean
 }
@@ -191,7 +193,7 @@ function genStockCode(ticketType: TicketType): string {
 // Main component
 // ─────────────────────────────────────────────────────────────
 
-export default function TicketTable({ tickets, filterType, filters, loading }: TicketTableProps) {
+export default function TicketTable({ tickets, filterType, filterGroupType, filters, loading }: TicketTableProps) {
   const router = useRouter()
   const importFileRef = useRef<HTMLInputElement>(null)
   const importTargetRef = useRef<string | null>(null)
@@ -267,14 +269,16 @@ export default function TicketTable({ tickets, filterType, filters, loading }: T
   }
 
   const handleBannerExportJSON = () => {
-    const stocks = filterType
-      ? getDemoStocks().filter(s => s.ticketType === filterType)
-      : getDemoStocks()
+    const stocks = getDemoStocks()
+      .filter(s => !filterType || s.ticketType === filterType)
+      .filter(s => !filterGroupType || s.groupType === filterGroupType)
     const blob = new Blob([JSON.stringify(stocks, null, 2)], { type: 'application/json' })
     const url  = URL.createObjectURL(blob)
     const a    = document.createElement('a')
     a.href     = url
-    const typePart = filterType ? filterType.replace(/ /g, '_') : 'all'
+    const typePart = filterGroupType
+      ? `Group_${filterGroupType}`
+      : filterType ? filterType.replace(/ /g, '_') : 'all'
     a.download = `ticket_stocks_${typePart}_${dateFmt(new Date(), 'yyyyMMdd')}.json`
     a.click()
     URL.revokeObjectURL(url)
@@ -632,8 +636,12 @@ export default function TicketTable({ tickets, filterType, filters, loading }: T
 
   // ── Data ────────────────────────────────────────────────────
   const baseTickets: FlightSeries[] = tickets ?? demoStocks
-  const filtered   = filterType ? baseTickets.filter(t => t.ticket_type === filterType) : baseTickets
-  const demoCount  = demoStocks.filter(d => !filterType || d.ticket_type === filterType).length
+  const filtered   = baseTickets
+    .filter(t => !filterType || t.ticket_type === filterType)
+    .filter(t => !filterGroupType || t.group_type === filterGroupType)
+  const demoCount  = demoStocks
+    .filter(d => !filterType || d.ticket_type === filterType)
+    .filter(d => !filterGroupType || d.group_type === filterGroupType).length
 
   // Apply user search/status/airline/period filters on top of type filter
   const displayTickets = filters ? filtered.filter(t => {
@@ -648,6 +656,7 @@ export default function TicketTable({ tickets, filterType, filters, loading }: T
     }
     if (filters.status && t.status !== filters.status) return false
     if (filters.airline_code && !(t.airline_code || '').toLowerCase().includes(filters.airline_code.toLowerCase())) return false
+    if (filters.country_code && t.country_id !== filters.country_code) return false
     if (filters.period_from && t.period_start && t.period_start < filters.period_from) return false
     if (filters.period_to && t.period_end && t.period_end > filters.period_to) return false
     return true
@@ -741,7 +750,19 @@ export default function TicketTable({ tickets, filterType, filters, loading }: T
                   )}
                 </Td>
                 <Td className="hidden md:table-cell">
-                  <TicketTypeBadge type={t.ticket_type} />
+                  <div className="flex flex-col gap-0.5">
+                    <TicketTypeBadge type={t.ticket_type} />
+                    {t.group_type && (
+                      <span className={cn(
+                        'inline-flex items-center px-1.5 py-px text-[10px] font-semibold rounded-full w-fit',
+                        t.group_type === 'SERIES'
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : 'bg-amber-100 text-amber-700'
+                      )}>
+                        {t.group_type === 'SERIES' ? 'Series' : 'Ad Hoc'}
+                      </span>
+                    )}
+                  </div>
                 </Td>
                 <Td>
                   <p className="text-sm font-medium text-slate-800 max-w-[160px] truncate">{t.group_name}</p>

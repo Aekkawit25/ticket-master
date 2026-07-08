@@ -18,6 +18,7 @@ export interface ImportIssue {
 export interface ImportStockInfo {
   stockCode: string
   ticketType: string
+  groupType?: string
   groupName: string
   airlineCode: string
   countryId: string

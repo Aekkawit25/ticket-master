@@ -40,7 +40,15 @@ const navItems: NavItem[] = [
     icon: <Ticket size={18} />,
     children: [
       { label: 'All Tickets', href: '/tickets', icon: <List size={16} /> },
-      { label: 'Group Tickets', href: '/tickets/group', icon: <Users size={16} /> },
+      {
+        label: 'Group Tickets',
+        icon: <Users size={16} />,
+        children: [
+          { label: 'All Group Tickets', href: '/tickets/group',        icon: <Users size={14} /> },
+          { label: 'Group Series',      href: '/tickets/group/series', icon: <List size={14} /> },
+          { label: 'Group Ad Hoc',      href: '/tickets/group/adhoc',  icon: <List size={14} /> },
+        ],
+      },
       { label: 'FIT Tickets', href: '/tickets/fit', icon: <Ticket size={16} /> },
       { label: 'Ticket + Land', href: '/tickets/land', icon: <Globe size={16} /> },
       { label: 'Template Condition', href: '/tickets/condition-templates', icon: <FileSpreadsheet size={16} /> },
@@ -90,7 +98,7 @@ function NavGroup({ item, depth = 0 }: { item: NavItem; depth?: number }) {
         href={item.href!}
         className={cn(
           'flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all',
-          depth > 0 ? 'pl-9' : '',
+          depth === 1 ? 'pl-9' : depth > 1 ? 'pl-6' : '',
           isActive
             ? 'bg-[#05a94f] text-white shadow-sm'
             : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'

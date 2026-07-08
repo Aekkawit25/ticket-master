@@ -364,6 +364,7 @@ export interface DemoStock {
   stockId: string
   stockCode: string
   ticketType: TicketType
+  groupType?: 'SERIES' | 'ADHOC'
   tripType: TripType
   groupName: string
   airlineCode: string
@@ -633,6 +634,21 @@ export function clearDemoStocksByType(ticketType: TicketType): number {
     const removed = all.length - remaining.length
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(remaining))
     window.dispatchEvent(new CustomEvent('demo_stock_updated', { detail: { ticketType } }))
+    return removed
+  } catch {
+    return 0
+  }
+}
+
+/** Clears only Group stocks with a specific groupType (SERIES or ADHOC). */
+export function clearDemoStocksByGroupType(groupType: 'SERIES' | 'ADHOC'): number {
+  if (typeof window === 'undefined') return 0
+  try {
+    const all = getDemoStocks()
+    const remaining = all.filter(s => !(s.ticketType === 'Group' && s.groupType === groupType))
+    const removed = all.length - remaining.length
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(remaining))
+    window.dispatchEvent(new CustomEvent('demo_stock_updated', { detail: { groupType } }))
     return removed
   } catch {
     return 0
@@ -1003,6 +1019,7 @@ export function wizardStateToDemoStock(state: WizardState): DemoStock {
     stockId,
     stockCode: stockInfo.stock_code,
     ticketType: stockInfo.ticket_type,
+    groupType: stockInfo.group_type,
     tripType: stockInfo.trip_type,
     groupName: stockInfo.group_name,
     airlineCode: stockInfo.airline_code,
@@ -1404,6 +1421,7 @@ export function demoStockToFlightSeries(d: DemoStock): FlightSeries {
     id: d.stockId,
     stock_code: d.stockCode,
     ticket_type: d.ticketType,
+    group_type: d.groupType,
     trip_type: d.tripType,
     group_name: d.groupName,
     country_id: d.countryId || null,

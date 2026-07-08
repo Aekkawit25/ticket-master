@@ -1,15 +1,17 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Input, Select } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Search, SlidersHorizontal, X } from 'lucide-react'
+import { getActiveCountries, type CountryData } from '@/lib/country-storage'
 
 interface FilterState {
   search: string
   status: string
   airline_code: string
   ticket_type: string
+  country_code: string
   period_from: string
   period_to: string
 }
@@ -26,15 +28,27 @@ export default function TicketFilter({ onFilter, showTypeFilter = true }: Ticket
     status: '',
     airline_code: '',
     ticket_type: '',
+    country_code: '',
     period_from: '',
     period_to: '',
   })
+  const [countries, setCountries] = useState<CountryData[]>([])
+
+  useEffect(() => {
+    setCountries(getActiveCountries())
+    const handler = () => setCountries(getActiveCountries())
+    window.addEventListener('countries_updated', handler)
+    return () => window.removeEventListener('countries_updated', handler)
+  }, [])
 
   const set = (key: keyof FilterState, value: string) =>
     setFilters(prev => ({ ...prev, [key]: value }))
 
   const reset = () => {
-    const empty: FilterState = { search: '', status: '', airline_code: '', ticket_type: '', period_from: '', period_to: '' }
+    const empty: FilterState = {
+      search: '', status: '', airline_code: '',
+      ticket_type: '', country_code: '', period_from: '', period_to: '',
+    }
     setFilters(empty)
     onFilter(empty)
   }
@@ -75,7 +89,7 @@ export default function TicketFilter({ onFilter, showTypeFilter = true }: Ticket
       </div>
 
       {expanded && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mt-3 pt-3 border-t border-slate-100">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mt-3 pt-3 border-t border-slate-100">
           {showTypeFilter && (
             <Select
               label="Ticket Type"
@@ -106,6 +120,13 @@ export default function TicketFilter({ onFilter, showTypeFilter = true }: Ticket
             value={filters.airline_code}
             onChange={e => set('airline_code', e.target.value)}
             placeholder="เช่น TG, JL"
+          />
+          <Select
+            label="ประเทศปลายทาง"
+            value={filters.country_code}
+            onChange={e => set('country_code', e.target.value)}
+            options={countries.map(c => ({ value: c.countryCode, label: `${c.countryCode} — ${c.displayName}` }))}
+            placeholder="ทุกประเทศ"
           />
           <Input
             label="Period จาก"

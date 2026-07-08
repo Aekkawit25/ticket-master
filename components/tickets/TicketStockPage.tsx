@@ -9,11 +9,11 @@ import { SelectTicketTypeModal } from '@/components/tickets/SelectTicketTypeModa
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
 import { StatCard } from '@/components/ui/card'
-import { PlusCircle, Upload, Download, FileDown, Trash2, Ticket, Users, Globe } from 'lucide-react'
+import { PlusCircle, Upload, Download, FileDown, Trash2, Ticket, Users, Globe, ChevronRight, List } from 'lucide-react'
 import { downloadExcelTemplate } from '@/lib/excel-template'
 import { parseExcelImport } from '@/lib/excel-import'
-import { getDemoStocks, clearDemoStocksByType, clearAllDemoData } from '@/lib/demo-storage'
-import type { TicketType } from '@/types'
+import { getDemoStocks, clearDemoStocksByType, clearDemoStocksByGroupType, clearAllDemoData } from '@/lib/demo-storage'
+import type { TicketType, GroupType } from '@/types'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -23,31 +23,53 @@ interface FilterState {
 }
 
 export interface TicketStockPageProps {
-  fixedTicketType: TicketType | null  // null = All Tickets
+  fixedTicketType: TicketType | null
+  fixedGroupType?: GroupType | null   // only relevant when fixedTicketType === 'Group'
 }
 
 // ── Config per type ────────────────────────────────────────────────────────────
 
 interface PageConfig {
   title: string
+  breadcrumb: string[]
   subtitle: string
   addLabel: string
-  addPath: string | null   // null = show type-selector modal
+  addPath: string | null   // null = show type-selector / group-type modal
   clearLabel: string
   clearNote: string
 }
 
-function getConfig(t: TicketType | null): PageConfig {
+function getConfig(t: TicketType | null, g?: GroupType | null): PageConfig {
+  if (t === 'Group' && g === 'SERIES') return {
+    title: 'Group Series',
+    breadcrumb: ['Ticket Stock', 'Group Tickets', 'Group Series'],
+    subtitle: 'Stock ตั๋ว Group แบบ Series — เส้นทางและวันเดินทางกำหนดแน่นอน',
+    addLabel: 'Add Group Series',
+    addPath: '/tickets/add?type=Group&groupType=SERIES',
+    clearLabel: 'ล้างข้อมูล Group Series',
+    clearNote: 'เฉพาะ Group Series เท่านั้น ประเภทอื่นไม่ถูกลบ',
+  }
+  if (t === 'Group' && g === 'ADHOC') return {
+    title: 'Group Ad Hoc',
+    breadcrumb: ['Ticket Stock', 'Group Tickets', 'Group Ad Hoc'],
+    subtitle: 'Stock ตั๋ว Group แบบ Ad Hoc — จัดกรุ๊ปพิเศษตามสถานการณ์',
+    addLabel: 'Add Group Ad Hoc',
+    addPath: '/tickets/add?type=Group&groupType=ADHOC',
+    clearLabel: 'ล้างข้อมูล Group Ad Hoc',
+    clearNote: 'เฉพาะ Group Ad Hoc เท่านั้น ประเภทอื่นไม่ถูกลบ',
+  }
   if (t === 'Group') return {
-    title: 'Group Tickets',
-    subtitle: 'Stock ตั๋วแบบ Group — ต้องมีอย่างน้อย 2 Sector (Departure + Arrival)',
+    title: 'All Group Tickets',
+    breadcrumb: ['Ticket Stock', 'Group Tickets'],
+    subtitle: 'Stock ตั๋วแบบ Group ทั้งหมด — Series และ Ad Hoc',
     addLabel: 'Add Group Stock',
-    addPath: '/tickets/add?type=Group',
+    addPath: null,  // show SelectGroupTypeModal
     clearLabel: 'ล้างข้อมูล Group',
     clearNote: 'ข้อมูลประเภทอื่น (FIT / Ticket + Land) จะไม่ถูกลบ',
   }
   if (t === 'FIT') return {
     title: 'FIT Tickets',
+    breadcrumb: ['Ticket Stock', 'FIT Tickets'],
     subtitle: 'Free Individual Traveler — รองรับ One-way, Round-trip, Multi-city',
     addLabel: 'Add FIT Stock',
     addPath: '/tickets/add?type=FIT',
@@ -56,6 +78,7 @@ function getConfig(t: TicketType | null): PageConfig {
   }
   if (t === 'Ticket + Land') return {
     title: 'Ticket + Land',
+    breadcrumb: ['Ticket Stock', 'Ticket + Land'],
     subtitle: 'ตั๋วเครื่องบินพร้อม Land Package — ต้องมีอย่างน้อย 2 Sector',
     addLabel: 'Add Ticket + Land',
     addPath: '/tickets/add?type=Ticket+Land',
@@ -64,39 +87,118 @@ function getConfig(t: TicketType | null): PageConfig {
   }
   return {
     title: 'All Tickets',
+    breadcrumb: ['Ticket Stock'],
     subtitle: 'Stock ตั๋วเครื่องบินทุกประเภท',
     addLabel: 'Add Stock',
-    addPath: null,
+    addPath: null,  // show SelectTicketTypeModal
     clearLabel: 'ล้างข้อมูลทั้งหมด',
     clearNote: '',
   }
 }
 
+// ── Select Group Type Modal ────────────────────────────────────────────────────
+
+function SelectGroupTypeModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const router = useRouter()
+
+  const options = [
+    {
+      label: 'Group Series',
+      description: 'เส้นทางและวันเดินทางกำหนดแน่นอน',
+      detail: 'เหมาะสำหรับซีรีส์ที่มีการวางแผนล่วงหน้า เช่น Sweden Aurora Mar 26',
+      icon: <List size={22} />,
+      color: '#05a94f',
+      bg: '#f0fdf4',
+      href: '/tickets/add?type=Group&groupType=SERIES',
+    },
+    {
+      label: 'Group Ad Hoc',
+      description: 'จัดกรุ๊ปพิเศษตามสถานการณ์',
+      detail: 'เหมาะสำหรับกรุ๊ปที่จัดขึ้นเป็นกรณีพิเศษ ไม่ได้อยู่ใน Series ปกติ',
+      icon: <Users size={22} />,
+      color: '#f59e0b',
+      bg: '#fffbeb',
+      href: '/tickets/add?type=Group&groupType=ADHOC',
+    },
+  ]
+
+  return (
+    <Modal open={open} onClose={onClose} title="เลือกประเภท Group Stock" size="lg">
+      <p className="text-sm text-slate-500 mb-5">กรุณาเลือกประเภทของ Group ที่ต้องการสร้าง</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {options.map(opt => (
+          <div
+            key={opt.label}
+            className="flex flex-col rounded-xl border-2 border-slate-200 p-5 cursor-pointer transition-all duration-150 hover:shadow-lg"
+            onMouseEnter={e => {
+              ;(e.currentTarget as HTMLDivElement).style.borderColor = opt.color
+              ;(e.currentTarget as HTMLDivElement).style.backgroundColor = opt.bg
+            }}
+            onMouseLeave={e => {
+              ;(e.currentTarget as HTMLDivElement).style.borderColor = ''
+              ;(e.currentTarget as HTMLDivElement).style.backgroundColor = ''
+            }}
+            onClick={() => { onClose(); router.push(opt.href) }}
+          >
+            <div
+              className="w-10 h-10 rounded-xl flex items-center justify-center mb-3 shrink-0"
+              style={{ background: opt.bg, color: opt.color, border: `1.5px solid ${opt.color}30` }}
+            >
+              {opt.icon}
+            </div>
+            <h4 className="text-base font-bold text-slate-800 mb-1">{opt.label}</h4>
+            <p className="text-sm text-slate-600 mb-1">{opt.description}</p>
+            <p className="text-xs text-slate-400 leading-relaxed mb-4">{opt.detail}</p>
+            <button
+              className="mt-auto w-full flex items-center justify-center gap-1.5 py-2 px-4 rounded-lg text-sm font-semibold text-white transition-opacity hover:opacity-90"
+              style={{ background: opt.color }}
+              onClick={e => { e.stopPropagation(); onClose(); router.push(opt.href) }}
+            >
+              เลือกประเภทนี้
+              <ChevronRight size={14} />
+            </button>
+          </div>
+        ))}
+      </div>
+    </Modal>
+  )
+}
+
 // ── Main Component ─────────────────────────────────────────────────────────────
 
-export default function TicketStockPage({ fixedTicketType }: TicketStockPageProps) {
-  const router = useRouter()
+export default function TicketStockPage({ fixedTicketType, fixedGroupType }: TicketStockPageProps) {
+  const router  = useRouter()
   const fileRef = useRef<HTMLInputElement>(null)
-  const cfg     = getConfig(fixedTicketType)
-  const isAll   = fixedTicketType === null
+  const cfg     = getConfig(fixedTicketType, fixedGroupType)
+  const isAll          = fixedTicketType === null
+  const isAllGroup     = fixedTicketType === 'Group' && (fixedGroupType === null || fixedGroupType === undefined)
+  const isGroupSpecific = fixedTicketType === 'Group' && !!fixedGroupType
 
   const [filters, setFilters] = useState<FilterState>({
     search: '', status: '', airline_code: '', ticket_type: '', period_from: '', period_to: '',
   })
-  const [typeModal,    setTypeModal]    = useState(false)
-  const [confirmClear, setConfirmClear] = useState(false)
-  const [stockCount,   setStockCount]   = useState(0)
-  const [counts,       setCounts]       = useState({ group: 0, fit: 0, land: 0 })
+  const [typeModal,      setTypeModal]      = useState(false)
+  const [groupTypeModal, setGroupTypeModal] = useState(false)
+  const [confirmClear,   setConfirmClear]   = useState(false)
+  const [stockCount,     setStockCount]     = useState(0)
+  const [counts,         setCounts]         = useState({ group: 0, series: 0, adhoc: 0, fit: 0, land: 0 })
 
   const refreshCounts = () => {
     const all = getDemoStocks()
-    if (fixedTicketType) {
+    if (isGroupSpecific) {
+      setStockCount(all.filter(s => s.ticketType === 'Group' && s.groupType === fixedGroupType).length)
+    } else if (isAllGroup) {
+      setStockCount(all.filter(s => s.ticketType === 'Group').length)
+      const series = all.filter(s => s.ticketType === 'Group' && s.groupType === 'SERIES').length
+      const adhoc  = all.filter(s => s.ticketType === 'Group' && s.groupType === 'ADHOC').length
+      setCounts(prev => ({ ...prev, series, adhoc, group: series + adhoc }))
+    } else if (fixedTicketType) {
       setStockCount(all.filter(s => s.ticketType === fixedTicketType).length)
     } else {
       const g = all.filter(s => s.ticketType === 'Group').length
       const f = all.filter(s => s.ticketType === 'FIT').length
       const l = all.filter(s => s.ticketType === 'Ticket + Land').length
-      setCounts({ group: g, fit: f, land: l })
+      setCounts(prev => ({ ...prev, group: g, fit: f, land: l }))
       setStockCount(all.length)
     }
   }
@@ -114,16 +216,28 @@ export default function TicketStockPage({ fixedTicketType }: TicketStockPageProp
     const file = e.target.files?.[0]
     if (!file) return
     const result = await parseExcelImport(file)
-    // Req #12/#13: enforce ticket type for type-specific pages
     if (fixedTicketType && result.stockInfo) {
       result.stockInfo.ticketType = fixedTicketType
     }
-    // Req #14: All Tickets page — validate ticketType exists
+    // Enforce groupType on type-specific group pages
+    if (isGroupSpecific && result.stockInfo) {
+      result.stockInfo.groupType = fixedGroupType as string
+    }
+    // All Tickets: validate ticketType
     if (!fixedTicketType && result.stockInfo) {
       const t = result.stockInfo.ticketType
       const valid: TicketType[] = ['Group', 'FIT', 'Ticket + Land']
       if (!valid.includes(t as TicketType)) {
         alert('ไม่พบ Ticket Type ที่ถูกต้องในไฟล์ Excel\nกรุณาระบุ GROUP / FIT / TICKET_LAND ในคอลัมน์ ticket_type ของ Sheet STOCK_INFO')
+        e.target.value = ''
+        return
+      }
+    }
+    // All Group Tickets: validate groupType
+    if (isAllGroup && result.stockInfo) {
+      const gt = result.stockInfo.groupType
+      if (!gt || !['SERIES', 'ADHOC'].includes(gt)) {
+        alert('ไม่พบ Group Type ที่ถูกต้องในไฟล์ Excel\nกรุณาระบุ SERIES หรือ ADHOC ในคอลัมน์ group_type')
         e.target.value = ''
         return
       }
@@ -137,6 +251,8 @@ export default function TicketStockPage({ fixedTicketType }: TicketStockPageProp
   const handleAdd = () => {
     if (cfg.addPath) {
       router.push(cfg.addPath)
+    } else if (isAllGroup) {
+      setGroupTypeModal(true)
     } else {
       setTypeModal(true)
     }
@@ -144,7 +260,9 @@ export default function TicketStockPage({ fixedTicketType }: TicketStockPageProp
 
   // ── Clear Demo ────────────────────────────────────────────────
   const doClear = () => {
-    if (fixedTicketType) {
+    if (isGroupSpecific) {
+      clearDemoStocksByGroupType(fixedGroupType!)
+    } else if (fixedTicketType) {
       clearDemoStocksByType(fixedTicketType)
     } else {
       clearAllDemoData()
@@ -153,12 +271,26 @@ export default function TicketStockPage({ fixedTicketType }: TicketStockPageProp
     refreshCounts()
   }
 
+  // ── Breadcrumb ────────────────────────────────────────────────
+  const breadcrumb = cfg.breadcrumb
+
   return (
     <AppLayout title={cfg.title}>
 
       {/* ── Page header ── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
         <div>
+          {/* Breadcrumb */}
+          {breadcrumb.length > 1 && (
+            <div className="flex items-center gap-1 text-xs text-slate-400 mb-1">
+              {breadcrumb.map((crumb, i) => (
+                <span key={i} className="flex items-center gap-1">
+                  {i > 0 && <ChevronRight size={10} />}
+                  <span className={i === breadcrumb.length - 1 ? 'text-slate-600 font-medium' : ''}>{crumb}</span>
+                </span>
+              ))}
+            </div>
+          )}
           <h1 className="text-lg font-bold text-slate-900">{cfg.title}</h1>
           <p className="text-sm text-slate-500">{cfg.subtitle}</p>
         </div>
@@ -198,7 +330,7 @@ export default function TicketStockPage({ fixedTicketType }: TicketStockPageProp
         </div>
       </div>
 
-      {/* ── Stat cards (All Tickets only) ── */}
+      {/* ── Stat cards ── */}
       {isAll && (
         <div className="grid grid-cols-3 gap-3 mb-4">
           <StatCard title="Group"       value={counts.group} icon={<Users  size={18} />} color="#05a94f" />
@@ -206,18 +338,28 @@ export default function TicketStockPage({ fixedTicketType }: TicketStockPageProp
           <StatCard title="Ticket+Land" value={counts.land}  icon={<Globe  size={18} />} color="#8b5cf6" />
         </div>
       )}
+      {isAllGroup && (
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          <StatCard title="Group Series" value={counts.series} icon={<List  size={18} />} color="#05a94f" />
+          <StatCard title="Group Ad Hoc" value={counts.adhoc}  icon={<Users size={18} />} color="#f59e0b" />
+        </div>
+      )}
 
       {/* ── Filter ── */}
       <TicketFilter onFilter={setFilters} showTypeFilter={isAll} />
 
-      {/* ── Table (req #10: same columns; Type column hidden on type-specific pages via TicketTable) ── */}
+      {/* ── Table ── */}
       <TicketTable
         filterType={fixedTicketType ?? undefined}
+        filterGroupType={fixedGroupType ?? undefined}
         filters={filters}
       />
 
       {/* ── Select Type Modal (All Tickets → Add) ── */}
       <SelectTicketTypeModal open={typeModal} onClose={() => setTypeModal(false)} />
+
+      {/* ── Select Group Type Modal (All Group Tickets → Add) ── */}
+      <SelectGroupTypeModal open={groupTypeModal} onClose={() => setGroupTypeModal(false)} />
 
       {/* ── Clear Confirm Modal ── */}
       <Modal
@@ -232,7 +374,7 @@ export default function TicketStockPage({ fixedTicketType }: TicketStockPageProp
         }
       >
         <p className="text-sm text-slate-700">
-          ต้องการลบ Stock{fixedTicketType ? ` ประเภท ${fixedTicketType}` : ''} ทั้งหมด{' '}
+          ต้องการลบ Stock{fixedGroupType ? ` (${fixedGroupType === 'SERIES' ? 'Group Series' : 'Group Ad Hoc'})` : fixedTicketType ? ` ประเภท ${fixedTicketType}` : ''} ทั้งหมด{' '}
           <strong className="text-red-600">{stockCount} รายการ</strong>{' '}
           ออกจาก localStorage ใช่หรือไม่?
         </p>

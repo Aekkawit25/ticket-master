@@ -7,52 +7,8 @@ import { PlusCircle, Trash2, AlertTriangle, Info, Pencil, Copy, Star, CheckCircl
 import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
 import type { FlightSectorFormData, FlightScheduleFormData, SectorType, TicketType, TripType } from '@/types'
-
-// ─── Airport data ─────────────────────────────────────────────────────────────
-const AIRPORTS = [
-  { code: 'BKK', name: 'Suvarnabhumi',      city: 'Bangkok',          country: 'TH' },
-  { code: 'DMK', name: 'Don Mueang',         city: 'Bangkok',          country: 'TH' },
-  { code: 'NRT', name: 'Narita',             city: 'Tokyo',            country: 'JP' },
-  { code: 'HND', name: 'Haneda',             city: 'Tokyo',            country: 'JP' },
-  { code: 'KIX', name: 'Kansai',             city: 'Osaka',            country: 'JP' },
-  { code: 'CTS', name: 'Chitose',            city: 'Sapporo',          country: 'JP' },
-  { code: 'FUK', name: 'Fukuoka',            city: 'Fukuoka',          country: 'JP' },
-  { code: 'OKA', name: 'Naha',               city: 'Okinawa',          country: 'JP' },
-  { code: 'ICN', name: 'Incheon',            city: 'Seoul',            country: 'KR' },
-  { code: 'GMP', name: 'Gimpo',              city: 'Seoul',            country: 'KR' },
-  { code: 'HKG', name: 'Hong Kong Intl',     city: 'Hong Kong',        country: 'HK' },
-  { code: 'SIN', name: 'Changi',             city: 'Singapore',        country: 'SG' },
-  { code: 'KUL', name: 'KLIA',              city: 'Kuala Lumpur',     country: 'MY' },
-  { code: 'LHR', name: 'Heathrow',           city: 'London',           country: 'GB' },
-  { code: 'CDG', name: 'Charles de Gaulle',  city: 'Paris',            country: 'FR' },
-  { code: 'FRA', name: 'Frankfurt',          city: 'Frankfurt',        country: 'DE' },
-  { code: 'DXB', name: 'Dubai Intl',         city: 'Dubai',            country: 'AE' },
-  { code: 'DOH', name: 'Hamad Intl',         city: 'Doha',             country: 'QA' },
-  { code: 'PEK', name: 'Beijing Capital',    city: 'Beijing',          country: 'CN' },
-  { code: 'PVG', name: 'Shanghai Pudong',    city: 'Shanghai',         country: 'CN' },
-  { code: 'HAN', name: 'Noi Bai',            city: 'Hanoi',            country: 'VN' },
-  { code: 'SGN', name: 'Tan Son Nhat',       city: 'Ho Chi Minh City', country: 'VN' },
-  { code: 'SYD', name: 'Sydney',             city: 'Sydney',           country: 'AU' },
-  { code: 'LAX', name: 'Los Angeles Intl',   city: 'Los Angeles',      country: 'US' },
-  { code: 'TPE', name: 'Taoyuan',            city: 'Taipei',           country: 'TW' },
-  { code: 'MNL', name: 'Ninoy Aquino',       city: 'Manila',           country: 'PH' },
-  { code: 'CGK', name: 'Soekarno-Hatta',     city: 'Jakarta',          country: 'ID' },
-  { code: 'BKI', name: 'Kota Kinabalu',      city: 'Kota Kinabalu',    country: 'MY' },
-]
-
-const COUNTRY_NAMES: Record<string, string> = {
-  TH: 'Thailand', JP: 'Japan', KR: 'South Korea', HK: 'Hong Kong',
-  SG: 'Singapore', MY: 'Malaysia', VN: 'Vietnam', GB: 'United Kingdom',
-  FR: 'France', DE: 'Germany', AU: 'Australia', US: 'USA',
-  AE: 'UAE', QA: 'Qatar', CN: 'China', TW: 'Taiwan', PH: 'Philippines',
-  ID: 'Indonesia',
-}
-
-function getCountryFromAirport(code: string) {
-  const a = AIRPORTS.find(x => x.code === code)
-  if (!a) return null
-  return { countryCode: a.country, countryName: COUNTRY_NAMES[a.country] ?? a.country }
-}
+import { getActiveAirports, getAirportByCode, type StoredAirport } from '@/lib/airport-storage'
+import { getCountryByCode } from '@/lib/country-storage'
 
 const SECTOR_TYPE_OPTIONS: { value: SectorType; label: string; text: string }[] = [
   { value: 'Departure', label: 'Departure', text: 'text-green-600' },
@@ -69,7 +25,14 @@ function calcArrDayOffset(depTime: string, arrTime: string): number {
 }
 
 // ─── Airport Autocomplete Cell ─────────────────────────────────────────────────
-function AirportCell({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+// airports = Active airports only, passed from parent component
+function AirportCell({
+  value, onChange, airports,
+}: {
+  value: string
+  onChange: (v: string) => void
+  airports: StoredAirport[]
+}) {
   const [text, setText]       = useState(value)
   const [open, setOpen]       = useState(false)
   const [mounted, setMounted] = useState(false)
@@ -79,11 +42,11 @@ function AirportCell({ value, onChange }: { value: string; onChange: (v: string)
   useEffect(() => { setMounted(true) }, [])
   useEffect(() => { setText(value) }, [value])
 
-  const filtered = AIRPORTS.filter(a =>
+  const filtered = airports.filter(a =>
     a.code.startsWith(text.toUpperCase()) ||
     a.name.toLowerCase().includes(text.toLowerCase()) ||
     a.city.toLowerCase().includes(text.toLowerCase())
-  ).slice(0, 8)
+  ).slice(0, 10)
 
   const select = (code: string) => { onChange(code); setText(code); setOpen(false) }
 
@@ -105,10 +68,28 @@ function AirportCell({ value, onChange }: { value: string; onChange: (v: string)
     }
   }, [open])
 
+  const handleBlur = () => {
+    setTimeout(() => {
+      setOpen(false)
+      const upper = text.toUpperCase()
+      const match = airports.find(a => a.code === upper)
+      if (text && !match) {
+        // Typed text doesn't match any active airport — revert
+        setText(value)
+      } else if (match && upper !== value) {
+        // Typed a valid code directly (not via click) — accept it
+        onChange(upper)
+      }
+    }, 150)
+  }
+
+  // Warn if current saved value is not in active airports
+  const isUnknown = value && !airports.some(a => a.code === value)
+
   const dropdown = mounted && open && filtered.length > 0
     ? createPortal(
         <div
-          style={{ position: 'fixed', top: pos.top, left: pos.left, width: 248, zIndex: 9999 }}
+          style={{ position: 'fixed', top: pos.top, left: pos.left, width: 300, zIndex: 9999 }}
           className="bg-white border border-slate-300 rounded-lg shadow-xl overflow-hidden"
         >
           {filtered.map(a => (
@@ -121,10 +102,10 @@ function AirportCell({ value, onChange }: { value: string; onChange: (v: string)
                 a.code === value && 'bg-blue-50'
               )}
             >
-              <span className="font-mono font-bold text-xs text-slate-800 w-8 shrink-0">{a.code}</span>
-              <div className="min-w-0">
-                <p className="text-xs text-slate-700 font-medium truncate">{a.city}</p>
-                <p className="text-[11px] text-slate-400 truncate">{a.name}</p>
+              <span className="font-mono font-bold text-xs text-[#05a94f] w-9 shrink-0">{a.code}</span>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs text-slate-700 font-medium truncate">{a.name}</p>
+                <p className="text-[11px] text-slate-400 truncate">{a.city}, {a.countryCode}</p>
               </div>
             </button>
           ))}
@@ -134,18 +115,18 @@ function AirportCell({ value, onChange }: { value: string; onChange: (v: string)
     : null
 
   return (
-    <div className="relative w-full">
+    <div className={cn('relative w-full', isUnknown && 'bg-amber-50/80')}>
       <input
         ref={inputRef}
         value={text}
         onChange={e => { setText(e.target.value.toUpperCase()); setOpen(true) }}
         onFocus={() => { reposition(); setOpen(true) }}
-        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        onBlur={handleBlur}
         onKeyDown={e => {
           if (e.key === 'Escape') setOpen(false)
           if (e.key === 'Enter' && filtered[0]) select(filtered[0].code)
         }}
-        maxLength={3}
+        maxLength={5}
         placeholder="BKK"
         className="w-full h-full px-2 py-[5px] text-xs font-mono font-semibold uppercase bg-transparent outline-none focus:bg-blue-50 placeholder:text-slate-300"
       />
@@ -166,14 +147,25 @@ function XL({ children, className, center, readOnly, title }: {
 }
 
 // ─── Build route text ─────────────────────────────────────────────────────────
+// Open Jaw routes use ' / ' separator: BKK-HND / KIX-BKK
 function buildRoute(sectors: FlightSectorFormData[]): string {
   if (!sectors.length) return ''
-  const parts: string[] = []
-  sectors.forEach((s, i) => {
-    if (i === 0 && s.dep_airport_code) parts.push(s.dep_airport_code)
-    if (s.arr_airport_code) parts.push(s.arr_airport_code)
-  })
-  return parts.filter((c, i) => c && c !== parts[i - 1]).join(' › ')
+  const segments: string[] = []
+  let seg: string[] = []
+  if (sectors[0]?.dep_airport_code) seg.push(sectors[0].dep_airport_code)
+  for (let i = 0; i < sectors.length; i++) {
+    const arr = sectors[i].arr_airport_code
+    if (arr) seg.push(arr)
+    if (i < sectors.length - 1) {
+      const nextDep = sectors[i + 1].dep_airport_code
+      if (arr && nextDep && arr !== nextDep) {
+        segments.push(seg.filter(Boolean).join('-'))
+        seg = [nextDep]
+      }
+    }
+  }
+  if (seg.length) segments.push(seg.filter(Boolean).join('-'))
+  return segments.filter(Boolean).join(' / ')
 }
 
 const timeInputCls = 'w-full text-center px-1 py-[5px] text-xs bg-transparent outline-none focus:bg-blue-50'
@@ -297,6 +289,18 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
   const [successMsg, setSuccessMsg] = useState('')
   const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // ── Airport master data (Active only) ──────────────────────────────────────
+  const [airports, setAirports] = useState<StoredAirport[]>([])
+  useEffect(() => {
+    setAirports(getActiveAirports())
+    const handler = () => setAirports(getActiveAirports())
+    window.addEventListener('airports_updated', handler)
+    return () => window.removeEventListener('airports_updated', handler)
+  }, [])
+
+  // Track schedules where user has manually set Arrival From (Open Jaw intent)
+  const arrFromManualRef = useRef(new Set<string>())
+
   const showSuccess = (msg: string) => {
     if (successTimerRef.current) clearTimeout(successTimerRef.current)
     setSuccessMsg(msg)
@@ -308,8 +312,28 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
   const schedule = schedules[safeIdx] ?? schedules[0]
   const sectors = schedule?.sectors ?? []
 
-  const firstArrCode = sectors[0]?.arr_airport_code
-  const countryInfo = firstArrCode ? getCountryFromAirport(firstArrCode) : null
+  // On tab switch: initialize Open Jaw flag from existing sector data (e.g. duplicated schedules)
+  useEffect(() => {
+    const last = sectors[sectors.length - 1]
+    const prev = sectors[sectors.length - 2]
+    const id   = schedule?.scheduleId ?? ''
+    if (last && prev) {
+      const openJaw = last.dep_airport_code !== '' && prev.arr_airport_code !== '' &&
+                      last.dep_airport_code !== prev.arr_airport_code
+      if (openJaw) arrFromManualRef.current.add(id)
+      else arrFromManualRef.current.delete(id)
+    }
+  }, [safeIdx]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const firstArrCode  = sectors[0]?.arr_airport_code
+  const destAirport   = firstArrCode ? getAirportByCode(firstArrCode) : null
+  const countryLookup = destAirport ? getCountryByCode(destAirport.countryCode) : null
+  const countryInfo   = destAirport
+    ? {
+        countryCode: destAirport.countryCode,
+        countryName: countryLookup?.displayName ?? destAirport.countryCode,
+      }
+    : null
 
   // All names for duplicate validation
   const allNames = schedules.map(s => s.scheduleName)
@@ -317,13 +341,32 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
 
   // Helper: update the active schedule's sectors + sync country info
   const updateSectors = (newSectors: FlightSectorFormData[]) => {
-    const firstArr = newSectors[0]?.arr_airport_code
-    const country = firstArr ? getCountryFromAirport(firstArr) : null
+    const lastIdx = newSectors.length - 1
+    const schedId = schedule?.scheduleId ?? ''
+    const normalised = newSectors.map((s, i) => {
+      let r = { ...s }
+      // Sector 1: Travel Day always 1
+      if (i === 0) r.day_offset = 1
+      // Transit sectors: From auto-filled from previous To
+      if (i > 0 && i < lastIdx) r.dep_airport_code = newSectors[i - 1].arr_airport_code
+      // Arrival sector (last, multi-sector): From auto-syncs unless user set Open Jaw
+      if (i === lastIdx && lastIdx > 0) {
+        if (!arrFromManualRef.current.has(schedId)) {
+          r.dep_airport_code = newSectors[i - 1].arr_airport_code
+        }
+        // To always locked to homeAirport
+        r.arr_airport_code = newSectors[0].dep_airport_code
+      }
+      return r
+    })
+    const firstArr = normalised[0]?.arr_airport_code
+    const ap = firstArr ? getAirportByCode(firstArr) : null
+    const cl = ap ? getCountryByCode(ap.countryCode) : null
     const updated: FlightScheduleFormData = {
       ...schedule,
-      sectors: newSectors,
-      countryCode: country?.countryCode,
-      countryName: country?.countryName,
+      sectors: normalised,
+      countryCode: ap?.countryCode,
+      countryName: cl?.displayName ?? ap?.countryCode,
       destinationAirport: firstArr || undefined,
     }
     onChange(schedules.map((s, i) => i === safeIdx ? updated : s))
@@ -412,6 +455,8 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
   // ── Trip Type change ──────────────────────────────────────────────────────────
   const handleTripTypeChange = (newType: TripType) => {
     if (newType === tripType) return
+    // Clear Open Jaw flag — trip type change rebuilds the sector structure
+    arrFromManualRef.current.delete(schedule?.scheduleId ?? '')
 
     if (newType === 'One-way') {
       if (sectors.length > 1 && !window.confirm(`เปลี่ยนเป็น One-way จะลบ ${sectors.length - 1} Sector ที่เหลือออก ยืนยันหรือไม่?`)) return
@@ -480,6 +525,42 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
   }
 
   const route = buildRoute(sectors)
+
+  // Home airport = Sector 1 From (Thai airport)
+  const homeAirport = sectors[0]?.dep_airport_code ?? ''
+
+  // Transit continuity errors + Open Jaw detection (Arrival From may differ legitimately)
+  const routeGaps: { sectorA: number; sectorB: number; codeA: string; codeB: string }[] = []
+  const openJawSegments: { from: string; to: string }[] = []
+  for (let i = 0; i < sectors.length - 1; i++) {
+    const toCode   = sectors[i].arr_airport_code
+    const fromCode = sectors[i + 1].dep_airport_code
+    if (toCode && fromCode && toCode !== fromCode) {
+      if (i === sectors.length - 2) {
+        // Gap before Arrival sector = Open Jaw (info only, not an error)
+        openJawSegments.push({ from: toCode, to: fromCode })
+      } else {
+        // Transit gap = actual route continuity error
+        routeGaps.push({ sectorA: i + 1, sectorB: i + 2, codeA: toCode, codeB: fromCode })
+      }
+    }
+  }
+
+  // Return-airport mismatch: last sector To must equal homeAirport (multi-sector only)
+  const lastTo = sectors[sectors.length - 1]?.arr_airport_code ?? ''
+  const returnMismatch =
+    sectors.length > 1 && homeAirport !== '' && lastTo !== '' && lastTo !== homeAirport
+
+  // Travel Day validation
+  const travelDayErrors: { sector: number; msg: string }[] = sectors.map((s, i) => {
+    if (i === 0) return null   // Sector 1 is always locked to 1
+    if (s.day_offset === 0 || s.day_offset === undefined || s.day_offset === null)
+      return { sector: i + 1, msg: 'กรุณาระบุ Travel Day' }
+    if (s.day_offset < 1)
+      return { sector: i + 1, msg: 'Travel Day ต้องเริ่มต้นที่ 1 เท่านั้น' }
+    return null
+  }).filter((e): e is { sector: number; msg: string } => e !== null)
+
   const COLS = 12
 
   return (
@@ -740,6 +821,10 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
                   const rowBg     = idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/40'
                   const typeOpt   = SECTOR_TYPE_OPTIONS.find(o => o.value === s.sector_type)
 
+                  const isLastSector    = idx === sectors.length - 1
+                  const isFromReadOnly  = idx > 0 && !isLastSector  // Transit only; Arrival is editable
+                  const isLastReadOnly  = isLastSector && sectors.length > 1
+
                   return (
                     <tr key={idx} className={cn('group hover:bg-blue-50/30 transition-colors', rowBg)}>
 
@@ -789,13 +874,54 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
                       </XL>
 
                       {/* From */}
-                      <XL className={!s.dep_airport_code ? 'bg-red-50/60' : ''}>
-                        <AirportCell value={s.dep_airport_code} onChange={v => update(idx, { dep_airport_code: v })} />
+                      <XL
+                        readOnly={isFromReadOnly}
+                        className={!isFromReadOnly && !s.dep_airport_code ? 'bg-red-50/60' : ''}
+                      >
+                        {isFromReadOnly ? (
+                          <div className="px-2 py-[5px] text-xs font-mono font-semibold text-slate-500 select-none">
+                            {s.dep_airport_code || '—'}
+                          </div>
+                        ) : idx === 0 ? (
+                          // Departure: Thai airports only
+                          <AirportCell
+                            airports={airports.filter(a => a.countryCode === 'THA')}
+                            value={s.dep_airport_code}
+                            onChange={v => update(idx, { dep_airport_code: v })}
+                          />
+                        ) : (
+                          // Arrival (last sector): full airports list, supports Open Jaw
+                          <AirportCell
+                            airports={airports}
+                            value={s.dep_airport_code}
+                            onChange={v => {
+                              const prevTo = sectors[idx - 1]?.arr_airport_code ?? ''
+                              const id     = schedule?.scheduleId ?? ''
+                              if (v !== prevTo) arrFromManualRef.current.add(id)
+                              else arrFromManualRef.current.delete(id)
+                              update(idx, { dep_airport_code: v })
+                            }}
+                          />
+                        )}
                       </XL>
 
                       {/* To */}
-                      <XL className={!s.arr_airport_code ? 'bg-red-50/60' : ''}>
-                        <AirportCell value={s.arr_airport_code} onChange={v => update(idx, { arr_airport_code: v })} />
+                      <XL
+                        readOnly={isLastReadOnly}
+                        className={!isLastReadOnly && !s.arr_airport_code ? 'bg-red-50/60' : ''}
+                      >
+                        {isLastReadOnly ? (
+                          <div className="px-2 py-[5px] text-xs font-mono font-semibold text-[#05a94f] select-none flex items-center gap-1.5" title="ล็อคกลับสนามบินต้นทาง">
+                            <span>{s.arr_airport_code || '—'}</span>
+                            <span className="text-[10px] text-green-400">⌂</span>
+                          </div>
+                        ) : (
+                          <AirportCell
+                            airports={airports}
+                            value={s.arr_airport_code}
+                            onChange={v => update(idx, { arr_airport_code: v })}
+                          />
+                        )}
                       </XL>
 
                       {/* Dep Time */}
@@ -816,15 +942,36 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
                       </XL>
 
                       {/* Travel Day */}
-                      <XL center>
-                        <input
-                          type="number"
-                          value={s.day_offset}
-                          onChange={e => update(idx, { day_offset: Math.max(1, parseInt(e.target.value) || 1) })}
-                          min={1}
-                          title="Travel Day — ลำดับวันเดินทาง (Day 1 = Travel Start)"
-                          className="w-full text-center px-1 py-[5px] text-xs bg-transparent outline-none focus:bg-blue-50"
-                        />
+                      <XL center readOnly={idx === 0} className={cn(
+                        idx === 0 ? 'bg-slate-50/80' : '',
+                        idx > 0 && (!s.day_offset || s.day_offset < 1) ? 'bg-red-50/60' : ''
+                      )}>
+                        {idx === 0 ? (
+                          <span className="px-2 py-[5px] text-xs font-semibold text-slate-500 select-none w-full flex items-center justify-center">
+                            1
+                          </span>
+                        ) : (
+                          <input
+                            type="number"
+                            value={s.day_offset === 0 ? '' : s.day_offset}
+                            onChange={e => {
+                              const raw = e.target.value
+                              if (raw === '') { update(idx, { day_offset: 0 }); return }
+                              const n = parseInt(raw, 10)
+                              update(idx, { day_offset: isNaN(n) ? 1 : Math.max(1, n) })
+                            }}
+                            onBlur={e => {
+                              const n = parseInt(e.target.value, 10)
+                              if (!n || n < 1) update(idx, { day_offset: 1 })
+                            }}
+                            min={1}
+                            title="Travel Day — ลำดับวันเดินทาง (Day 1 = Travel Start)"
+                            className={cn(
+                              'w-full text-center px-1 py-[5px] text-xs bg-transparent outline-none focus:bg-blue-50',
+                              (!s.day_offset || s.day_offset < 1) ? 'text-red-500' : ''
+                            )}
+                          />
+                        )}
                       </XL>
 
                       {/* Remark */}
@@ -878,8 +1025,8 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
               {' '}= ข้ามวันถึงปลายทาง คำนวณอัตโนมัติ เช่น Dep 23:00 / Arr 02:00 → <strong>+1</strong> · ไม่ซ้อนใน Arr Time
             </span>
             <span>
-              <span className="font-medium">Travel Day</span>
-              {' '}= ลำดับวันเดินทาง โดย Day 1 คือวันเดียวกับ Travel Start เช่น Day 5 → Travel Start + 4 วัน
+              <span className="font-medium text-blue-600">Travel Day</span>
+              {' '}เริ่มจาก 1 เสมอ โดย Day 1 คือวันเดียวกับ Travel Start · สูตร: <strong>Sector Date = Travel Start + (Travel Day − 1)</strong>
             </span>
           </div>
         </div>
@@ -894,6 +1041,55 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
             {tripType === 'Round-trip' && 'Round-trip ต้องมีพอดี 2 Sector — Departure (แรก) + Arrival (สุดท้าย)'}
             {tripType === 'Multi-city' && 'Multi-city ต้องมีอย่างน้อย 2 Sector — Departure (แรก) + Arrival (สุดท้าย)'}
           </span>
+        </div>
+      )}
+
+      {/* Route continuity errors */}
+      {routeGaps.length > 0 && (
+        <div className="space-y-1">
+          {routeGaps.map(g => (
+            <div key={`${g.sectorA}-${g.sectorB}`} className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700">
+              <AlertTriangle size={13} className="shrink-0" />
+              <span>
+                เส้นทางไม่ต่อเนื่อง: Sector {g.sectorA} สิ้นสุดที่{' '}
+                <strong>{g.codeA}</strong> แต่ Sector {g.sectorB} เริ่มที่{' '}
+                <strong>{g.codeB}</strong>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Open Jaw info (non-blocking) */}
+      {openJawSegments.map((oj, i) => (
+        <div key={i} className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700">
+          <Info size={13} className="shrink-0" />
+          <span>
+            Open Jaw: เดินทางภาคพื้นดินจาก <strong>{oj.from}</strong> ไป <strong>{oj.to}</strong>
+          </span>
+        </div>
+      ))}
+
+      {/* Return airport mismatch */}
+      {returnMismatch && (
+        <div className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700">
+          <AlertTriangle size={13} className="shrink-0" />
+          <span>
+            สนามบินขากลับต้องตรงกับสนามบินต้นทาง: เริ่มต้นที่{' '}
+            <strong>{homeAirport}</strong> ต้องกลับ <strong>{homeAirport}</strong>
+          </span>
+        </div>
+      )}
+
+      {/* Travel Day validation errors */}
+      {travelDayErrors.length > 0 && (
+        <div className="space-y-1">
+          {travelDayErrors.map(e => (
+            <div key={e.sector} className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700">
+              <AlertTriangle size={13} className="shrink-0" />
+              <span>Sector {e.sector}: {e.msg}</span>
+            </div>
+          ))}
         </div>
       )}
 
