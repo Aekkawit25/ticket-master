@@ -22,6 +22,7 @@ import {
   getDemoStocks,
   demoStockToFlightSeries,
   clearAllDemoData,
+  clearDemoStocksByType,
   exportAllStocksJSON,
   getDemoStockById,
   saveDemoStock,
@@ -255,9 +256,28 @@ export default function TicketTable({ tickets, filterType, filters, loading }: T
   }
 
   const handleClearDemo = () => {
-    if (!confirm('ล้างข้อมูล Demo ทั้งหมด?')) return
-    clearAllDemoData()
-    setDemoStocks([])
+    const label = filterType ? filterType : 'ทั้งหมด'
+    if (!confirm(`ล้างข้อมูล Demo ${label}?`)) return
+    if (filterType) {
+      clearDemoStocksByType(filterType)
+    } else {
+      clearAllDemoData()
+    }
+    refreshDemos()
+  }
+
+  const handleBannerExportJSON = () => {
+    const stocks = filterType
+      ? getDemoStocks().filter(s => s.ticketType === filterType)
+      : getDemoStocks()
+    const blob = new Blob([JSON.stringify(stocks, null, 2)], { type: 'application/json' })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a')
+    a.href     = url
+    const typePart = filterType ? filterType.replace(/ /g, '_') : 'all'
+    a.download = `ticket_stocks_${typePart}_${dateFmt(new Date(), 'yyyyMMdd')}.json`
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   // ── Action: Add PNR ────────────────────────────────────────
@@ -644,7 +664,7 @@ export default function TicketTable({ tickets, filterType, filters, loading }: T
         <div className="flex items-center justify-between px-4 py-2 bg-amber-50 border-b border-amber-100 text-xs text-amber-700">
           <span>{demoCount} รายการ Demo (บันทึกใน localStorage)</span>
           <div className="flex gap-2">
-            <button onClick={exportAllStocksJSON} className="flex items-center gap-1 hover:text-amber-900">
+            <button onClick={handleBannerExportJSON} className="flex items-center gap-1 hover:text-amber-900">
               <FileJson size={12} /> Export JSON
             </button>
             <button onClick={handleClearDemo} className="flex items-center gap-1 hover:text-red-600 text-red-500">
