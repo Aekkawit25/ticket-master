@@ -558,6 +558,22 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
   const returnMismatch =
     sectors.length > 1 && homeAirport !== '' && lastTo !== '' && lastTo !== homeAirport
 
+  // Duplicate Flight No detection within the active schedule
+  const flightKeyMap = new Map<string, number[]>()
+  sectors.forEach((s, i) => {
+    if (s.airline_code && s.flight_no) {
+      const key = `${s.airline_code}${s.flight_no}`
+      const arr = flightKeyMap.get(key) ?? []
+      arr.push(i)
+      flightKeyMap.set(key, arr)
+    }
+  })
+  const duplicateFlightKeys = new Set<string>(
+    [...flightKeyMap.entries()].filter(([, idxs]) => idxs.length > 1).map(([key]) => key)
+  )
+  const isDupeFlight = (s: FlightSectorFormData) =>
+    !!(s.airline_code && s.flight_no && duplicateFlightKeys.has(`${s.airline_code}${s.flight_no}`))
+
   // Travel Day validation
   const travelDayErrors: { sector: number; msg: string }[] = sectors.map((s, i) => {
     if (i === 0) return null   // Sector 1 is always locked to 1
@@ -865,13 +881,14 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
                       </XL>
 
                       {/* Flight No */}
-                      <XL>
+                      <XL className={isDupeFlight(s) ? 'bg-red-50/60' : ''}>
                         <input
                           value={s.flight_no}
                           onChange={e => update(idx, { flight_no: e.target.value.replace(/\D/g, '') })}
                           placeholder="701"
                           inputMode="numeric"
-                          className="w-full h-full px-2 py-[5px] text-xs font-mono bg-transparent outline-none focus:bg-blue-50 placeholder:text-slate-300"
+                          title={isDupeFlight(s) ? `Flight No ซ้ำกับแถวอื่นใน Flight Set นี้` : undefined}
+                          className={cn('w-full h-full px-2 py-[5px] text-xs font-mono bg-transparent outline-none focus:bg-blue-50 placeholder:text-slate-300', isDupeFlight(s) && 'text-red-500')}
                         />
                       </XL>
 
@@ -1037,6 +1054,18 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
             {tripType === 'One-way'    && 'One-way ต้องมี 1 Sector (Departure) เท่านั้น'}
             {tripType === 'Round-trip' && 'Round-trip ต้องมีพอดี 2 Sector — Departure (แรก) + Arrival (สุดท้าย)'}
             {tripType === 'Multi-city' && 'Multi-city ต้องมีอย่างน้อย 2 Sector — Departure (แรก) + Arrival (สุดท้าย)'}
+          </span>
+        </div>
+      )}
+
+      {/* Duplicate Flight No errors (blocking) */}
+      {duplicateFlightKeys.size > 0 && (
+        <div className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700">
+          <AlertTriangle size={13} className="shrink-0" />
+          <span>
+            พบ Flight No ซ้ำใน Flight Set นี้:{' '}
+            <strong>{[...duplicateFlightKeys].join(', ')}</strong>
+            {' '}— กรุณาแก้ไขก่อนดำเนินการต่อ
           </span>
         </div>
       )}

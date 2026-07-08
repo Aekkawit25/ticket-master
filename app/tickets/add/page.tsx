@@ -177,6 +177,19 @@ function AddStockPageInner() {
       if (sectorErr) return sectorErr
       const badAirline = mainSch?.sectors.find(sec => !sec.airline_code || !MASTER_AIRLINE_CODE_SET.has(sec.airline_code))
       if (badAirline) return `Airline "${badAirline.airline_code || '—'}" ไม่พบใน Master กรุณาเลือก Airline ที่ถูกต้อง`
+      const dupFlight = (() => {
+        const seen = new Map<string, number>()
+        for (let i = 0; i < (mainSch?.sectors ?? []).length; i++) {
+          const sec = mainSch!.sectors[i]
+          if (sec.airline_code && sec.flight_no) {
+            const key = `${sec.airline_code}${sec.flight_no}`
+            if (seen.has(key)) return { key, row1: seen.get(key)! + 1, row2: i + 1 }
+            seen.set(key, i)
+          }
+        }
+        return null
+      })()
+      if (dupFlight) return `พบ Flight No ซ้ำ: ${dupFlight.key} (แถวที่ ${dupFlight.row1} และ ${dupFlight.row2}) — กรุณาตรวจสอบก่อนดำเนินการต่อ`
       return null
     }
     return null

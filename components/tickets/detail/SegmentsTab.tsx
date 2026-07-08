@@ -334,6 +334,21 @@ export function SegmentsTab({ liveStock, mockSectors, ticketType, canEdit, jumpT
       if (!s.depAirportCode)  errs[`dep_${i}`]      = 'กรุณาระบุ From'
       if (!s.arrAirportCode)  errs[`arr_${i}`]      = 'กรุณาระบุ To'
     })
+    // Duplicate flight check
+    const flightKeyMap = new Map<string, number[]>()
+    editSectors.forEach((s, i) => {
+      if (s.airlineCode && s.flightNo) {
+        const key = `${s.airlineCode}${s.flightNo}`
+        const arr = flightKeyMap.get(key) ?? []
+        arr.push(i)
+        flightKeyMap.set(key, arr)
+      }
+    })
+    flightKeyMap.forEach((indices) => {
+      if (indices.length > 1) {
+        indices.forEach(i => { errs[`flightNo_${i}`] = 'Flight No ซ้ำ' })
+      }
+    })
     return errs
   }
 

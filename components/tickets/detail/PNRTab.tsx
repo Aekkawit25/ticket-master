@@ -155,6 +155,21 @@ function validateCfSectors(sectors: CfSector[], minSectors: number): Record<stri
     if (!s.airlineCode || !MASTER_AIRLINE_CODE_SET.has(s.airlineCode))
       errs[`airline_${i}`] = s.airlineCode ? 'ไม่พบใน Master' : 'กรุณาเลือก Airline'
   })
+  // Duplicate flight check
+  const flightKeyMap = new Map<string, number[]>()
+  sectors.forEach((s, i) => {
+    if (s.airlineCode && s.flightNo) {
+      const key = `${s.airlineCode}${s.flightNo}`
+      const arr = flightKeyMap.get(key) ?? []
+      arr.push(i)
+      flightKeyMap.set(key, arr)
+    }
+  })
+  flightKeyMap.forEach((indices) => {
+    if (indices.length > 1) {
+      indices.forEach(i => { errs[`flightNo_${i}`] = 'Flight No ซ้ำ' })
+    }
+  })
   return errs
 }
 
