@@ -102,7 +102,7 @@ function buildRows(stocks: DemoStock[]): PNRRow[] {
         seatUsed: p.seatUsed,
         seatBalance: p.seatBalance,
         fare: p.fare,
-        tax: p.tax,
+        tax: p.tax ?? 0,
         total: p.total,
         conditionCode: p.conditionCode,
         ttlDateTime: p.ttlDateTime,

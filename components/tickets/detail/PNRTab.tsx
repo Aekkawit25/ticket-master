@@ -424,7 +424,7 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
       allIn:         fmt === 'ALL_IN' ? String(pnr.total) : '',
       breakdown:     hasBreakdown,
       taxType:       pnr.taxType || 'separate',
-      tax:           String(pnr.tax),
+      tax:           pnr.tax != null ? String(pnr.tax) : '',
       conditionCode: pnr.conditionCode || '',
       status:        pnr.status || 'Pending',
       remark:        pnr.remark || '',
@@ -998,7 +998,7 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
         fare: p.fare,
         yq: p.yq ?? 0,
         tax_type: p.taxType,
-        tax: p.tax,
+        tax: p.tax ?? 0,
         total_amount: p.total,
         condition: liveStock.conditions.find(c => c.condition.conditionCode === p.conditionCode)?.condition.conditionName || null,
         condition_code: p.conditionCode || null,
@@ -1124,9 +1124,9 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
               <Th className="text-right">Seat</Th>
               <Th className="text-right">Used</Th>
               <Th className="text-right">Bal.</Th>
-              <Th className="text-center whitespace-nowrap">รูปแบบราคา</Th>
-              <Th className="text-right whitespace-nowrap">Fare ที่ได้รับ</Th>
-              <Th className="whitespace-nowrap">YQ / Tax เพิ่มเติม</Th>
+              <Th className="text-right whitespace-nowrap">Fare</Th>
+              <Th className="text-right whitespace-nowrap">Tax</Th>
+              <Th className="text-right whitespace-nowrap">YQ</Th>
               <Th className="text-right whitespace-nowrap">ยอดสุทธิ</Th>
               <Th>Condition</Th>
               <Th>TTL Date</Th>
@@ -1172,60 +1172,21 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                         {p.seat_balance}
                       </span>
                     </Td>
-                    {/* รูปแบบราคา */}
-                    <Td className="text-center">
-                      <div className="inline-flex flex-col items-center gap-0.5">
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${
-                          p.price_format === 'FARE'    ? 'bg-slate-100 text-slate-600' :
-                          p.price_format === 'FARE_YQ' ? 'bg-amber-100 text-amber-700' :
-                                                          'bg-blue-100 text-blue-700'
-                        }`}>
-                          {p.price_format === 'FARE' ? 'FARE' : p.price_format === 'FARE_YQ' ? 'FARE + YQ' : 'ALL IN'}
-                        </span>
-                        {p.price_format === 'FARE_YQ' && <span className="text-[9px] text-slate-400">รวม YQ แล้ว</span>}
-                        {p.price_format === 'ALL_IN'  && <span className="text-[9px] text-slate-400">รวมทั้งหมดแล้ว</span>}
-                      </div>
-                    </Td>
-                    {/* Fare ที่ได้รับ */}
+                    {/* Fare */}
                     <Td className="text-right text-sm font-semibold tabular-nums">
-                      {formatNumber(p.price_format === 'ALL_IN' ? p.total_amount : p.fare)}
+                      {p.fare > 0 ? formatNumber(p.fare) : <span className="text-slate-300">—</span>}
                     </Td>
-                    {/* YQ / Tax เพิ่มเติม */}
-                    <Td className="text-xs text-slate-500">
-                      <div className="flex items-center gap-1.5 whitespace-nowrap">
-                        <span>
-                          {p.price_format === 'FARE' && p.yq === 0 && p.tax === 0 && (
-                            <span className="italic text-slate-300">ไม่มี</span>
-                          )}
-                          {p.price_format === 'FARE' && (p.yq > 0 || p.tax > 0) && (
-                            `YQ ${formatNumber(p.yq)} / Tax ${formatNumber(p.tax)}`
-                          )}
-                          {p.price_format === 'FARE_YQ' && p.tax === 0 && (
-                            <span className="italic text-slate-300">ไม่มี</span>
-                          )}
-                          {p.price_format === 'FARE_YQ' && p.tax > 0 && (
-                            `Tax ${formatNumber(p.tax)}`
-                          )}
-                          {p.price_format === 'ALL_IN' && (
-                            <span className="text-slate-400">รวมทั้งหมดแล้ว</span>
-                          )}
-                        </span>
-                        {((p.price_format === 'FARE' && (p.yq > 0 || p.tax > 0)) ||
-                          (p.price_format === 'FARE_YQ' && p.tax > 0) ||
-                          (p.price_format === 'ALL_IN' && p.breakdown)) && (
-                          <button
-                            onClick={() => setDetailPnr(p)}
-                            title="ดูรายละเอียดราคา"
-                            className="p-0.5 text-slate-400 hover:text-[#05a94f] transition-colors rounded"
-                          >
-                            <Info size={13} />
-                          </button>
-                        )}
-                      </div>
+                    {/* Tax */}
+                    <Td className="text-right text-xs tabular-nums text-slate-600">
+                      {p.tax > 0 ? formatNumber(p.tax) : p.tax === 0 ? '0' : <span className="text-slate-300">—</span>}
+                    </Td>
+                    {/* YQ */}
+                    <Td className="text-right text-xs tabular-nums text-slate-600">
+                      {p.yq > 0 ? formatNumber(p.yq) : p.yq === 0 ? '0' : <span className="text-slate-300">—</span>}
                     </Td>
                     {/* ยอดสุทธิ */}
                     <Td className="text-right text-sm font-bold tabular-nums text-slate-800">
-                      {formatNumber(p.total_amount)}
+                      {p.total_amount > 0 ? formatNumber(p.total_amount) : <span className="text-slate-300">—</span>}
                     </Td>
                     <Td className="text-xs">
                       {canEdit ? (

@@ -224,10 +224,12 @@ export interface FlightPNRFormData {
   fare: number
   /** 'included' = tax baked into fare (tax stored as 0), 'separate' = explicit tax amount, 'pending' = unknown (tax stored as 0, fill later) */
   tax_type: TaxType
-  tax: number
+  /** null = ยังไม่ระบุ (แสดง —), 0 = ระบุแล้วว่าเป็น 0 */
+  tax: number | null
   total_amount: number
   price_format?: 'FARE' | 'FARE_YQ' | 'ALL_IN'
-  yq?: number
+  /** null = ยังไม่ระบุ (แสดง —), 0 = ระบุแล้วว่าเป็น 0 */
+  yq?: number | null
   breakdown?: boolean
   condition_id: string
   status: PNRStatus

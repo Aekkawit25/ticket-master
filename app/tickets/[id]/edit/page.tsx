@@ -111,7 +111,7 @@ function computeChanges(original: DemoStock, state: WizardState): ChangeItem[] {
     if (op.fare !== np.fare)
       changes.push({ category: 'PNR', field: `${label} Fare`, oldValue: String(op.fare), newValue: String(np.fare) })
     if (op.tax !== np.tax)
-      changes.push({ category: 'PNR', field: `${label} Tax`, oldValue: String(op.tax), newValue: String(np.tax) })
+      changes.push({ category: 'PNR', field: `${label} Tax`, oldValue: op.tax != null ? String(op.tax) : '—', newValue: np.tax != null ? String(np.tax) : '—' })
     if (op.status !== np.status)
       changes.push({ category: 'PNR', field: `${label} Status`, oldValue: op.status, newValue: np.status })
   })
@@ -227,7 +227,7 @@ function normalizeForReview(state: WizardState, excludeStockCode?: string): Wiza
             travel_date: calcSectorDate(p.travel_start, s.day_offset) || '',
           }))
         : p.sector_dates ?? [],
-      total_amount: (p.fare || 0) + (p.tax || 0),
+      total_amount: (p.fare || 0) + (p.tax ?? 0) + (p.yq ?? 0),
     }
   })
   return { ...state, pnrs: generateDummyPnrs(normalizedPNRs, stockInfo, systemDummies) }

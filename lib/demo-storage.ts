@@ -330,9 +330,11 @@ export interface DemoPNR {
   priceFormat?: 'FARE' | 'FARE_YQ' | 'ALL_IN'
   breakdown?: boolean
   fare: number
-  yq?: number
+  /** null = ยังไม่ระบุ */
+  yq?: number | null
   taxType: string
-  tax: number
+  /** null = ยังไม่ระบุ */
+  tax: number | null
   fareIncludesTax: boolean
   taxStatus: 'completed' | 'included' | 'pending'
   total: number
@@ -724,7 +726,7 @@ export function calculateStockSummary(pnrs: DemoPNR[]): DemoSummary {
   const fareTotal = pnrs.reduce((sum, p) => sum + p.fare, 0)
   const taxTotal = pnrs
     .filter(p => p.taxType === 'separate')
-    .reduce((sum, p) => sum + p.tax, 0)
+    .reduce((sum, p) => sum + (p.tax ?? 0), 0)
   const grandTotal = pnrs.reduce((sum, p) => sum + p.total, 0)
 
   // Period: min and max of travelStart

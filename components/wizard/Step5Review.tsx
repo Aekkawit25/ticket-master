@@ -372,8 +372,8 @@ export default function Step5Review({ state, excludeStockId }: Step5Props) {
                       <Td className="text-xs">{travelEnd ? formatDate(travelEnd) : '—'}</Td>
                       <Td className="text-right text-sm">{p.seat_total}</Td>
                       <Td className="text-right text-xs">{p.fare > 0 ? p.fare.toLocaleString() : '—'}</Td>
-                      <Td className="text-right text-xs">{p.tax > 0 ? p.tax.toLocaleString() : '—'}</Td>
-                      <Td className="text-right text-xs font-bold">{(p.fare + p.tax) > 0 ? (p.fare + p.tax).toLocaleString() : '—'}</Td>
+                      <Td className="text-right text-xs">{(p.tax ?? 0) > 0 ? (p.tax ?? 0).toLocaleString() : '—'}</Td>
+                      <Td className="text-right text-xs font-bold">{(p.fare + (p.tax ?? 0)) > 0 ? (p.fare + (p.tax ?? 0)).toLocaleString() : '—'}</Td>
                       <Td className="text-xs">{getConditionName(p.condition_id)}</Td>
                       <Td className="text-xs font-medium text-amber-600 whitespace-nowrap">
                         {firstTTL ? formatDateTime(firstTTL) : '—'}

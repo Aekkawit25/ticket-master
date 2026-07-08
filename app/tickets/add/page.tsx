@@ -42,7 +42,7 @@ function normalizeForReview(state: WizardState): WizardState {
             travel_date: calcSectorDate(p.travel_start, s.day_offset) || '',
           }))
         : p.sector_dates ?? [],
-      total_amount: (p.fare || 0) + (p.tax || 0),
+      total_amount: (p.fare || 0) + (p.tax ?? 0) + (p.yq ?? 0),
     }
   })
   return { ...state, pnrs: generateDummyPnrs(normalizedPNRs, stockInfo, systemDummies) }
