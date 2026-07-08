@@ -31,6 +31,7 @@ interface PNRRow {
   stockCode: string   // "Series Code"
   groupName: string   // "Series Name"
   ticketType: TicketType
+  groupType?: string
   airlineCode: string
   routeText: string
   currency: string
@@ -86,6 +87,7 @@ function buildRows(stocks: DemoStock[]): PNRRow[] {
         stockCode: s.stockCode,
         groupName: s.groupName,
         ticketType: s.ticketType,
+        groupType: s.groupType,
         airlineCode: s.airlineCode,
         routeText: s.routeText,
         currency: s.currency,
@@ -1417,7 +1419,7 @@ function ViewDrawer({
                   ))}
                   <div>
                     <p className="text-[10px] text-slate-400">Ticket Type</p>
-                    <div className="mt-0.5"><TicketTypeBadge type={row.ticketType} /></div>
+                    <div className="mt-0.5"><TicketTypeBadge type={row.ticketType} groupType={row.groupType} /></div>
                   </div>
                   <div>
                     <p className="text-[10px] text-slate-400">PNR Status</p>
@@ -1478,7 +1480,7 @@ function ViewDrawer({
                           <td className="px-2.5 py-2 text-slate-500">{sec.seq}</td>
                           <td className="px-2.5 py-2 font-medium text-slate-700">{sec.sectorType}</td>
                           <td className="px-2.5 py-2">{sec.airlineCode}</td>
-                          <td className="px-2.5 py-2 font-mono">{sec.flightNo || '—'}</td>
+                          <td className="px-2.5 py-2 font-mono">{sec.airlineCode}{sec.flightNo || '—'}</td>
                           <td className="px-2.5 py-2 font-medium">{sec.depAirportCode}</td>
                           <td className="px-2.5 py-2 font-medium">{sec.arrAirportCode}</td>
                           <td className="px-2.5 py-2 whitespace-nowrap">{sd?.date ? formatDate(sd.date) : '—'}</td>
@@ -3401,7 +3403,7 @@ export default function ListPNRPage() {
                     <Td>
                       <div className="mb-1">
                         {row.ticketType
-                          ? <TicketTypeBadge type={row.ticketType} />
+                          ? <TicketTypeBadge type={row.ticketType} groupType={row.groupType} />
                           : <span className="text-xs text-slate-400">–</span>}
                       </div>
                       <button

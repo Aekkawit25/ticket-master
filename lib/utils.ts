@@ -430,6 +430,24 @@ export function getStockStatusColor(status: string): string {
   return map[status] || 'badge-gray'
 }
 
+// ============================================================
+// Flight Number Helpers
+// ============================================================
+
+export function normalizeFlightNo(airlineCode: string, flightNo: string): string {
+  let n = String(flightNo || '').trim()
+  if (airlineCode) {
+    const esc = airlineCode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    n = n.replace(new RegExp(`^${esc}`, 'i'), '')
+  }
+  n = n.replace(/^[A-Za-z]{2,3}/, '').replace(/\s+/g, '')
+  return n
+}
+
+export function getDisplayFlightNo(airlineCode: string, flightNo: string): string {
+  return `${airlineCode || ''}${normalizeFlightNo(airlineCode, flightNo)}`
+}
+
 export function getPNRStatusColor(status: string): string {
   const map: Record<string, string> = {
     Pending: 'badge-yellow',
@@ -512,12 +530,25 @@ export function truncate(str: string, len = 30): string {
   return str.length > len ? str.slice(0, len) + '...' : str
 }
 
-export function generateStockCode(prefix = 'STK'): string {
+export function getStockCodePrefix(ticketType: string, groupType?: string | null): string {
+  if (ticketType === 'Group') return groupType === 'ADHOC' ? 'AH' : 'SR'
+  if (ticketType === 'FIT') return 'FIT'
+  return 'LND'
+}
+
+export function generateStockCode(prefix = 'SR', existingCodes: string[] = []): string {
   const now = new Date()
   const yy = String(now.getFullYear()).slice(-2)
   const mm = String(now.getMonth() + 1).padStart(2, '0')
-  const rand = Math.floor(Math.random() * 9000) + 1000
-  return `${prefix}${yy}${mm}${rand}`
+  const base = `${prefix}${yy}${mm}`
+  let maxNum = 0
+  for (const code of existingCodes) {
+    if (code.startsWith(base) && code.length === base.length + 4) {
+      const n = parseInt(code.slice(base.length), 10)
+      if (!isNaN(n) && n > maxNum) maxNum = n
+    }
+  }
+  return `${base}${String(maxNum + 1).padStart(4, '0')}`
 }
 
 // ============================================================

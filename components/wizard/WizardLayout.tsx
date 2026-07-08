@@ -4,8 +4,9 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ChevronLeft, ChevronRight, Save, CheckCircle2, X, Lock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { StockStatusBadge } from '@/components/ui/badge'
 import WizardStepper from '@/components/wizard/WizardStepper'
-import type { TicketType } from '@/types'
+import type { TicketType, StockStatus } from '@/types'
 
 const MIN_SECTORS: Record<TicketType, string> = {
   'Group': 'ขั้นต่ำ 2 Sectors',
@@ -19,6 +20,7 @@ interface WizardLayoutProps {
   pageTitle: string
   subtitle: string
   ticketType?: TicketType
+  stockStatus?: StockStatus
   error?: string
   saving?: boolean
   isLastStep?: boolean
@@ -44,6 +46,7 @@ export default function WizardLayout({
   pageTitle,
   subtitle,
   ticketType,
+  stockStatus,
   error,
   saving,
   isLastStep = false,
@@ -81,6 +84,9 @@ export default function WizardLayout({
                   <Lock size={13} />
                 </span>
               </>
+            )}
+            {stockStatus && (
+              <StockStatusBadge status={stockStatus} />
             )}
           </div>
           <p className="text-sm text-slate-500 ml-5">{subtitle}</p>

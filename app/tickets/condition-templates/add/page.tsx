@@ -103,7 +103,7 @@ export default function AddConditionTemplatePage() {
                 <label className="block text-xs font-medium text-slate-500 mb-1">ประเภทตั๋ว</label>
                 <div className="flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3">
                   <span className="text-sm font-semibold text-[#05a94f]">Group</span>
-                  <span className="text-[10px] text-slate-400 ml-auto">Group Ticket</span>
+                  <span className="text-[10px] text-slate-400 ml-auto">Series / Ad Hoc</span>
                 </div>
               </div>
               <div>

@@ -40,23 +40,30 @@ interface StatCardProps {
   icon?: React.ReactNode
   color?: string
   className?: string
+  comingSoon?: boolean
 }
 
-export function StatCard({ title, value, subtitle, icon, color = '#05a94f', className }: StatCardProps) {
+export function StatCard({ title, value, subtitle, icon, color = '#05a94f', className, comingSoon }: StatCardProps) {
+  const displayColor = comingSoon ? '#94a3b8' : color
   return (
-    <div className={cn('bg-white rounded-xl border border-slate-200 shadow-sm p-4', className)}>
+    <div className={cn('relative bg-white rounded-xl border border-slate-200 shadow-sm p-4', comingSoon && 'opacity-60', className)}>
+      {comingSoon && (
+        <span className="absolute top-2 right-2 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-100 text-slate-400 leading-none tracking-wide">
+          Coming Soon
+        </span>
+      )}
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-xs text-slate-500 font-medium">{title}</p>
-          <p className="text-2xl font-bold mt-1" style={{ color }}>{value}</p>
+          <p className="text-2xl font-bold mt-1" style={{ color: displayColor }}>{value}</p>
           {subtitle && <p className="text-xs text-slate-400 mt-0.5">{subtitle}</p>}
         </div>
         {icon && (
           <div
             className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 opacity-15"
-            style={{ backgroundColor: color }}
+            style={{ backgroundColor: displayColor }}
           >
-            <span style={{ color }}>{icon}</span>
+            <span style={{ color: displayColor }}>{icon}</span>
           </div>
         )}
       </div>

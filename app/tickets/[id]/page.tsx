@@ -362,7 +362,7 @@ if (stockForm.airline_code  !== liveStock.airlineCode)         changes.push(`Air
 
   // ── Derive display data ──
   const stock = {
-    id: liveStock.stockId, stock_code: liveStock.stockCode, ticket_type: liveStock.ticketType, trip_type: liveStock.tripType,
+    id: liveStock.stockId, stock_code: liveStock.stockCode, ticket_type: liveStock.ticketType, group_type: liveStock.groupType, trip_type: liveStock.tripType,
     group_name: liveStock.groupName, airline_code: liveStock.airlineCode, route_text: liveStock.routeText,
     currency: liveStock.currency, status: liveStock.status, remark: liveStock.remark,
     created_at: liveStock.createdAt, updated_at: liveStock.updatedAt,
@@ -433,7 +433,7 @@ if (stockForm.airline_code  !== liveStock.airlineCode)         changes.push(`Air
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-lg font-bold text-slate-900 font-mono">{stock.stock_code}</h1>
-              <TicketTypeBadge type={stock.ticket_type} />
+              <TicketTypeBadge type={stock.ticket_type} groupType={stock.group_type} />
               <StockStatusBadge status={stock.status} />
               {liveStock && <span className="inline-flex items-center px-1.5 py-px text-[9px] font-bold bg-amber-100 text-amber-600 rounded">DEMO</span>}
             </div>
@@ -594,6 +594,7 @@ if (stockForm.airline_code  !== liveStock.airlineCode)         changes.push(`Air
           stockPeriod={stockPeriod}
           routeText={stock.route_text}
           ticketType={stock.ticket_type}
+          groupType={stock.group_type}
           tripType={stock.trip_type}
           createdAt={stock.created_at}
           updatedAt={stock.updated_at}

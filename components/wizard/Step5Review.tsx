@@ -4,6 +4,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Badge, StockStatusBadge, TicketTypeBadge, PNRStatusBadge } from '@/components/ui/badge'
 import { Table, TableHead, TableBody, Th, Td, TableRow, EmptyRow } from '@/components/ui/table'
 import { formatDate, formatDateTime, calcTravelEndFromSectors, buildRouteText } from '@/lib/utils'
+import { getStockTypeConfigSafe } from '@/lib/stock-type-config'
 import { calcCondTtlDate } from '@/lib/condition-schema'
 import { checkPNRDuplicatesInSystem, type PNRConflictDetail } from '@/lib/demo-storage'
 import { CheckCircle2, Plane, Users, FileText, CreditCard, ArrowRight, AlertTriangle } from 'lucide-react'
@@ -16,6 +17,7 @@ interface Step5Props {
 
 export default function Step5Review({ state, excludeStockId }: Step5Props) {
   const { stockInfo, schedules, conditions, pnrs } = state
+  const stockTypeCfg = getStockTypeConfigSafe(stockInfo.ticket_type, stockInfo.group_type)
 
   const mainSchedule = schedules.find(s => s.isMain) ?? schedules[0]
   const mainSectors = mainSchedule?.sectors ?? []
@@ -104,16 +106,16 @@ export default function Step5Review({ state, excludeStockId }: Step5Props) {
             <FileText size={14} />
             ข้อมูล Stock
           </CardTitle>
-          <TicketTypeBadge type={stockInfo.ticket_type} />
+          <TicketTypeBadge type={stockInfo.ticket_type} groupType={stockInfo.group_type} />
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
             <div>
-              <p className="text-xs text-slate-400">Series Code</p>
+              <p className="text-xs text-slate-400">{stockTypeCfg.codeLabel}</p>
               <p className="font-mono font-bold text-slate-800">{stockInfo.stock_code || '—'}</p>
             </div>
             <div className="sm:col-span-2">
-              <p className="text-xs text-slate-400">Series Name</p>
+              <p className="text-xs text-slate-400">{stockTypeCfg.nameLabel}</p>
               <p className="font-semibold text-slate-800">{stockInfo.group_name || '—'}</p>
             </div>
             <div>

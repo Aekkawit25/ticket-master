@@ -18,6 +18,7 @@ import {
   CheckCircle, AlertCircle,
 } from 'lucide-react'
 import type { FlightSeries, TicketType, StockStatus } from '@/types'
+import { getStockTypeConfig, STOCK_TYPE_CONFIG } from '@/lib/stock-type-config'
 import {
   getDemoStocks,
   demoStockToFlightSeries,
@@ -180,13 +181,23 @@ function disabledTip(ticket: FlightSeries, key: keyof ReturnType<typeof getPerms
   return 'ไม่สามารถดำเนินการได้'
 }
 
-function genStockCode(ticketType: TicketType): string {
-  const prefix = ticketType === 'Group' ? 'GRP' : ticketType === 'FIT' ? 'FIT' : 'LND'
+function genStockCode(ticketType: TicketType, groupType?: string): string {
+  const prefix = ticketType === 'Group'
+    ? (groupType === 'ADHOC' ? 'AH' : 'SR')
+    : ticketType === 'FIT' ? 'FIT' : 'LND'
+  const existingCodes = getDemoStocks().map(s => s.stockCode)
   const now = new Date()
   const yy = String(now.getFullYear()).slice(-2)
   const mm = String(now.getMonth() + 1).padStart(2, '0')
-  const rand = Math.floor(Math.random() * 9000) + 1000
-  return `${prefix}${yy}${mm}${rand}`
+  const base = `${prefix}${yy}${mm}`
+  let maxNum = 0
+  for (const code of existingCodes) {
+    if (code.startsWith(base) && code.length === base.length + 4) {
+      const n = parseInt(code.slice(base.length), 10)
+      if (!isNaN(n) && n > maxNum) maxNum = n
+    }
+  }
+  return `${base}${String(maxNum + 1).padStart(4, '0')}`
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -307,7 +318,7 @@ export default function TicketTable({ tickets, filterType, filterGroupType, filt
       confirmLabel: 'Duplicate',
       variant: 'warning',
       onConfirm: () => {
-        const newCode = genStockCode(stock.ticketType)
+        const newCode = genStockCode(stock.ticketType, stock.groupType)
         const newId = `STK-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
         const nowISO = new Date().toISOString()
         const newStock: DemoStock = {
@@ -496,7 +507,7 @@ export default function TicketTable({ tickets, filterType, filterGroupType, filt
         // Sheet 3: Sectors
         XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
           ['Seq', 'Type', 'Airline', 'Flight No', 'Dep Airport', 'Arr Airport', 'Dep Time', 'Arr Time'],
-          ...stock.sectors.map(s => [s.seq, s.sectorType, s.airlineCode, s.flightNo, s.depAirportCode, s.arrAirportCode, s.depTime, s.arrTime]),
+          ...stock.sectors.map(s => [s.seq, s.sectorType, s.airlineCode, `${s.airlineCode}${s.flightNo}`, s.depAirportCode, s.arrAirportCode, s.depTime, s.arrTime]),
         ]), 'Sectors')
 
         // Sheet 4: Conditions
@@ -507,13 +518,13 @@ export default function TicketTable({ tickets, filterType, filterGroupType, filt
           ),
         ]), 'Conditions')
 
-        const updated = withLog(stock, 'EXPORT_EXCEL', `Export Excel GroupTicket_${stock.stockCode}`)
+        const updated = withLog(stock, 'EXPORT_EXCEL', `Export Excel ${stock.stockCode}`)
         saveDemoStock(updated)
         refreshDemos()
       }
 
       const dateStr = dateFmt(new Date(), 'yyyyMMdd')
-      const filename = `GroupTicket_${ticket.stock_code}_${dateStr}.xlsx`
+      const filename = `${ticket.stock_code}_${dateStr}.xlsx`
       XLSX.writeFile(wb, filename)
       showToast(`Export Excel: ${filename}`, 'success')
     } catch {
@@ -643,6 +654,18 @@ export default function TicketTable({ tickets, filterType, filterGroupType, filt
     .filter(d => !filterType || d.ticket_type === filterType)
     .filter(d => !filterGroupType || d.group_type === filterGroupType).length
 
+  // Show Type column only on pages where multiple types can appear
+  const showTypeColumn = !filterType || (filterType === 'Group' && !filterGroupType)
+  const colCount = showTypeColumn ? 11 : 10
+
+  // Derive column label config from current filter context
+  const pageConfig = getStockTypeConfig(filterType ?? '', filterGroupType)
+  const codeColLabel = pageConfig?.codeLabel ?? 'Stock Code'
+  const nameColLabel = pageConfig?.nameLabel ?? 'Stock Name'
+  const emptyText    = pageConfig?.emptyText ?? 'ยังไม่มีข้อมูล'
+  const addButtonText = pageConfig?.addButtonText ?? 'Add Stock'
+  const addPath      = pageConfig?.addPath ?? '/tickets/add'
+
   // Apply user search/status/airline/period filters on top of type filter
   const displayTickets = filters ? filtered.filter(t => {
     if (filters.search) {
@@ -695,9 +718,9 @@ export default function TicketTable({ tickets, filterType, filterGroupType, filt
       <Table>
         <TableHead>
           <tr>
-            <Th>Series Code</Th>
-            <Th className="hidden md:table-cell">Type</Th>
-            <Th>Series Name</Th>
+            <Th>{codeColLabel}</Th>
+            {showTypeColumn && <Th className="hidden md:table-cell">Type</Th>}
+            <Th>{nameColLabel}</Th>
             <Th className="hidden sm:table-cell">Airline</Th>
             <Th className="hidden lg:table-cell">Route</Th>
             <Th className="hidden lg:table-cell" title="ช่วงวันเดินทาง คำนวณจาก Dep Date แรกสุดถึง Dep Date ท้ายสุดของ PNR">Period</Th>
@@ -710,30 +733,18 @@ export default function TicketTable({ tickets, filterType, filterGroupType, filt
         </TableHead>
         <TableBody>
           {loading ? (
-            <EmptyRow cols={11} message="กำลังโหลด..." />
+            <EmptyRow cols={colCount} message="กำลังโหลด..." />
           ) : displayTickets.length === 0 ? (
             filters && Object.values(filters).some(v => v) ? (
-              <EmptyRow cols={11} message="ไม่พบรายการที่ตรงกับ Filter" />
+              <EmptyRow cols={colCount} message="ไม่พบรายการที่ตรงกับ Filter" />
             ) : (
               <tr>
-                <td colSpan={11} className="px-3 py-14 text-center">
-                  <p className="text-slate-400 text-sm mb-3">
-                    {filterType === 'Group'
-                      ? 'ยังไม่มีข้อมูล Group Ticket'
-                      : filterType === 'FIT'
-                        ? 'ยังไม่มีข้อมูล FIT Ticket'
-                        : filterType === 'Ticket + Land'
-                          ? 'ยังไม่มีข้อมูล Ticket + Land'
-                          : 'ยังไม่มีข้อมูล'}
-                  </p>
-                  {filterType === 'Group' && (
-                    <Button size="sm" icon={<PlusCircle size={14} />} onClick={() => router.push('/tickets/add?type=Group')}>Add Group Stock</Button>
-                  )}
-                  {filterType === 'FIT' && (
-                    <Button size="sm" icon={<PlusCircle size={14} />} onClick={() => router.push('/tickets/add?type=FIT')}>Add FIT Stock</Button>
-                  )}
-                  {filterType === 'Ticket + Land' && (
-                    <Button size="sm" icon={<PlusCircle size={14} />} onClick={() => router.push('/tickets/add?type=Ticket+Land')}>Add Ticket+Land Stock</Button>
+                <td colSpan={colCount} className="px-3 py-14 text-center">
+                  <p className="text-slate-400 text-sm mb-3">{emptyText}</p>
+                  {pageConfig && !pageConfig.disabled && (
+                    <Button size="sm" icon={<PlusCircle size={14} />} onClick={() => router.push(addPath)}>
+                      {addButtonText}
+                    </Button>
                   )}
                 </td>
               </tr>
@@ -749,21 +760,11 @@ export default function TicketTable({ tickets, filterType, filterGroupType, filt
                     <span className="ml-1 inline-flex items-center px-1 py-px text-[9px] font-bold bg-amber-100 text-amber-600 rounded">DEMO</span>
                   )}
                 </Td>
-                <Td className="hidden md:table-cell">
-                  <div className="flex flex-col gap-0.5">
-                    <TicketTypeBadge type={t.ticket_type} />
-                    {t.group_type && (
-                      <span className={cn(
-                        'inline-flex items-center px-1.5 py-px text-[10px] font-semibold rounded-full w-fit',
-                        t.group_type === 'SERIES'
-                          ? 'bg-emerald-100 text-emerald-700'
-                          : 'bg-amber-100 text-amber-700'
-                      )}>
-                        {t.group_type === 'SERIES' ? 'Series' : 'Ad Hoc'}
-                      </span>
-                    )}
-                  </div>
-                </Td>
+                {showTypeColumn && (
+                  <Td className="hidden md:table-cell">
+                    <TicketTypeBadge type={t.ticket_type} groupType={t.group_type} />
+                  </Td>
+                )}
                 <Td>
                   <p className="text-sm font-medium text-slate-800 max-w-[160px] truncate">{t.group_name}</p>
                   <p className="text-xs text-slate-400 hidden lg:block">{t.destination}</p>

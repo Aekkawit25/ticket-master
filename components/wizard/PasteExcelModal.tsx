@@ -356,7 +356,7 @@ export default function PasteExcelModal({
                         <tr key={t.seq}>
                           <td className="border border-slate-300 px-2 py-1 text-center font-medium">{t.seq}</td>
                           <td className="border border-slate-300 px-2 py-1">{t.sectorType}</td>
-                          <td className="border border-slate-300 px-2 py-1 font-mono">{t.flightNo || '—'}</td>
+                          <td className="border border-slate-300 px-2 py-1 font-mono">{t.airlineCode || ''}{t.flightNo || '—'}</td>
                           <td className="border border-slate-300 px-2 py-1">{t.depAirportCode || '—'}</td>
                           <td className="border border-slate-300 px-2 py-1">{t.arrAirportCode || '—'}</td>
                           <td className="border border-slate-300 px-2 py-1">{t.depTime || '—'}</td>

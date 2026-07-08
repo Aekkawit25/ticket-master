@@ -19,9 +19,10 @@ interface FilterState {
 interface TicketFilterProps {
   onFilter: (filters: FilterState) => void
   showTypeFilter?: boolean
+  searchPlaceholder?: string
 }
 
-export default function TicketFilter({ onFilter, showTypeFilter = true }: TicketFilterProps) {
+export default function TicketFilter({ onFilter, showTypeFilter = true, searchPlaceholder = 'ค้นหา Stock Code, Name, PNR...' }: TicketFilterProps) {
   const [expanded, setExpanded] = useState(false)
   const [filters, setFilters] = useState<FilterState>({
     search: '',
@@ -65,7 +66,7 @@ export default function TicketFilter({ onFilter, showTypeFilter = true }: Ticket
             value={filters.search}
             onChange={e => set('search', e.target.value)}
             onKeyDown={e => e.key === 'Enter' && onFilter(filters)}
-            placeholder="ค้นหา Series Code, Series Name, PNR..."
+            placeholder={searchPlaceholder}
             className="w-full pl-9 pr-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30 focus:border-[#05a94f]"
           />
         </div>

@@ -198,7 +198,7 @@ export async function parseExcelImport(file: File): Promise<ImportReviewData> {
         airlineCode: str(r['airlineCode']),
         countryId:   str(r['country']),
         destination: str(r['destination']),
-        currency:    str(r['currency']),
+        currency:    str(r['currency']) || 'THB',
         status:      str(r['status']) || 'Draft',
         tripType:    str(r['tripType']),
         remark:      str(r['remark']),
@@ -346,9 +346,7 @@ export async function parseExcelImport(file: File): Promise<ImportReviewData> {
   if (!stockInfo.airlineCode) {
     issues.push({ level: 'error', sheet: 'STOCK_INFO', field: 'airlineCode', message: 'airlineCode ว่าง' })
   }
-  if (!stockInfo.currency) {
-    issues.push({ level: 'error', sheet: 'STOCK_INFO', field: 'currency', message: 'currency ว่าง' })
-  }
+  // currency always has a value (fallback = THB applied at parse step)
   if (!stockInfo.tripType) {
     issues.push({ level: 'error', sheet: 'STOCK_INFO', field: 'tripType', message: 'tripType ว่าง' })
   }

@@ -77,7 +77,7 @@ export function downloadPnrTemplate(sectors: FlightSectorFormData[]): void {
       ['Sector Template จาก Step 2 — อ้างอิงเท่านั้น ห้ามแก้ไข Sheet นี้', ...Array(refH.length - 1).fill('')],
       refH,
       ...sectors.map(s => [
-        s.seq, s.sector_type, s.airline_code, s.flight_no,
+        s.seq, s.sector_type, s.airline_code, `${s.airline_code}${s.flight_no}`,
         s.dep_airport_code, s.arr_airport_code,
         s.dep_time, s.arr_time, s.arr_day_offset, s.day_offset,
       ]),

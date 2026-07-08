@@ -418,7 +418,16 @@ export function getDemoStocks(): DemoStock[] {
     const parsed = JSON.parse(raw) as DemoStock[]
     const migrateSectorType = (t: string) =>
       t === 'Outbound' ? 'Departure' : t === 'Return' ? 'Arrival' : t === 'Domestic' ? 'Transit' : t
-    const migrateSec = (sec: DemoSector): DemoSector => ({ ...sec, sectorType: migrateSectorType(sec.sectorType) })
+    const migrateFlightNo = (airlineCode: string, flightNo: string): string => {
+      let n = String(flightNo || '').trim()
+      if (airlineCode) n = n.replace(new RegExp(`^${airlineCode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i'), '')
+      return n.replace(/^[A-Za-z]{2,3}/, '').replace(/\s+/g, '')
+    }
+    const migrateSec = (sec: DemoSector): DemoSector => ({
+      ...sec,
+      sectorType: migrateSectorType(sec.sectorType),
+      flightNo: migrateFlightNo(sec.airlineCode, sec.flightNo),
+    })
     return parsed.map(s => {
       const migratedSectors = (s.sectors ?? []).map(migrateSec)
       const flightSets: DemoFlightSet[] = s.flightSets && s.flightSets.length > 0
@@ -551,6 +560,8 @@ export function getDemoStocks(): DemoStock[] {
 
       return {
         ...s,
+        // Group stocks created before groupType was tracked default to SERIES
+        groupType: s.groupType ?? (s.ticketType === 'Group' ? 'SERIES' : undefined),
         logs: s.logs ?? [],
         transactions: s.transactions ?? [],
         sectors: migratedSectors,

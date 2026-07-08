@@ -18,6 +18,7 @@ import {
   validateSectors, generateDummyPnrs, formatDate,
   calcTravelEndFromSectors, calcSectorDate,
 } from '@/lib/utils'
+import { MASTER_AIRLINE_CODE_SET } from '@/lib/master-data'
 import {
   getDemoStockById, getDemoStockByCode, getDemoStocks,
   demoStockToWizardState, wizardStateToDemoStock,
@@ -26,6 +27,7 @@ import {
 } from '@/lib/demo-storage'
 import type { WizardState, FlightSeriesFormData, FlightSectorFormData, FlightScheduleFormData, TripType, TicketType } from '@/types'
 import type { DemoStock, DemoLog } from '@/lib/demo-storage'
+import { getStockTypeConfig } from '@/lib/stock-type-config'
 
 // ─── Change tracking ──────────────────────────────────────────────────────────
 
@@ -233,10 +235,9 @@ function normalizeForReview(state: WizardState, excludeStockCode?: string): Wiza
 
 // ─── Page steps config ────────────────────────────────────────────────────────
 
-const PAGE_TITLES: Record<TicketType, string> = {
-  'Group':         'Edit Stock — Group Ticket',
-  'FIT':           'Edit Stock — FIT Ticket',
-  'Ticket + Land': 'Edit Stock — Ticket + Land',
+function getEditPageTitle(ticketType: TicketType, groupType?: string): string {
+  const cfg = getStockTypeConfig(ticketType, groupType)
+  return cfg?.editTitle ?? 'Edit Stock'
 }
 
 const STEP_SUBTITLES: Record<number, string> = {
@@ -323,7 +324,6 @@ function EditStockPageInner() {
             sectors: sch.sectors.map(s => ({
               ...s,
               airline_code: patch.airline_code!,
-              flight_no: s.flight_no === prev.stockInfo.airline_code ? patch.airline_code! : s.flight_no,
             })),
           })),
         }
@@ -371,7 +371,11 @@ function EditStockPageInner() {
       }
       const mainSch = state.schedules.find(sch => sch.isMain) ?? state.schedules[0]
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return validateSectors(mainSch?.sectors as any, state.stockInfo.ticket_type, state.stockInfo.trip_type)
+      const sectorErr = validateSectors(mainSch?.sectors as any, state.stockInfo.ticket_type, state.stockInfo.trip_type)
+      if (sectorErr) return sectorErr
+      const badAirline = mainSch?.sectors.find(sec => !sec.airline_code || !MASTER_AIRLINE_CODE_SET.has(sec.airline_code))
+      if (badAirline) return `Airline "${badAirline.airline_code || '—'}" ไม่พบใน Master กรุณาเลือก Airline ที่ถูกต้อง`
+      return null
     }
     if (s === 4) {
       for (const pnr of state.pnrs) {
@@ -486,7 +490,7 @@ function EditStockPageInner() {
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
-  const pageTitle = PAGE_TITLES[state.stockInfo.ticket_type] ?? 'Edit Stock'
+  const pageTitle = getEditPageTitle(state.stockInfo.ticket_type, state.stockInfo.group_type)
 
   return (
     <AppLayout title={pageTitle}>
@@ -494,6 +498,7 @@ function EditStockPageInner() {
         step={step}
         pageTitle={pageTitle}
         subtitle={STEP_SUBTITLES[step]}
+        stockStatus={state.stockInfo.status}
         error={errors._}
         saving={saving}
         isLastStep={step === 5}

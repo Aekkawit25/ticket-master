@@ -14,6 +14,7 @@ import { downloadExcelTemplate } from '@/lib/excel-template'
 import { parseExcelImport } from '@/lib/excel-import'
 import { getDemoStocks, clearDemoStocksByType, clearDemoStocksByGroupType, clearAllDemoData } from '@/lib/demo-storage'
 import type { TicketType, GroupType } from '@/types'
+import { getStockTypeConfig, STOCK_TYPE_CONFIG } from '@/lib/stock-type-config'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -37,62 +38,43 @@ interface PageConfig {
   addPath: string | null   // null = show type-selector / group-type modal
   clearLabel: string
   clearNote: string
+  searchPlaceholder: string
 }
 
 function getConfig(t: TicketType | null, g?: GroupType | null): PageConfig {
-  if (t === 'Group' && g === 'SERIES') return {
-    title: 'Group Series',
-    breadcrumb: ['Ticket Stock', 'Group Tickets', 'Group Series'],
-    subtitle: 'Stock ตั๋ว Group แบบ Series — เส้นทางและวันเดินทางกำหนดแน่นอน',
-    addLabel: 'Add Group Series',
-    addPath: '/tickets/add?type=Group&groupType=SERIES',
-    clearLabel: 'ล้างข้อมูล Group Series',
-    clearNote: 'เฉพาะ Group Series เท่านั้น ประเภทอื่นไม่ถูกลบ',
+  // Group-specific pages — pull everything from central config
+  const stConfig = getStockTypeConfig(t ?? '', g)
+  if (stConfig) return {
+    title: stConfig.pageTitle,
+    breadcrumb: stConfig.breadcrumb,
+    subtitle: stConfig.subtitle,
+    addLabel: stConfig.addButtonText,
+    addPath: stConfig.addPath,
+    clearLabel: stConfig.clearButtonText,
+    clearNote: stConfig.clearNote,
+    searchPlaceholder: stConfig.searchPlaceholder,
   }
-  if (t === 'Group' && g === 'ADHOC') return {
-    title: 'Group Ad Hoc',
-    breadcrumb: ['Ticket Stock', 'Group Tickets', 'Group Ad Hoc'],
-    subtitle: 'Stock ตั๋ว Group แบบ Ad Hoc — จัดกรุ๊ปพิเศษตามสถานการณ์',
-    addLabel: 'Add Group Ad Hoc',
-    addPath: '/tickets/add?type=Group&groupType=ADHOC',
-    clearLabel: 'ล้างข้อมูล Group Ad Hoc',
-    clearNote: 'เฉพาะ Group Ad Hoc เท่านั้น ประเภทอื่นไม่ถูกลบ',
-  }
+  // All Group (no specific subtype)
   if (t === 'Group') return {
-    title: 'All Group Tickets',
-    breadcrumb: ['Ticket Stock', 'Group Tickets'],
+    title: 'All Group Stocks',
+    breadcrumb: ['Ticket Stock', 'All Group'],
     subtitle: 'Stock ตั๋วแบบ Group ทั้งหมด — Series และ Ad Hoc',
     addLabel: 'Add Group Stock',
-    addPath: null,  // show SelectGroupTypeModal
+    addPath: null,
     clearLabel: 'ล้างข้อมูล Group',
     clearNote: 'ข้อมูลประเภทอื่น (FIT / Ticket + Land) จะไม่ถูกลบ',
+    searchPlaceholder: 'ค้นหา Stock Code, Name, PNR...',
   }
-  if (t === 'FIT') return {
-    title: 'FIT Tickets',
-    breadcrumb: ['Ticket Stock', 'FIT Tickets'],
-    subtitle: 'Free Individual Traveler — รองรับ One-way, Round-trip, Multi-city',
-    addLabel: 'Add FIT Stock',
-    addPath: '/tickets/add?type=FIT',
-    clearLabel: 'ล้างข้อมูล FIT',
-    clearNote: 'ข้อมูลประเภทอื่น (Group / Ticket + Land) จะไม่ถูกลบ',
-  }
-  if (t === 'Ticket + Land') return {
-    title: 'Ticket + Land',
-    breadcrumb: ['Ticket Stock', 'Ticket + Land'],
-    subtitle: 'ตั๋วเครื่องบินพร้อม Land Package — ต้องมีอย่างน้อย 2 Sector',
-    addLabel: 'Add Ticket + Land',
-    addPath: '/tickets/add?type=Ticket+Land',
-    clearLabel: 'ล้างข้อมูล Ticket+Land',
-    clearNote: 'ข้อมูลประเภทอื่น (Group / FIT) จะไม่ถูกลบ',
-  }
+  // All Tickets
   return {
     title: 'All Tickets',
-    breadcrumb: ['Ticket Stock'],
+    breadcrumb: ['Ticket Stock', 'All Tickets'],
     subtitle: 'Stock ตั๋วเครื่องบินทุกประเภท',
     addLabel: 'Add Stock',
-    addPath: null,  // show SelectTicketTypeModal
+    addPath: '/tickets/add',
     clearLabel: 'ล้างข้อมูลทั้งหมด',
     clearNote: '',
+    searchPlaceholder: 'ค้นหา Stock Code, Name, PNR...',
   }
 }
 
@@ -195,10 +177,11 @@ export default function TicketStockPage({ fixedTicketType, fixedGroupType }: Tic
     } else if (fixedTicketType) {
       setStockCount(all.filter(s => s.ticketType === fixedTicketType).length)
     } else {
-      const g = all.filter(s => s.ticketType === 'Group').length
-      const f = all.filter(s => s.ticketType === 'FIT').length
-      const l = all.filter(s => s.ticketType === 'Ticket + Land').length
-      setCounts(prev => ({ ...prev, group: g, fit: f, land: l }))
+      const series = all.filter(s => s.ticketType === 'Group' && s.groupType === 'SERIES').length
+      const adhoc  = all.filter(s => s.ticketType === 'Group' && s.groupType === 'ADHOC').length
+      const fit    = all.filter(s => s.ticketType === 'FIT').length
+      const land   = all.filter(s => s.ticketType === 'Ticket + Land').length
+      setCounts(prev => ({ ...prev, series, adhoc, group: series + adhoc, fit, land }))
       setStockCount(all.length)
     }
   }
@@ -332,10 +315,11 @@ export default function TicketStockPage({ fixedTicketType, fixedGroupType }: Tic
 
       {/* ── Stat cards ── */}
       {isAll && (
-        <div className="grid grid-cols-3 gap-3 mb-4">
-          <StatCard title="Group"       value={counts.group} icon={<Users  size={18} />} color="#05a94f" />
-          <StatCard title="FIT"         value={counts.fit}   icon={<Ticket size={18} />} color="#3b82f6" />
-          <StatCard title="Ticket+Land" value={counts.land}  icon={<Globe  size={18} />} color="#8b5cf6" />
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+          <StatCard title="Group Series" value={counts.series} icon={<List  size={18} />} color="#05a94f" />
+          <StatCard title="Group Ad Hoc" value={counts.adhoc}  icon={<Users size={18} />} color="#f59e0b" />
+          <StatCard title="FIT Tickets"  value={counts.fit}    icon={<Ticket size={18} />} color="#3b82f6" comingSoon />
+          <StatCard title="Ticket + Land" value={counts.land}  icon={<Globe  size={18} />} color="#8b5cf6" comingSoon />
         </div>
       )}
       {isAllGroup && (
@@ -346,7 +330,7 @@ export default function TicketStockPage({ fixedTicketType, fixedGroupType }: Tic
       )}
 
       {/* ── Filter ── */}
-      <TicketFilter onFilter={setFilters} showTypeFilter={isAll} />
+      <TicketFilter onFilter={setFilters} showTypeFilter={isAll} searchPlaceholder={cfg.searchPlaceholder} />
 
       {/* ── Table ── */}
       <TicketTable

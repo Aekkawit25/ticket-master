@@ -286,3 +286,6 @@ export function getAirlineLabel(code: string): string {
   const a = MASTER_AIRLINES.find(a => a.code === code)
   return a ? `${a.code} — ${a.name}` : code
 }
+
+export const MASTER_AIRLINE_CODES: readonly string[] = MASTER_AIRLINES.map(a => a.code)
+export const MASTER_AIRLINE_CODE_SET: ReadonlySet<string> = new Set(MASTER_AIRLINE_CODES)

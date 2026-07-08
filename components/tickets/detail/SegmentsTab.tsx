@@ -6,6 +6,8 @@ import { Modal } from '@/components/ui/modal'
 import { Pencil, PlusCircle, Trash2, CheckCircle2, AlertTriangle, X, Copy, PlaneTakeoff } from 'lucide-react'
 import { saveDemoStock, getStockFlightSets } from '@/lib/demo-storage'
 import type { DemoStock, DemoSector, DemoFlightSet, DemoLog } from '@/lib/demo-storage'
+import { MASTER_AIRLINE_CODE_SET } from '@/lib/master-data'
+import { AirlineCell } from '@/components/shared/AirlineCell'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -124,14 +126,16 @@ function SectorEditTable({ sectors, minSectors, errors, defaultAirlineCode, onCh
                 </select>
               </td>
               <td className="px-1 py-1.5">
-                <input value={s.airlineCode} onChange={e => update(i, { airlineCode: e.target.value.toUpperCase() })}
-                  className="w-full border border-slate-300 rounded-md px-1.5 py-1 text-xs font-mono uppercase focus:outline-none focus:ring-1 focus:ring-[#05a94f]"
-                  placeholder={defaultAirlineCode || 'TG'} maxLength={3} />
+                <AirlineCell
+                  value={s.airlineCode}
+                  onChange={v => update(i, { airlineCode: v })}
+                  inputClassName={`border rounded-md px-1.5 py-1 ${errors[`airline_${i}`] ? 'border-red-400' : 'border-slate-300'}`}
+                />
               </td>
               <td className="px-1 py-1.5">
-                <input value={s.flightNo} onChange={e => update(i, { flightNo: e.target.value.toUpperCase() })}
-                  className={`w-full border rounded-md px-1.5 py-1 text-xs font-mono uppercase focus:outline-none focus:ring-1 focus:ring-[#05a94f] ${errors[`flightNo_${i}`] ? 'border-red-400' : 'border-slate-300'}`}
-                  placeholder="TG676" />
+                <input value={s.flightNo} onChange={e => update(i, { flightNo: e.target.value.replace(/[A-Za-z\s]/g, '') })}
+                  className={`w-full border rounded-md px-1.5 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-[#05a94f] ${errors[`flightNo_${i}`] ? 'border-red-400' : 'border-slate-300'}`}
+                  placeholder="701" inputMode="numeric" />
               </td>
               <td className="px-1 py-1.5">
                 <input value={s.depAirportCode} onChange={e => update(i, { depAirportCode: e.target.value.toUpperCase() })}
@@ -222,7 +226,7 @@ function SectorReadTable({ sectors }: { sectors: DemoSector[] }) {
                 <td className="px-3 py-2.5 text-center overflow-hidden">
                   <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-slate-100 text-slate-600">{s.airlineCode}</span>
                 </td>
-                <td className="px-3 py-2.5 text-xs font-mono font-bold text-center overflow-hidden text-ellipsis whitespace-nowrap">{s.flightNo}</td>
+                <td className="px-3 py-2.5 text-xs font-mono font-bold text-center overflow-hidden text-ellipsis whitespace-nowrap">{s.airlineCode}{s.flightNo}</td>
                 <td className="px-3 py-2.5 text-xs font-mono font-bold text-center">{s.depAirportCode}</td>
                 <td className="px-3 py-2.5 text-xs font-mono font-bold text-center">{s.arrAirportCode}</td>
                 <td className="px-3 py-2.5 text-xs font-mono text-center whitespace-nowrap">{s.depTime}</td>
@@ -324,6 +328,8 @@ export function SegmentsTab({ liveStock, mockSectors, ticketType, canEdit, jumpT
       if (lastType !== 'Arrival' && lastType !== 'Departure') errs._return = 'Sector สุดท้ายต้องเป็น Arrival'
     }
     editSectors.forEach((s, i) => {
+      if (!s.airlineCode || !MASTER_AIRLINE_CODE_SET.has(s.airlineCode))
+        errs[`airline_${i}`] = s.airlineCode ? 'ไม่พบใน Master' : 'กรุณาเลือก Airline'
       if (!s.flightNo)        errs[`flightNo_${i}`] = 'กรุณาระบุ Flight No.'
       if (!s.depAirportCode)  errs[`dep_${i}`]      = 'กรุณาระบุ From'
       if (!s.arrAirportCode)  errs[`arr_${i}`]      = 'กรุณาระบุ To'

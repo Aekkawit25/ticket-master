@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input, Select, Textarea } from '@/components/ui/input'
 import { Lock, Pencil, X, ArrowRight } from 'lucide-react'
 import { formatDate, formatDateTime, formatNumber } from '@/lib/utils'
+import { getStockTypeConfigSafe } from '@/lib/stock-type-config'
 import type { DemoStock, DemoFlightSet, PaymentScheduleItem } from '@/lib/demo-storage'
 import { REOPEN_SECTIONS } from './ReopenStockModal'
 
@@ -28,6 +29,7 @@ export interface SummaryTabProps {
   stockPeriod: string
   routeText: string
   ticketType: string
+  groupType?: string
   tripType: string
   createdAt: string
   updatedAt: string
@@ -99,6 +101,7 @@ export function SummaryTab({
   stockPeriod,
   routeText,
   ticketType,
+  groupType,
   tripType,
   createdAt,
   updatedAt,
@@ -118,7 +121,7 @@ export function SummaryTab({
   onOpenExtend,
   onNavigateTab,
 }: SummaryTabProps) {
-
+  const stockTypeCfg = getStockTypeConfigSafe(ticketType, groupType)
   const pnrs = liveStock.pnrs
 
   // ── PNR stats ────────────────────────────────────────────────
@@ -245,7 +248,7 @@ export function SummaryTab({
               <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs">
                 <p className="font-medium text-slate-500 mb-2">ข้อมูลที่ไม่สามารถเปลี่ยนแปลงได้</p>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                  <div><span className="text-slate-400">Series Code: </span><span className="font-mono font-bold">{stockCode}</span></div>
+                  <div><span className="text-slate-400">{stockTypeCfg.codeLabel}: </span><span className="font-mono font-bold">{stockCode}</span></div>
                   <div><span className="text-slate-400">Ticket Type: </span><span>{ticketType}</span></div>
                   <div><span className="text-slate-400">Route: </span><span className="font-mono font-medium text-[#05a94f]">{routeText || '—'}</span></div>
                   <div><span className="text-slate-400">Period: </span><span>{stockPeriod || '—'}</span></div>
@@ -253,7 +256,7 @@ export function SummaryTab({
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="sm:col-span-2">
-                  <Input label="Series Name" value={stockForm.group_name}
+                  <Input label={stockTypeCfg.nameLabel} value={stockForm.group_name}
                     onChange={e => onStockFormChange(f => ({ ...f, group_name: e.target.value }))} required />
                 </div>
                 <Input label="Airline Code" value={stockForm.airline_code}
@@ -280,19 +283,19 @@ export function SummaryTab({
             /* ── View mode ─────────────────────────────────── */
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-3 text-sm">
               <div>
-                <p className="text-[10px] text-slate-400 mb-0.5">Series Code</p>
+                <p className="text-[10px] text-slate-400 mb-0.5">{stockTypeCfg.codeLabel}</p>
                 <p className="font-mono font-bold text-slate-800">{stockCode}</p>
               </div>
               <div>
                 <p className="text-[10px] text-slate-400 mb-0.5">Ticket Type</p>
-                <TicketTypeBadge type={ticketType} />
+                <TicketTypeBadge type={ticketType} groupType={groupType} />
               </div>
               <div>
                 <p className="text-[10px] text-slate-400 mb-0.5">Status</p>
                 <StockStatusBadge status={status} />
               </div>
               <div className="sm:col-span-2">
-                <p className="text-[10px] text-slate-400 mb-0.5">Series Name</p>
+                <p className="text-[10px] text-slate-400 mb-0.5">{stockTypeCfg.nameLabel}</p>
                 <p className="font-semibold text-slate-800">{liveStock.groupName}</p>
               </div>
               <div>

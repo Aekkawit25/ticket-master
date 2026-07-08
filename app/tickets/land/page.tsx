@@ -1,5 +1,5 @@
-import TicketStockPage from '@/components/tickets/TicketStockPage'
+import { redirect } from 'next/navigation'
 
 export default function LandTicketsPage() {
-  return <TicketStockPage fixedTicketType="Ticket + Land" />
+  redirect('/tickets')
 }

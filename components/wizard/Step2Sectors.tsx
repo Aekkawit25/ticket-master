@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import type { FlightSectorFormData, FlightScheduleFormData, SectorType, TicketType, TripType } from '@/types'
 import { getActiveAirports, getAirportByCode, type StoredAirport } from '@/lib/airport-storage'
 import { getCountryByCode } from '@/lib/country-storage'
+import { AirlineCell } from '@/components/shared/AirlineCell'
 
 const SECTOR_TYPE_OPTIONS: { value: SectorType; label: string; text: string }[] = [
   { value: 'Departure', label: 'Departure', text: 'text-green-600' },
@@ -854,12 +855,9 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
 
                       {/* Airline */}
                       <XL>
-                        <input
+                        <AirlineCell
                           value={s.airline_code}
-                          onChange={e => update(idx, { airline_code: e.target.value.toUpperCase() })}
-                          maxLength={5}
-                          placeholder="TG"
-                          className="w-full h-full px-2 py-[5px] text-xs font-mono uppercase bg-transparent outline-none focus:bg-blue-50 placeholder:text-slate-300"
+                          onChange={v => update(idx, { airline_code: v })}
                         />
                       </XL>
 
@@ -867,9 +865,10 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
                       <XL>
                         <input
                           value={s.flight_no}
-                          onChange={e => update(idx, { flight_no: e.target.value.toUpperCase() })}
-                          placeholder="TG676"
-                          className="w-full h-full px-2 py-[5px] text-xs font-mono uppercase bg-transparent outline-none focus:bg-blue-50 placeholder:text-slate-300"
+                          onChange={e => update(idx, { flight_no: e.target.value.replace(/[A-Za-z\s]/g, '') })}
+                          placeholder="701"
+                          inputMode="numeric"
+                          className="w-full h-full px-2 py-[5px] text-xs font-mono bg-transparent outline-none focus:bg-blue-50 placeholder:text-slate-300"
                         />
                       </XL>
 

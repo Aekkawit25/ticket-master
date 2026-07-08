@@ -19,6 +19,7 @@ import {
   Map,
   FileText,
   Package,
+  DollarSign,
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -27,6 +28,7 @@ interface NavItem {
   href?: string
   icon: React.ReactNode
   children?: NavItem[]
+  disabled?: boolean
 }
 
 const navItems: NavItem[] = [
@@ -39,18 +41,11 @@ const navItems: NavItem[] = [
     label: 'Ticket Stock',
     icon: <Ticket size={18} />,
     children: [
-      { label: 'All Tickets', href: '/tickets', icon: <List size={16} /> },
-      {
-        label: 'Group Tickets',
-        icon: <Users size={16} />,
-        children: [
-          { label: 'All Group Tickets', href: '/tickets/group',        icon: <Users size={14} /> },
-          { label: 'Group Series',      href: '/tickets/group/series', icon: <List size={14} /> },
-          { label: 'Group Ad Hoc',      href: '/tickets/group/adhoc',  icon: <List size={14} /> },
-        ],
-      },
-      { label: 'FIT Tickets', href: '/tickets/fit', icon: <Ticket size={16} /> },
-      { label: 'Ticket + Land', href: '/tickets/land', icon: <Globe size={16} /> },
+      { label: 'All Tickets',        href: '/tickets',                     icon: <List size={16} /> },
+      { label: 'Group Series',       href: '/tickets/group/series',        icon: <List size={16} /> },
+      { label: 'Group Ad Hoc',       href: '/tickets/group/adhoc',         icon: <Users size={16} /> },
+      { label: 'FIT Tickets',        href: '/tickets/fit',                 icon: <Ticket size={16} />, disabled: true },
+      { label: 'Ticket + Land',      href: '/tickets/land',                icon: <Globe size={16} />, disabled: true },
       { label: 'Template Condition', href: '/tickets/condition-templates', icon: <FileSpreadsheet size={16} /> },
     ],
   },
@@ -73,11 +68,12 @@ const navItems: NavItem[] = [
     label: 'Settings',
     icon: <Settings size={18} />,
     children: [
-      { label: 'Airlines', href: '/settings/airlines', icon: <Plane size={16} /> },
-      { label: 'Suppliers', href: '/settings/suppliers', icon: <Package size={16} /> },
-      { label: 'Airports', href: '/settings/airports', icon: <Building2 size={16} /> },
-      { label: 'Countries', href: '/settings/countries', icon: <Globe size={16} /> },
-      { label: 'Users', href: '/settings/users', icon: <Users size={16} /> },
+      { label: 'Airlines',   href: '/settings/airlines',   icon: <Plane size={16} /> },
+      { label: 'Suppliers',  href: '/settings/suppliers',  icon: <Package size={16} /> },
+      { label: 'Airports',   href: '/settings/airports',   icon: <Building2 size={16} /> },
+      { label: 'Countries',  href: '/settings/countries',  icon: <Globe size={16} /> },
+      { label: 'Currencies', href: '/settings/currencies', icon: <DollarSign size={16} /> },
+      { label: 'Users',      href: '/settings/users',      icon: <Users size={16} /> },
     ],
   },
 ]
@@ -93,6 +89,28 @@ function NavGroup({ item, depth = 0 }: { item: NavItem; depth?: number }) {
   if (!item.children) {
     // Exact-match only — prevents /tickets matching /tickets/group, etc.
     const isActive = item.href ? pathname === item.href : false
+
+    if (item.disabled) {
+      return (
+        <div
+          className={cn(
+            'flex items-center justify-between gap-2.5 px-3 py-2 rounded-lg text-sm font-medium cursor-not-allowed select-none',
+            depth === 1 ? 'pl-9' : depth > 1 ? 'pl-6' : '',
+            'text-slate-400'
+          )}
+          aria-disabled="true"
+        >
+          <span className="flex items-center gap-2.5">
+            <span className="flex-shrink-0 text-slate-300">{item.icon}</span>
+            {item.label}
+          </span>
+          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-100 text-slate-400 leading-none whitespace-nowrap">
+            Soon
+          </span>
+        </div>
+      )
+    }
+
     return (
       <Link
         href={item.href!}

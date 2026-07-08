@@ -235,7 +235,7 @@ export function parseFlexDate(raw: string): string | null {
 export function parseFlightNo(raw: string): { airlineCode: string; flightNo: string } | null {
   const m = (raw ?? '').trim().toUpperCase().match(/^([A-Z]{2,3})(\d{1,4}[A-Z]?)$/)
   if (!m) return null
-  return { airlineCode: m[1], flightNo: m[1] + m[2] }
+  return { airlineCode: m[1], flightNo: m[2] }
 }
 
 // ─── normalizePastedRows ─────────────────────────────────────────────────────
@@ -263,11 +263,11 @@ export function normalizePastedRows(
       isDummy:             !pnrCode,   // empty PNR → Dummy (not an error)
       seatCount:           parseInt(get(1), 10) || 0,
       outboundDate,
-      outboundFlight:      obFlight?.flightNo  ?? outboundFlightRaw,
+      outboundFlight:      outboundFlightRaw,
       outboundFrom:        get(4).toUpperCase(),
       outboundTo:          get(5).toUpperCase(),
       returnDate,
-      returnFlight:        retFlight?.flightNo ?? returnFlightRaw,
+      returnFlight:        returnFlightRaw,
       returnFrom:          get(8).toUpperCase(),
       returnTo:            get(9).toUpperCase(),
       outboundAirlineCode: obFlight?.airlineCode  ?? '',
@@ -378,9 +378,9 @@ export function validatePastedRows(
       const retTmpl = templates.length > 1 ? templates[templates.length - 1] : null
 
       // Outbound vs template[0]
-      if (obTmpl.flightNo && obFlight && row.outboundFlight !== obTmpl.flightNo)
+      if (obTmpl.flightNo && obFlight && obFlight.flightNo !== obTmpl.flightNo)
         errors.push({ col: 'เที่ยวบินไป', fields: ['outboundFlight'],
-          message: `Flight No. ไม่ตรงกับ Step 2 (กำหนด: ${obTmpl.flightNo}, วาง: ${row.outboundFlight})` })
+          message: `Flight No. ไม่ตรงกับ Step 2 (กำหนด: ${obTmpl.airlineCode}${obTmpl.flightNo}, วาง: ${row.outboundFlight})` })
       if (obTmpl.depAirportCode && row.outboundFrom && row.outboundFrom !== obTmpl.depAirportCode)
         errors.push({ col: 'จาก', fields: ['outboundFrom'],
           message: `From ไม่ตรงกับ Step 2 (กำหนด: ${obTmpl.depAirportCode}, วาง: ${row.outboundFrom})` })
@@ -396,9 +396,9 @@ export function validatePastedRows(
             errors.push({ col: 'วันกลับ', fields: ['returnDate'],
               message: `วันที่ Sector ${retTmpl.seq} ไม่ตรงกับ Travel Day (คาดหมาย: ${expectedDate}, วาง: ${row.returnDate})` })
         }
-        if (retTmpl.flightNo && retFlight && row.returnFlight !== retTmpl.flightNo)
+        if (retTmpl.flightNo && retFlight && retFlight.flightNo !== retTmpl.flightNo)
           errors.push({ col: 'เที่ยวบินกลับ', fields: ['returnFlight'],
-            message: `Flight No. ไม่ตรงกับ Step 2 (กำหนด: ${retTmpl.flightNo}, วาง: ${row.returnFlight})` })
+            message: `Flight No. ไม่ตรงกับ Step 2 (กำหนด: ${retTmpl.airlineCode}${retTmpl.flightNo}, วาง: ${row.returnFlight})` })
         if (retTmpl.depAirportCode && row.returnFrom && row.returnFrom !== retTmpl.depAirportCode)
           errors.push({ col: 'จาก (กลับ)', fields: ['returnFrom'],
             message: `From ไม่ตรงกับ Step 2 (กำหนด: ${retTmpl.depAirportCode}, วาง: ${row.returnFrom})` })
@@ -441,7 +441,7 @@ export function parseMultiSectorPaste(
       seatCount:      parseInt(get(2), 10) || 0,
       seq:            parseInt(get(3), 10) || 0,
       travelDate:     parseFlexDate(get(4)) ?? get(4),
-      flightNo:       parsedFl?.flightNo ?? flightRaw,
+      flightNo:       flightRaw,
       depAirportCode: get(6).toUpperCase(),
       arrAirportCode: get(7).toUpperCase(),
       depTime:        normalizeTime(get(8)),
@@ -599,9 +599,9 @@ export function validatePNRGroups(
         sErrors.push({ col: 'Seq', fields: ['seq'],
           message: `ไม่พบ Sector ลำดับที่ ${sector.seq} ในโครงสร้าง Step 2` })
       } else if (tmpl && sector.seq > 0) {
-        if (tmpl.flightNo && parsedFl && sector.flightNo !== tmpl.flightNo)
+        if (tmpl.flightNo && parsedFl && parsedFl.flightNo !== tmpl.flightNo)
           sErrors.push({ col: 'เที่ยวบิน', fields: ['flightNo'],
-            message: `Flight No. ไม่ตรงกับ Step 2 (กำหนด: ${tmpl.flightNo}, วาง: ${sector.flightNo})` })
+            message: `Flight No. ไม่ตรงกับ Step 2 (กำหนด: ${tmpl.airlineCode}${tmpl.flightNo}, วาง: ${sector.flightNo})` })
         if (tmpl.airlineCode && parsedFl && parsedFl.airlineCode !== tmpl.airlineCode)
           sErrors.push({ col: 'เที่ยวบิน', fields: ['flightNo'],
             message: `Airline ไม่ตรงกับ Step 2 (กำหนด: ${tmpl.airlineCode}, วาง: ${parsedFl.airlineCode})` })

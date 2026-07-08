@@ -1,51 +1,73 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { Users, Ticket, Globe, ChevronRight } from 'lucide-react'
+import { ListChecks, Users, Ticket, Globe, ChevronRight } from 'lucide-react'
 import { Modal } from '@/components/ui/modal'
-import { Button } from '@/components/ui/button'
 
-interface TicketTypeOption {
+interface TypeOption {
+  key: string
   label: string
   description: string
   detail: string
   minSectors: string
   icon: React.ReactNode
-  color: string
-  bg: string
+  iconCls: string
+  cardCls: string
+  btnCls: string
   href: string
+  disabled?: boolean
 }
 
-const TICKET_TYPE_OPTIONS: TicketTypeOption[] = [
+const TYPE_OPTIONS: TypeOption[] = [
   {
-    label: 'Group Ticket',
-    description: 'สำหรับตั๋วกรุ๊ปหรือซีรีส์',
-    detail: 'จัดการ Stock ตั๋วสำหรับกรุ๊ปทัวร์ พร้อมระบบ PNR และ Seat Management',
+    key: 'group-series',
+    label: 'Group Series',
+    description: 'ตั๋วกรุ๊ปที่เป็น series',
+    detail: 'เหมาะสำหรับซีรีส์ที่มีการวางแผนล่วงหน้า เช่น Sweden Aurora Mar 26',
     minSectors: 'ขั้นต่ำ 2 Sectors',
-    icon: <Users size={24} />,
-    color: '#05a94f',
-    bg: '#f0fdf4',
-    href: '/tickets/add?type=Group',
+    icon: <ListChecks size={22} />,
+    iconCls: 'text-emerald-600',
+    cardCls: 'hover:border-emerald-400 hover:bg-emerald-50/60',
+    btnCls: 'bg-emerald-600 hover:bg-emerald-700',
+    href: '/tickets/add?type=Group&groupType=SERIES',
   },
   {
-    label: 'FIT Ticket',
-    description: 'สำหรับตั๋วรายบุคคล',
+    key: 'group-adhoc',
+    label: 'Group Ad Hoc',
+    description: 'ตั๋วกรุ๊ปทัวร์ Ad Hoc',
+    detail: 'เหมาะสำหรับกรุ๊ปที่จัดขึ้นเป็นกรณีพิเศษ ไม่ได้อยู่ใน Series ปกติ',
+    minSectors: 'ขั้นต่ำ 2 Sectors',
+    icon: <Users size={22} />,
+    iconCls: 'text-amber-600',
+    cardCls: 'hover:border-amber-400 hover:bg-amber-50/60',
+    btnCls: 'bg-amber-500 hover:bg-amber-600',
+    href: '/tickets/add?type=Group&groupType=ADHOC',
+  },
+  {
+    key: 'fit',
+    label: 'FIT',
+    description: 'ตั๋วเดี่ยว',
     detail: 'รองรับ One-way, Round-trip และ Multi-city สำหรับผู้เดินทางอิสระ',
     minSectors: 'ขั้นต่ำ 1 Sector',
-    icon: <Ticket size={24} />,
-    color: '#3b82f6',
-    bg: '#eff6ff',
+    icon: <Ticket size={22} />,
+    iconCls: 'text-sky-400',
+    cardCls: '',
+    btnCls: '',
     href: '/tickets/add?type=FIT',
+    disabled: true,
   },
   {
+    key: 'ticket-land',
     label: 'Ticket + Land',
-    description: 'สำหรับแพ็กเกจรวม',
+    description: 'ตั๋วพร้อมแลนด์',
     detail: 'ตั๋วเครื่องบินพร้อมบริการภาคพื้นดิน เช่น โรงแรม รถ และทัวร์',
     minSectors: 'ขั้นต่ำ 2 Sectors',
-    icon: <Globe size={24} />,
-    color: '#8b5cf6',
-    bg: '#f5f3ff',
-    href: '/tickets/add?type=Ticket + Land',
+    icon: <Globe size={22} />,
+    iconCls: 'text-violet-400',
+    cardCls: '',
+    btnCls: '',
+    href: '/tickets/add?type=Ticket+Land',
+    disabled: true,
   },
 ]
 
@@ -66,72 +88,55 @@ export function SelectTicketTypeModal({ open, onClose }: SelectTicketTypeModalPr
     <Modal open={open} onClose={onClose} title="เลือกประเภท Stock" size="xl">
       <p className="text-sm text-slate-500 mb-5">กรุณาเลือกประเภทตั๋วที่ต้องการสร้าง</p>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {TICKET_TYPE_OPTIONS.map(opt => (
-          <TicketTypeCard key={opt.label} option={opt} onSelect={handleSelect} />
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {TYPE_OPTIONS.map(opt => (
+          <div
+            key={opt.key}
+            className={`relative flex flex-col rounded-xl border-2 border-slate-200 p-4 transition-all duration-150 ${
+              opt.disabled
+                ? 'bg-slate-50 cursor-not-allowed'
+                : `bg-white cursor-pointer hover:shadow-md ${opt.cardCls}`
+            }`}
+            onClick={() => !opt.disabled && handleSelect(opt.href)}
+          >
+            {opt.disabled && (
+              <span className="absolute top-2 right-2 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-200 text-slate-400 leading-none">
+                Coming Soon
+              </span>
+            )}
+
+            <div className={opt.disabled ? 'opacity-60' : undefined}>
+              {/* Icon */}
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-3 shrink-0 bg-slate-100 ${opt.iconCls}`}>
+                {opt.icon}
+              </div>
+
+              {/* Title + description */}
+              <h4 className="text-sm font-bold text-slate-800 mb-0.5">{opt.label}</h4>
+              <p className="text-xs text-slate-500 mb-1">{opt.description}</p>
+              <p className="text-[11px] text-slate-400 leading-relaxed mb-3">{opt.detail}</p>
+
+              {/* Min sectors badge */}
+              <div className="mb-3">
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-500">
+                  {opt.minSectors}
+                </span>
+              </div>
+            </div>
+
+            {/* CTA button */}
+            {!opt.disabled && (
+              <button
+                className={`mt-auto w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-semibold text-white transition-opacity ${opt.btnCls}`}
+                onClick={e => { e.stopPropagation(); handleSelect(opt.href) }}
+              >
+                เลือกประเภทนี้
+                <ChevronRight size={13} />
+              </button>
+            )}
+          </div>
         ))}
       </div>
     </Modal>
-  )
-}
-
-function TicketTypeCard({
-  option,
-  onSelect,
-}: {
-  option: TicketTypeOption
-  onSelect: (href: string) => void
-}) {
-  return (
-    <div
-      className="group relative flex flex-col rounded-xl border-2 border-slate-200 p-5 cursor-pointer
-                 transition-all duration-150 hover:shadow-lg"
-      style={{ '--hover-color': option.color } as React.CSSProperties}
-      onMouseEnter={e => {
-        ;(e.currentTarget as HTMLDivElement).style.borderColor = option.color
-        ;(e.currentTarget as HTMLDivElement).style.backgroundColor = option.bg
-      }}
-      onMouseLeave={e => {
-        ;(e.currentTarget as HTMLDivElement).style.borderColor = ''
-        ;(e.currentTarget as HTMLDivElement).style.backgroundColor = ''
-      }}
-      onClick={() => onSelect(option.href)}
-    >
-      {/* Icon */}
-      <div
-        className="w-11 h-11 rounded-xl flex items-center justify-center mb-4 shrink-0"
-        style={{ background: option.bg, color: option.color, border: `1.5px solid ${option.color}30` }}
-      >
-        {option.icon}
-      </div>
-
-      {/* Title + description */}
-      <h4 className="text-base font-bold text-slate-800 mb-1">{option.label}</h4>
-      <p className="text-sm text-slate-600 mb-1">{option.description}</p>
-      <p className="text-xs text-slate-400 leading-relaxed mb-4">{option.detail}</p>
-
-      {/* Min sectors badge */}
-      <div className="mb-4">
-        <span
-          className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold"
-          style={{ background: `${option.color}18`, color: option.color }}
-        >
-          {option.minSectors}
-        </span>
-      </div>
-
-      {/* CTA button */}
-      <button
-        className="mt-auto w-full flex items-center justify-center gap-1.5 py-2 px-4 rounded-lg text-sm font-semibold text-white transition-opacity hover:opacity-90"
-        style={{ background: option.color }}
-        onClick={e => {
-          e.stopPropagation()
-          onSelect(option.href)
-        }}
-      >
-        เลือกประเภทนี้
-        <ChevronRight size={14} />
-      </button>
-    </div>
   )
 }

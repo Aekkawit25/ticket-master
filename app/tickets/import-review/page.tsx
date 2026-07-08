@@ -681,7 +681,7 @@ function ImportReviewInner() {
                       <td className="px-3 py-2.5 text-center">
                         <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-slate-100 text-slate-600">{s.airlineCode}</span>
                       </td>
-                      <td className="px-3 py-2.5 text-xs font-mono font-bold text-center">{s.flightNo || '—'}</td>
+                      <td className="px-3 py-2.5 text-xs font-mono font-bold text-center">{s.airlineCode}{s.flightNo || '—'}</td>
                       <td className="px-3 py-2.5 text-xs font-mono font-bold text-center">{s.depAirportCode}</td>
                       <td className="px-3 py-2.5 text-xs font-mono font-bold text-center">{s.arrAirportCode}</td>
                       <td className="px-3 py-2.5 text-xs font-mono text-center">{s.depTime}</td>

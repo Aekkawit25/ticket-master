@@ -16,6 +16,8 @@ import {
   saveDemoStock, calculateStockSummary, checkPNRDuplicatesInSystem, getStockFlightSets,
 } from '@/lib/demo-storage'
 import type { DemoStock, DemoPNR, DemoLog, DemoSector, DemoFlightSet } from '@/lib/demo-storage'
+import { MASTER_AIRLINE_CODE_SET } from '@/lib/master-data'
+import { AirlineCell } from '@/components/shared/AirlineCell'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -150,7 +152,8 @@ function validateCfSectors(sectors: CfSector[], minSectors: number): Record<stri
     if (!String(s.arrAirportCode || '').trim()) errs[`arr_${i}`]      = 'กรุณาระบุ To'
     if (!String(s.depTime || '').trim())        errs[`depTime_${i}`]  = 'กรุณาระบุ Dep Time'
     if (!String(s.arrTime || '').trim())        errs[`arrTime_${i}`]  = 'กรุณาระบุ Arr Time'
-    if (!s.airlineCode)                         errs[`airline_${i}`]  = 'กรุณาระบุ Airline'
+    if (!s.airlineCode || !MASTER_AIRLINE_CODE_SET.has(s.airlineCode))
+      errs[`airline_${i}`] = s.airlineCode ? 'ไม่พบใน Master' : 'กรุณาเลือก Airline'
   })
   return errs
 }
@@ -234,16 +237,17 @@ function CfSectorTable({ sectors, errors, defaultAirlineCode, onChange }: CfSect
                 </select>
               </td>
               <td className="px-1 py-1">
-                <input value={s.airlineCode} maxLength={3}
-                  onChange={e => update(i, { airlineCode: e.target.value.toUpperCase() })}
-                  className="w-full border border-slate-300 rounded px-1 py-0.5 text-[11px] font-mono uppercase focus:outline-none focus:ring-1 focus:ring-[#05a94f]"
-                  placeholder={defaultAirlineCode || 'TG'} />
+                <AirlineCell
+                  value={s.airlineCode}
+                  onChange={v => update(i, { airlineCode: v })}
+                  inputClassName={`border rounded px-1 py-0.5 ${errors[`airline_${i}`] ? 'border-red-400' : 'border-slate-300'}`}
+                />
               </td>
               <td className="px-1 py-1">
                 <input value={s.flightNo}
-                  onChange={e => update(i, { flightNo: e.target.value.toUpperCase() })}
-                  className={`w-full border rounded px-1 py-0.5 text-[11px] font-mono uppercase focus:outline-none focus:ring-1 focus:ring-[#05a94f] ${errors[`flightNo_${i}`] ? 'border-red-400' : 'border-slate-300'}`}
-                  placeholder="TG676" />
+                  onChange={e => update(i, { flightNo: e.target.value.replace(/[A-Za-z\s]/g, '') })}
+                  className={`w-full border rounded px-1 py-0.5 text-[11px] font-mono focus:outline-none focus:ring-1 focus:ring-[#05a94f] ${errors[`flightNo_${i}`] ? 'border-red-400' : 'border-slate-300'}`}
+                  placeholder="701" inputMode="numeric" />
               </td>
               <td className="px-1 py-1">
                 <input value={s.depAirportCode} maxLength={3}
