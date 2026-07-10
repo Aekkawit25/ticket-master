@@ -3,11 +3,10 @@
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Badge, StockStatusBadge, TicketTypeBadge, PNRStatusBadge } from '@/components/ui/badge'
 import { Table, TableHead, TableBody, Th, Td, TableRow, EmptyRow } from '@/components/ui/table'
-import { formatDate, formatDateTime, calcTravelEndFromSectors, buildRouteText } from '@/lib/utils'
+import { formatDate, calcTravelEndFromSectors, buildRouteText } from '@/lib/utils'
 import { getStockTypeConfigSafe } from '@/lib/stock-type-config'
-import { calcCondTtlDate } from '@/lib/condition-schema'
 import { checkPNRDuplicatesInSystem, type PNRConflictDetail } from '@/lib/demo-storage'
-import { CheckCircle2, Plane, Users, FileText, CreditCard, ArrowRight, AlertTriangle } from 'lucide-react'
+import { CheckCircle2, Plane, Users, FileText, AlertTriangle, Clock } from 'lucide-react'
 import type { WizardState, FlightPNRFormData } from '@/types'
 
 interface Step5Props {
@@ -255,56 +254,16 @@ export default function Step5Review({ state, excludeStockId }: Step5Props) {
         </CardContent>
       </Card>
 
-      {/* Conditions */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <CreditCard size={14} />
-            Conditions ({conditions.length})
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {conditions.length === 0 ? (
-            <p className="text-sm text-slate-400">ไม่มี Condition — PNR จะแสดงเป็น "ไม่ระบุ"</p>
-          ) : (
-            conditions.map((c, i) => (
-              <div key={i} className="border border-slate-200 rounded-xl p-3">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="font-mono text-xs text-slate-400">{c.conditionCode}</span>
-                  <span className="font-semibold text-slate-800 text-sm">{c.conditionName}</span>
-                  <Badge variant={c.status === 'Active' ? 'green' : 'gray'}>{c.status}</Badge>
-                </div>
-                <div className="space-y-1.5">
-                  {c.stages.map((s, si) => (
-                    <div key={si} className="flex items-start gap-2 text-xs text-slate-600">
-                      <span className="w-5 h-5 bg-slate-100 rounded-full flex items-center justify-center text-[11px] font-bold text-slate-400 shrink-0 mt-0.5">
-                        {s.stageNo}
-                      </span>
-                      <div className="flex-1 space-y-0.5">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-semibold text-slate-700">{s.stageName}</span>
-                          <ArrowRight size={10} className="text-slate-300" />
-                          <span className="font-medium">
-                            {s.calcType === 'FIXED_PER_PNR' ? `${s.amount.toLocaleString()} THB/PNR`
-                              : s.calcType === 'PER_SEAT' ? `${s.amount.toLocaleString()} THB/ที่นั่ง`
-                              : s.calcType === 'PERCENT_OF_BASE' ? `${s.percent}%`
-                              : 'Remaining'}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-3 text-slate-400 flex-wrap">
-                          <span>Due <strong className="text-slate-600">{s.dueDays} วัน</strong>{s.dueType === 'TRAVEL_MINUS_DAYS' ? ' ก่อนเดินทาง' : ''}</span>
-                          <span>·</span>
-                          <span>เวลา: <strong className="text-slate-600">{s.dueTime}</strong></span>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))
-          )}
-        </CardContent>
-      </Card>
+      {/* Condition — PENDING (set after stock is created) */}
+      <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+        <Clock size={16} className="text-amber-500 shrink-0 mt-0.5" />
+        <div className="flex-1 min-w-0">
+          <p className="font-semibold text-amber-800 text-sm">Condition — ยังไม่ระบุ</p>
+          <p className="text-xs text-amber-600 mt-0.5">
+            ข้อมูลตั๋วจะถูกบันทึกโดยไม่มี Condition สามารถเลือก Template หรือสร้าง Condition ใหม่ได้จากหน้า Stock Detail ภายหลัง
+          </p>
+        </div>
+      </div>
 
       {/* PNR List */}
       <Card>
@@ -330,7 +289,7 @@ export default function Step5Review({ state, excludeStockId }: Step5Props) {
                 <Th className="text-right">Tax</Th>
                 <Th className="text-right">Total</Th>
                 <Th>Condition</Th>
-                <Th className="text-purple-700">Name TTL</Th>
+                <Th className="text-amber-700">TTL</Th>
                 <Th>Status</Th>
               </tr>
             </TableHead>
@@ -340,9 +299,8 @@ export default function Step5Review({ state, excludeStockId }: Step5Props) {
               ) : (
                 pnrs.map((p, i) => {
                   const travelEnd = calcTravelEndFromSectors(p.travel_start, getPnrSectors(p)) || p.travel_end || ''
-                  const cond = conditions.find(c => c.conditionId === p.condition_id)
-                  const firstTTL = (cond && p.travel_start)
-                    ? calcCondTtlDate(cond.ttlRule, p.travel_start)
+                  const firstTTL = (p.ttl_status === 'SET' && p.ttl_date)
+                    ? (p.ttl_time ? `${formatDate(p.ttl_date)} ${p.ttl_time}` : formatDate(p.ttl_date))
                     : null
                   const isDup = dupResult.duplicateIndices.has(i)
                   return (
@@ -376,7 +334,7 @@ export default function Step5Review({ state, excludeStockId }: Step5Props) {
                       <Td className="text-right text-xs font-bold">{(p.fare + (p.tax ?? 0)) > 0 ? (p.fare + (p.tax ?? 0)).toLocaleString() : '—'}</Td>
                       <Td className="text-xs">{getConditionName(p.condition_id)}</Td>
                       <Td className="text-xs font-medium text-amber-600 whitespace-nowrap">
-                        {firstTTL ? formatDateTime(firstTTL) : '—'}
+                        {firstTTL ?? '—'}
                       </Td>
                       <Td><PNRStatusBadge status={p.status} /></Td>
                     </TableRow>

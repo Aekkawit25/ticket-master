@@ -164,36 +164,6 @@ function calcPaymentDue(
   return null
 }
 
-function calcTTL(
-  travelStart: string,
-  travelEnd: string,
-  cond: BulkPnrCondition | undefined,
-): string | null {
-  if (!cond) return null
-  const r = cond.ttlRule
-  if (r.calcType === 'from_travel_date') {
-    if (r.baseDate === 'Travel Start') {
-      return calcTTLDatetime(travelStart, 'Travel Start', r.daysBefore, r.time || '18:00')
-    }
-    if (r.baseDate === 'Travel End' && travelEnd) {
-      try {
-        const base = parseISO(travelEnd)
-        if (!fnsIsValid(base)) return null
-        const d = addDays(base, -r.daysBefore)
-        const [h, m] = (r.time || '18:00').split(':').map(Number)
-        const dt = new Date(d); dt.setHours(h, m, 0, 0)
-        return dt.toISOString()
-      } catch { return null }
-    }
-  } else if (r.calcType === 'manual' && r.date) {
-    try {
-      const [h, m] = (r.time || '18:00').split(':').map(Number)
-      const dt = new Date(r.date); dt.setHours(h, m, 0, 0)
-      return fnsIsValid(dt) ? dt.toISOString() : null
-    } catch { return null }
-  }
-  return null
-}
 
 function genDummyPnr(travelStart: string, stock: DemoStock, usedSet: Set<string>): string {
   const typeMap: Record<string, string> = { Group: 'GRP', FIT: 'FIT', 'Ticket + Land': 'TNL' }
@@ -283,7 +253,7 @@ function buildInternalRows(
       priceFormat, fare: fareAmt, yq: yqAmt, taxType, tax: taxAmt, breakdown: bdwn, total: totalAmt,
       conditionCode: shared.conditionCode, status: shared.status, remark: shared.remark,
       paymentDueDate: calcPaymentDue(s, travelEnd, cond),
-      ttlDateTime: calcTTL(s, travelEnd, cond),
+      ttlDateTime: null,
       errors: [], selected: false,
     }
   })
@@ -570,18 +540,16 @@ export function BulkPnrBuilder({
       const tx = typeof patch.tax     !== 'undefined' ? patch.tax  : r.tax
       const tt = typeof patch.taxType !== 'undefined' ? patch.taxType : r.taxType
       m.total  = f + (tt === 'separate' ? tx : 0)
-      // Recompute travelEnd + payment/ttl when travelStart changes
+      // Recompute travelEnd + payment due when travelStart changes
       if (patch.travelStart) {
         m.travelEnd = calcTravelEnd(m.travelStart, effectiveSectors)
         const cond = conditions.find(c => c.code === m.conditionCode)
         m.paymentDueDate = calcPaymentDue(m.travelStart, m.travelEnd, cond)
-        m.ttlDateTime    = calcTTL(m.travelStart, m.travelEnd, cond)
       }
-      // Recompute payment/ttl when condition changes
+      // Recompute payment due when condition changes
       if (patch.conditionCode) {
         const cond = conditions.find(c => c.code === m.conditionCode)
         m.paymentDueDate = calcPaymentDue(m.travelStart, m.travelEnd, cond)
-        m.ttlDateTime    = calcTTL(m.travelStart, m.travelEnd, cond)
       }
       return m
     }))
@@ -596,7 +564,6 @@ export function BulkPnrBuilder({
         m.conditionCode = bCond
         const cond = conditions.find(c => c.code === bCond)
         m.paymentDueDate = calcPaymentDue(m.travelStart, m.travelEnd, cond)
-        m.ttlDateTime    = calcTTL(m.travelStart, m.travelEnd, cond)
       }
       if (field === 'status') { m.status = bStat }
       return m

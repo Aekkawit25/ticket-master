@@ -2,12 +2,12 @@
 
 import { useRef, useState, useMemo } from 'react'
 import { PlusCircle, Trash2, Copy, Info, CalendarDays, FileUp, Download } from 'lucide-react'
-import { cn, formatTravelDate, formatDateTime, calcTravelEndFromSectors, calcSectorDate } from '@/lib/utils'
+import { cn, formatTravelDate, calcTravelEndFromSectors, calcSectorDate } from '@/lib/utils'
 import { BulkPnrBuilder } from '@/components/shared/BulkPnrBuilder'
 import type { BulkPnrRow, BulkPnrSector, BulkPnrCondition } from '@/components/shared/BulkPnrBuilder'
 import type { FlightPNRFormData, FlightSectorFormData, FlightScheduleFormData, SectorType, PNRStatus, TaxType } from '@/types'
 import type { AppCondition } from '@/lib/condition-schema'
-import { calcCondTtlDate } from '@/lib/condition-schema'
+import { TimeInput } from '@/components/ui/time-input'
 import ImportExcelModal from '@/components/wizard/ImportExcelModal'
 import type { PastedExcelRow } from '@/lib/paste-excel'
 import { downloadPnrTemplate } from '@/lib/excel-template'
@@ -43,6 +43,10 @@ function emptyPNR(): FlightPNRFormData {
     status: 'Pending',
     remark: '',
     sector_dates: [],
+    ttl_status: 'UNSET',
+    ttl_date: null,
+    ttl_time: null,
+    ttl_remark: '',
   }
 }
 
@@ -145,6 +149,9 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
   const [priceEditIdx, setPriceEditIdx] = useState<number | null>(null)
   const [priceForm, setPriceForm] = useState<PriceForm | null>(null)
   const [deleteConfirmIdx, setDeleteConfirmIdx] = useState<number | null>(null)
+  const [bulkTtlOpen, setBulkTtlOpen] = useState(false)
+  const [bulkTtlDate, setBulkTtlDate] = useState('')
+  const [bulkTtlTime, setBulkTtlTime] = useState('')
 
   // Collect all existing PNR codes for duplicate check (current draft + system)
   const existingPnrCodes = useMemo(() => {
@@ -333,6 +340,17 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
     onChange([...pnrs.slice(0, idx + 1), dup, ...pnrs.slice(idx + 1)])
   }
 
+  const applyBulkTtl = () => {
+    if (!bulkTtlDate) return
+    onChange(pnrs.map(p => ({
+      ...p,
+      ttl_status: 'SET' as const,
+      ttl_date: bulkTtlDate,
+      ttl_time: bulkTtlTime || null,
+    })))
+    setBulkTtlOpen(false)
+  }
+
   // Summary totals
   const totals = pnrs.reduce(
     (acc, p) => ({
@@ -387,8 +405,63 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
             <CalendarDays size={13} />
             หลาย PNR
           </button>
+          <button
+            type="button"
+            onClick={() => setBulkTtlOpen(v => !v)}
+            disabled={pnrs.length === 0}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-amber-700 border border-amber-400 hover:bg-amber-50 rounded-lg transition-colors whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <CalendarDays size={13} />
+            ตั้ง TTL ทุก PNR
+          </button>
         </div>
       </div>
+
+      {/* Bulk TTL Panel */}
+      {bulkTtlOpen && (
+        <div className="flex flex-wrap items-end gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-lg">
+          <div className="flex items-center gap-2 text-xs text-amber-700 font-semibold shrink-0">
+            <CalendarDays size={13} />
+            ตั้ง TTL ให้ทุก PNR
+          </div>
+          <div className="flex items-end gap-2">
+            <div>
+              <label className="block text-[10px] text-amber-600 mb-0.5">TTL Date</label>
+              <input
+                type="date"
+                value={bulkTtlDate}
+                onChange={e => setBulkTtlDate(e.target.value)}
+                className="border border-amber-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-amber-400 bg-white"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] text-amber-600 mb-0.5">TTL Time</label>
+              <TimeInput
+                value={bulkTtlTime}
+                onChange={setBulkTtlTime}
+                compact
+                placeholder="HH:mm"
+                className="border border-amber-300 rounded bg-white w-20"
+              />
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={applyBulkTtl}
+            disabled={!bulkTtlDate}
+            className="px-3 py-1.5 text-xs font-semibold text-white bg-amber-500 hover:bg-amber-600 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
+          >
+            ใช้กับทุก PNR ({pnrs.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setBulkTtlOpen(false)}
+            className="px-3 py-1.5 text-xs text-slate-500 hover:text-slate-700 transition-colors"
+          >
+            ยกเลิก
+          </button>
+        </div>
+      )}
 
       {/* Table */}
       <div className="border border-slate-300 rounded-xl overflow-hidden shadow-sm">
@@ -425,9 +498,9 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
                   ยอดสุทธิ ✦
                 </th>
                 <th className="border border-slate-300 px-2 text-left text-slate-600 font-semibold whitespace-nowrap" style={{ width: 120 }}>Condition</th>
-                <th className="border border-slate-300 px-2 text-center text-amber-700 font-semibold whitespace-nowrap bg-amber-50/40" style={{ width: 128 }}
-                    title="TTL Date คำนวณจาก Condition ที่เลือก">
-                  TTL Date ✦
+                <th className="border border-slate-300 px-2 text-center text-amber-700 font-semibold whitespace-nowrap bg-amber-50/40" style={{ width: 150 }}
+                    title="กำหนดส่ง Name (TTL) — กรอกโดยผู้ใช้">
+                  TTL
                 </th>
                 <th className="border border-slate-300 px-2 text-center text-slate-600 font-semibold whitespace-nowrap" style={{ width: 80 }}>Status</th>
                 <th className="border border-slate-300 px-2 text-left text-slate-600 font-semibold whitespace-nowrap">Remark</th>
@@ -470,7 +543,6 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
                 const rowBg = idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/40'
                 const missingDate = !p.travel_start
                 const missingSeat = !p.seat_total || p.seat_total <= 0
-                const selectedCond = conditions.find(c => c.conditionId === p.condition_id)
 
                 return (
                   <tr key={idx} className={cn('group hover:bg-blue-50/20 transition-colors', rowBg)}>
@@ -636,17 +708,35 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
                       </select>
                     </td>
 
-                    {/* TTL Date */}
-                    <td className="border border-slate-200 bg-amber-50/20 px-2 align-middle select-none">
-                      {(() => {
-                        if (!selectedCond || !p.travel_start) return (
-                          <span className="text-[11px] text-slate-300">—</span>
-                        )
-                        const ttlDt = calcCondTtlDate(selectedCond.ttlRule, p.travel_start)
-                        return ttlDt
-                          ? <span className="text-[11px] font-medium whitespace-nowrap text-amber-700">{formatDateTime(ttlDt)}</span>
-                          : <span className="text-[11px] text-slate-300 italic">ไม่ระบุ</span>
-                      })()}
+                    {/* TTL — user-entered per PNR */}
+                    <td className="border border-slate-200 bg-amber-50/20 p-0 align-middle">
+                      <div className="flex flex-col gap-0.5 px-1.5 py-1">
+                        <select
+                          value={p.ttl_status || 'UNSET'}
+                          onChange={e => update(idx, { ttl_status: e.target.value as 'UNSET' | 'SET', ttl_date: e.target.value === 'UNSET' ? null : p.ttl_date, ttl_time: e.target.value === 'UNSET' ? null : p.ttl_time })}
+                          className="w-full text-[10px] px-1 py-0.5 rounded border border-amber-200 bg-white text-amber-700 appearance-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-amber-400"
+                        >
+                          <option value="UNSET">ยังไม่ระบุ</option>
+                          <option value="SET">ระบุแล้ว</option>
+                        </select>
+                        {p.ttl_status === 'SET' && (
+                          <div className="flex flex-col gap-0.5">
+                            <input
+                              type="date"
+                              value={p.ttl_date || ''}
+                              onChange={e => update(idx, { ttl_date: e.target.value || null })}
+                              className="w-full text-[10px] px-1 py-0.5 rounded border border-amber-200 bg-white focus:outline-none focus:ring-1 focus:ring-amber-400"
+                            />
+                            <TimeInput
+                              value={p.ttl_time || ''}
+                              onChange={v => update(idx, { ttl_time: v || null })}
+                              compact
+                              placeholder="HH:mm"
+                              className="border border-amber-200 rounded bg-white w-full"
+                            />
+                          </div>
+                        )}
+                      </div>
                     </td>
 
                     {/* Status */}
@@ -708,7 +798,7 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
                     {totals.total.toLocaleString('en-US')}
                   </td>
                   <td colSpan={5} className="border border-slate-300 px-2 py-1.5 text-xs">
-                    <span className="text-slate-400">({currency}) · ยอดสุทธิ ✦ = Fare + Tax + YQ · TTL Date ✦ = คำนวณจาก Condition · คลิกเซลล์ราคาเพื่อแก้ไข</span>
+                    <span className="text-slate-400">({currency}) · ยอดสุทธิ ✦ = Fare + Tax + YQ · TTL = กรอกเองต่อ PNR หรือ ตั้ง TTL ทุก PNR · คลิกเซลล์ราคาเพื่อแก้ไข</span>
                   </td>
                 </tr>
               )}
@@ -725,7 +815,7 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
             <div className="w-3 h-3 rounded-sm bg-amber-100 border border-amber-300" />
-            <span>TTL Date ✦ = คำนวณจาก Condition ที่เลือก</span>
+            <span>TTL = กำหนดส่ง NAME — กรอกเองต่อ PNR หรือใช้ปุ่ม "ตั้ง TTL ทุก PNR"</span>
           </div>
           <span className="text-slate-400 shrink-0">ประเภทราคา: FARE = Fare+Tax+YQ · FARE+YQ = YQ รวมใน Fare · ALL IN = รวมทุกอย่าง</span>
           <span className="text-slate-400 shrink-0">— = ยังไม่ระบุ · 0 = ระบุแล้วว่าเป็นศูนย์ · รวมแล้ว = รวมอยู่ในราคาที่ได้รับ</span>

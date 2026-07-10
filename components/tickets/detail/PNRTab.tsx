@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { addDays, format as fnsFormat, parseISO, isValid } from 'date-fns'
 import { Button } from '@/components/ui/button'
+import { TimeInput } from '@/components/ui/time-input'
 import { Badge, PNRStatusBadge } from '@/components/ui/badge'
 import { Table, TableHead, TableBody, Th, Td, TableRow, EmptyRow } from '@/components/ui/table'
 import { Modal } from '@/components/ui/modal'
@@ -11,7 +12,7 @@ import {
 } from 'lucide-react'
 import { BulkPnrBuilder } from '@/components/shared/BulkPnrBuilder'
 import type { BulkPnrFlightSet, BulkPnrCondition } from '@/components/shared/BulkPnrBuilder'
-import { formatDate, formatDateTime, formatNumber, calcTTLDatetime, calcTravelEndFromSectors } from '@/lib/utils'
+import { formatDate, formatDateTime, formatNumber, calcTravelEndFromSectors } from '@/lib/utils'
 import {
   saveDemoStock, calculateStockSummary, checkPNRDuplicatesInSystem, getStockFlightSets,
 } from '@/lib/demo-storage'
@@ -60,12 +61,16 @@ interface PNRFormState {
   conditionCode: string
   status: string
   remark: string
+  ttlStatus: 'UNSET' | 'SET'
+  ttlDate: string
+  ttlTime: string
 }
 
 const EMPTY_FORM: PNRFormState = {
   pnrCode: '', travelStart: '', flightSetId: '', seatTotal: '',
   priceFormat: 'FARE', fare: '', yq: '', allIn: '', breakdown: false,
   taxType: 'separate', tax: '', conditionCode: '', status: 'Pending', remark: '',
+  ttlStatus: 'UNSET', ttlDate: '', ttlTime: '',
 }
 
 const newId = (p: string) => `${p}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
@@ -277,12 +282,12 @@ function CfSectorTable({ sectors, errors, defaultAirlineCode, onChange }: CfSect
                   placeholder="NRT" />
               </td>
               <td className="px-1 py-1">
-                <input type="time" value={s.depTime} onChange={e => update(i, { depTime: e.target.value })}
-                  className="w-full border border-slate-300 rounded px-1 py-0.5 text-[11px] font-mono focus:outline-none focus:ring-1 focus:ring-[#05a94f]" />
+                <TimeInput compact value={s.depTime} onChange={v => update(i, { depTime: v })}
+                  className="w-full border border-slate-300 rounded focus-within:ring-1 focus-within:ring-[#05a94f] focus-within:border-[#05a94f]" />
               </td>
               <td className="px-1 py-1">
-                <input type="time" value={s.arrTime} onChange={e => update(i, { arrTime: e.target.value })}
-                  className="w-full border border-slate-300 rounded px-1 py-0.5 text-[11px] font-mono focus:outline-none focus:ring-1 focus:ring-[#05a94f]" />
+                <TimeInput compact value={s.arrTime} onChange={v => update(i, { arrTime: v })}
+                  className="w-full border border-slate-300 rounded focus-within:ring-1 focus-within:ring-[#05a94f] focus-within:border-[#05a94f]" />
               </td>
               <td className="px-1 py-1">
                 <select value={s.arrDayOffset} onChange={e => update(i, { arrDayOffset: Number(e.target.value) })}
@@ -428,6 +433,9 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
       conditionCode: pnr.conditionCode || '',
       status:        pnr.status || 'Pending',
       remark:        pnr.remark || '',
+      ttlStatus:     (pnr.ttlDate ? 'SET' : 'UNSET') as 'UNSET' | 'SET',
+      ttlDate:       pnr.ttlDate || '',
+      ttlTime:       pnr.ttlTime || '',
     })
     setErrors({})
     setShowPNRModal(true)
@@ -495,25 +503,10 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
       catch { return { sectorType: s.sectorType, date: '' } }
     })
 
-    let ttlDateTime: string | null = null
-    const linkedSc = stock.conditions.find(c => c.condition.conditionCode === form.conditionCode)
-    const linkedCond = linkedSc?.condition
-    if (linkedCond?.ttlRule) {
-      const rule = linkedCond.ttlRule
-      if (rule.calcType === 'TRAVEL_MINUS_DAYS') {
-        ttlDateTime = calcTTLDatetime(travelStart, 'Travel Start', rule.daysBefore, rule.time)
-      } else if (rule.calcType === 'MANUAL_DATE' && rule.fixedDate) {
-        const [h, m] = (rule.time || '18:00').split(':').map(Number)
-        const d = new Date(rule.fixedDate); d.setHours(h, m, 0, 0)
-        ttlDateTime = d.toISOString()
-      }
-    }
-
-    let ttlDate: string | null = null, ttlTimeStr: string | null = null
-    if (ttlDateTime) {
-      try { const d = parseISO(ttlDateTime); if (isValid(d)) { ttlDate = fnsFormat(d, 'yyyy-MM-dd'); ttlTimeStr = fnsFormat(d, 'HH:mm') } }
-      catch { /* keep null */ }
-    }
+    // TTL is user-entered — not calculated from Condition
+    const ttlDate: string | null = (form.ttlStatus === 'SET' && form.ttlDate) ? form.ttlDate : null
+    const ttlTimeStr: string | null = (form.ttlStatus === 'SET' && form.ttlTime) ? form.ttlTime : null
+    const ttlDateTime: string | null = (ttlDate && ttlTimeStr) ? `${ttlDate}T${ttlTimeStr}:00` : null
 
     const taxStatus: 'completed' | 'included' | 'pending' =
       taxType === 'included' ? 'included' : taxType === 'pending' ? 'pending' : 'completed'
@@ -1013,36 +1006,13 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
   const activeConditions = conditions.filter(c => c.condition.status === 'Active')
   const noCond = (liveStock?.pnrs ?? []).filter(p => !p.conditionCode)
 
-  const calcTtlFromCode = (pnr: DemoPNR, condCode: string) => {
-    const sc = conditions.find(c => c.condition.conditionCode === condCode)
-    const rule = sc?.condition.ttlRule
-    if (!rule) return { ttlDate: null as string | null, ttlTime: null as string | null, ttlDateTime: null as string | null }
-    let ttlDT: string | null = null
-    if (rule.calcType === 'TRAVEL_MINUS_DAYS') {
-      ttlDT = calcTTLDatetime(pnr.travelStart, 'Travel Start', rule.daysBefore, rule.time)
-    } else if (rule.calcType === 'MANUAL_DATE' && rule.fixedDate) {
-      const [h, m] = (rule.time || '18:00').split(':').map(Number)
-      const d = new Date(rule.fixedDate); d.setHours(h, m, 0, 0)
-      ttlDT = d.toISOString()
-    }
-    let ttlDate = null as string | null, ttlTime = null as string | null
-    if (ttlDT) {
-      try {
-        const d = parseISO(ttlDT)
-        if (isValid(d)) { ttlDate = fnsFormat(d, 'yyyy-MM-dd'); ttlTime = fnsFormat(d, 'HH:mm') }
-      } catch { /* */ }
-    }
-    return { ttlDate, ttlTime, ttlDateTime: ttlDT }
-  }
-
   const applyConditionChange = (pnrIds: string[], newCode: string) => {
     if (!liveStock) return
     const now = new Date().toISOString()
     const condName = conditions.find(c => c.condition.conditionCode === newCode)?.condition.conditionName ?? newCode
     const updatedPnrs = liveStock.pnrs.map(p => {
       if (!pnrIds.includes(p.pnrId)) return p
-      const ttl = newCode ? calcTtlFromCode(p, newCode) : { ttlDate: null, ttlTime: null, ttlDateTime: null }
-      return { ...p, conditionCode: newCode, ...ttl }
+      return { ...p, conditionCode: newCode }
     })
     const log: DemoLog = {
       logId: newId('LOG'),
@@ -1573,6 +1543,43 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
             </div>
           )}
 
+          {/* TTL */}
+          <div className="rounded-xl border border-amber-200 bg-amber-50/40 p-3 space-y-2">
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-semibold text-amber-700">กำหนดส่ง NAME (TTL)</label>
+              <select
+                value={form.ttlStatus}
+                onChange={e => setForm(f => ({ ...f, ttlStatus: e.target.value as 'UNSET' | 'SET' }))}
+                className="border border-amber-300 rounded px-2 py-0.5 text-xs text-amber-700 bg-white focus:outline-none focus:ring-1 focus:ring-amber-400 appearance-none cursor-pointer"
+              >
+                <option value="UNSET">ยังไม่ระบุ</option>
+                <option value="SET">ระบุแล้ว</option>
+              </select>
+            </div>
+            {form.ttlStatus === 'SET' && (
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[10px] text-amber-600 mb-0.5">TTL Date</label>
+                  <input
+                    type="date"
+                    value={form.ttlDate}
+                    onChange={e => setForm(f => ({ ...f, ttlDate: e.target.value }))}
+                    className="w-full border border-amber-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-300/50 bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] text-amber-600 mb-0.5">TTL Time</label>
+                  <TimeInput
+                    value={form.ttlTime}
+                    onChange={v => setForm(f => ({ ...f, ttlTime: v }))}
+                    placeholder="HH:mm"
+                    className="border border-amber-300 rounded-lg bg-white w-full"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Remark */}
           <div>
             <label className="block text-xs font-medium text-slate-700 mb-1">Remark</label>
@@ -1784,9 +1791,9 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs space-y-1">
               <p className="font-semibold text-amber-700 flex items-center gap-1.5"><AlertTriangle size={12} /> ผลกระทบ</p>
               <ul className="space-y-0.5 text-amber-600 list-disc list-inside">
-                <li>TTL Date จะถูกคำนวณใหม่ตาม Condition ที่เลือก</li>
                 <li>Payment Schedule อาจเปลี่ยนแปลง</li>
                 <li>เงื่อนไข Refund และ No-show จะใช้ตาม Condition ใหม่</li>
+                <li>TTL ของแต่ละ PNR ยังคงเดิม — แก้ไขได้ในฟอร์ม PNR</li>
               </ul>
             </div>
           </div>

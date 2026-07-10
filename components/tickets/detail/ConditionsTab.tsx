@@ -208,7 +208,13 @@ export function ConditionsTab({
     if (!liveStock) return
     const now = new Date().toISOString()
     const log: DemoLog = { logId: newLogId(), action: logMsg, message: logMsg, createdAt: now, createdBy: 'System' }
-    const updated: DemoStock = { ...liveStock, conditions: newConditions, updatedAt: now, logs: [log, ...liveStock.logs] }
+    const updated: DemoStock = {
+      ...liveStock,
+      conditions: newConditions,
+      conditionStatus: newConditions.length > 0 ? 'SET' : 'PENDING',
+      updatedAt: now,
+      logs: [log, ...liveStock.logs],
+    }
     saveDemoStock(updated)
     onUpdate(updated)
   }
@@ -404,11 +410,25 @@ export function ConditionsTab({
         {conditions.length === 0 ? (
           <Card>
             <CardContent>
-              <div className="flex flex-col items-center py-10 gap-3 text-center">
-                <FileText size={32} className="text-slate-200" />
-                <p className="text-sm font-medium text-slate-400">ยังไม่มี Condition</p>
+              <div className="flex flex-col items-center py-10 gap-4 text-center">
+                <div className="w-12 h-12 rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center">
+                  <Clock size={22} className="text-amber-400" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-slate-700 mb-1">ยังไม่ได้ระบุ Condition</p>
+                  <p className="text-xs text-slate-400 max-w-xs mx-auto">
+                    ข้อมูลตั๋วถูกบันทึกแล้ว คุณสามารถเลือก Template Condition หรือสร้าง Condition ใหม่ภายหลังได้
+                  </p>
+                </div>
                 {canEdit && (
-                  <p className="text-xs text-slate-400">กด "ใช้ Template Condition" หรือ "สร้าง Condition ใหม่" ด้านบน</p>
+                  <div className="flex flex-wrap gap-2 justify-center">
+                    <Button size="sm" icon={<FileText size={13} />} onClick={() => setShowTemplatePicker(true)}>
+                      เลือก Template Condition
+                    </Button>
+                    <Button size="sm" variant="outline" icon={<Plus size={13} />} onClick={handleAddNew}>
+                      สร้าง Condition ใหม่
+                    </Button>
+                  </div>
                 )}
               </div>
             </CardContent>
@@ -579,13 +599,6 @@ export function ConditionsTab({
                           })}
                         </div>
                       )}
-                    </div>
-
-                    {/* TTL */}
-                    <div className="flex items-center gap-2.5 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2">
-                      <Clock size={12} className="text-slate-400 shrink-0" />
-                      <span className="text-[11px] font-semibold text-slate-500 shrink-0">กำหนดส่ง NAME (TTL)</span>
-                      <span className="text-xs font-medium text-slate-700">{formatTtlRule(c.ttlRule)}</span>
                     </div>
 
                     {/* Refund */}

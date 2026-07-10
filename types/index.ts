@@ -238,6 +238,11 @@ export interface FlightPNRFormData {
   schedule_id?: string
   /** วันที่ของแต่ละ Sector คำนวณจาก travel_start + day_offset — ส่งต่อไป Step 5 */
   sector_dates?: { sector_type: string; day_offset: number; travel_date: string }[]
+  /** 'UNSET' = ยังไม่ระบุ TTL, 'SET' = ระบุ TTL แล้ว — กรอกโดยผู้ใช้ ไม่ใช่คำนวณจาก Condition */
+  ttl_status?: 'UNSET' | 'SET'
+  ttl_date?: string | null
+  ttl_time?: string | null
+  ttl_remark?: string
 }
 
 // ============================================================

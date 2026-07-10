@@ -4,7 +4,6 @@ import type { WizardState, FlightSeries, TicketType, TripType, StockStatus, Stoc
 import { getStockTypeKey } from '@/lib/stock-type-config'
 import {
   type AppStockCondition, type AppCondition, type CondCalcType, type CondDueType, type CondTtlCalcType, type CondRefundableType,
-  calcCondTtlDate,
   defaultBaggagePolicy, migrateBaggagePolicy,
   defaultSeatReductionPolicy, migrateSeatReductionPolicy, defaultSeatReturnPolicy, defaultRefundPolicy, defaultTtlRule,
   migrateRefundTerms, defaultRefundTerms, defaultCancelGroupTerms,
@@ -363,6 +362,9 @@ export interface DemoSummary {
   nextTTL: string | null
 }
 
+/** PENDING = สร้าง Stock โดยยังไม่ระบุ Condition, ต้องกลับมาดำเนินการภายหลัง */
+export type ConditionStatus = 'PENDING' | 'SET'
+
 export interface DemoStock {
   stockId: string
   stockCode: string
@@ -377,6 +379,8 @@ export interface DemoStock {
   destination: string
   currency: string
   status: StockStatus
+  /** PENDING = ยังไม่ระบุ Condition, SET = มี Condition แล้ว */
+  conditionStatus?: ConditionStatus
   remark: string
   routeText: string
   createdAt: string
@@ -932,27 +936,12 @@ export function wizardStateToDemoStock(state: WizardState): DemoStock {
     const pnrType: 'real' | 'dummy' = isReal ? 'real' : 'dummy'
     const pnrDisplay = isReal ? p.pnr_code! : (p.dummy_pnr || '')
 
-    // Find linked condition to compute TTL
-    let ttlDateTime: string | null = null
     const linkedSC = conditionById[p.condition_id ?? '']
-    if (linkedSC && p.travel_start) {
-      ttlDateTime = calcCondTtlDate(linkedSC.condition.ttlRule, p.travel_start)
-    }
 
-    // Extract ttlDate and ttlTime for display
-    let ttlDate: string | null = null
-    let ttlTimeStr: string | null = null
-    if (ttlDateTime) {
-      try {
-        const d = parseISO(ttlDateTime)
-        if (isValid(d)) {
-          ttlDate = format(d, 'yyyy-MM-dd')
-          ttlTimeStr = format(d, 'HH:mm')
-        }
-      } catch {
-        // keep null
-      }
-    }
+    // TTL is user-entered per PNR — not calculated from Condition
+    const ttlDate: string | null = (p.ttl_status === 'SET' && p.ttl_date) ? p.ttl_date : null
+    const ttlTimeStr: string | null = (p.ttl_status === 'SET' && p.ttl_time) ? p.ttl_time : null
+    const ttlDateTime: string | null = (ttlDate && ttlTimeStr) ? `${ttlDate}T${ttlTimeStr}:00` : null
 
     // taxStatus
     let taxStatus: 'completed' | 'included' | 'pending'
@@ -1007,6 +996,8 @@ export function wizardStateToDemoStock(state: WizardState): DemoStock {
 
   const summary = calculateStockSummary(demoPNRs)
 
+  const conditionStatus: ConditionStatus = demoConditions.length > 0 ? 'SET' : 'PENDING'
+
   // Auto-generate initial activity logs
   const logs: DemoLog[] = [
     {
@@ -1017,6 +1008,15 @@ export function wizardStateToDemoStock(state: WizardState): DemoStock {
       createdBy: 'System',
     },
   ]
+  if (conditionStatus === 'PENDING') {
+    logs.push({
+      logId: genId('LOG'),
+      action: 'Create Stock Without Condition',
+      message: 'สร้าง Stock โดยยังไม่ระบุ Condition (condition_status = PENDING)',
+      createdAt: now,
+      createdBy: 'System',
+    })
+  }
   const dummyCount = demoPNRs.filter(p => p.pnrType === 'dummy').length
   if (dummyCount > 0) {
     logs.push({
@@ -1049,6 +1049,7 @@ export function wizardStateToDemoStock(state: WizardState): DemoStock {
     destination: stockInfo.destination ?? '',
     currency: stockInfo.currency,
     status: stockInfo.status,
+    conditionStatus,
     remark: stockInfo.remark ?? '',
     routeText,
     createdAt: now,
