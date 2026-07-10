@@ -15,33 +15,32 @@ interface TypeOption {
   cardCls: string
   btnCls: string
   href: string
-  disabled?: boolean
 }
 
 const TYPE_OPTIONS: TypeOption[] = [
   {
-    key: 'group-series',
-    label: 'Group Series',
-    description: 'ตั๋วกรุ๊ปที่เป็น series',
+    key: 'series',
+    label: 'Series',
+    description: 'ตั๋วกรุ๊ปที่เป็น Series',
     detail: 'เหมาะสำหรับซีรีส์ที่มีการวางแผนล่วงหน้า เช่น Sweden Aurora Mar 26',
     minSectors: 'ขั้นต่ำ 2 Sectors',
     icon: <ListChecks size={22} />,
     iconCls: 'text-emerald-600',
     cardCls: 'hover:border-emerald-400 hover:bg-emerald-50/60',
     btnCls: 'bg-emerald-600 hover:bg-emerald-700',
-    href: '/tickets/add?type=Group&groupType=SERIES',
+    href: '/tickets/add?stockType=SERIES',
   },
   {
-    key: 'group-adhoc',
-    label: 'Group Ad Hoc',
-    description: 'ตั๋วกรุ๊ปทัวร์ Ad Hoc',
+    key: 'ad-hoc',
+    label: 'Ad Hoc',
+    description: 'ตั๋วกรุ๊ปแบบ Ad Hoc',
     detail: 'เหมาะสำหรับกรุ๊ปที่จัดขึ้นเป็นกรณีพิเศษ ไม่ได้อยู่ใน Series ปกติ',
     minSectors: 'ขั้นต่ำ 2 Sectors',
     icon: <Users size={22} />,
     iconCls: 'text-amber-600',
     cardCls: 'hover:border-amber-400 hover:bg-amber-50/60',
     btnCls: 'bg-amber-500 hover:bg-amber-600',
-    href: '/tickets/add?type=Group&groupType=ADHOC',
+    href: '/tickets/add?stockType=AD_HOC',
   },
   {
     key: 'fit',
@@ -50,24 +49,22 @@ const TYPE_OPTIONS: TypeOption[] = [
     detail: 'รองรับ One-way, Round-trip และ Multi-city สำหรับผู้เดินทางอิสระ',
     minSectors: 'ขั้นต่ำ 1 Sector',
     icon: <Ticket size={22} />,
-    iconCls: 'text-sky-400',
-    cardCls: '',
-    btnCls: '',
-    href: '/tickets/add?type=FIT',
-    disabled: true,
+    iconCls: 'text-sky-600',
+    cardCls: 'hover:border-sky-400 hover:bg-sky-50/60',
+    btnCls: 'bg-sky-600 hover:bg-sky-700',
+    href: '/tickets/add?stockType=FIT',
   },
   {
-    key: 'ticket-land',
-    label: 'Ticket + Land',
-    description: 'ตั๋วพร้อมแลนด์',
-    detail: 'ตั๋วเครื่องบินพร้อมบริการภาคพื้นดิน เช่น โรงแรม รถ และทัวร์',
+    key: 'ticket-only',
+    label: 'Ticket Only',
+    description: 'ตั๋วเครื่องบินอย่างเดียว',
+    detail: 'ตั๋วเครื่องบินโดยไม่รวมบริการภาคพื้นดิน',
     minSectors: 'ขั้นต่ำ 2 Sectors',
     icon: <Globe size={22} />,
-    iconCls: 'text-violet-400',
-    cardCls: '',
-    btnCls: '',
-    href: '/tickets/add?type=Ticket+Land',
-    disabled: true,
+    iconCls: 'text-violet-600',
+    cardCls: 'hover:border-violet-400 hover:bg-violet-50/60',
+    btnCls: 'bg-violet-600 hover:bg-violet-700',
+    href: '/tickets/add?stockType=TICKET_ONLY',
   },
 ]
 
@@ -92,20 +89,10 @@ export function SelectTicketTypeModal({ open, onClose }: SelectTicketTypeModalPr
         {TYPE_OPTIONS.map(opt => (
           <div
             key={opt.key}
-            className={`relative flex flex-col rounded-xl border-2 border-slate-200 p-4 transition-all duration-150 ${
-              opt.disabled
-                ? 'bg-slate-50 cursor-not-allowed'
-                : `bg-white cursor-pointer hover:shadow-md ${opt.cardCls}`
-            }`}
-            onClick={() => !opt.disabled && handleSelect(opt.href)}
+            className={`relative flex flex-col rounded-xl border-2 border-slate-200 p-4 transition-all duration-150 bg-white cursor-pointer hover:shadow-md ${opt.cardCls}`}
+            onClick={() => handleSelect(opt.href)}
           >
-            {opt.disabled && (
-              <span className="absolute top-2 right-2 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-200 text-slate-400 leading-none">
-                Coming Soon
-              </span>
-            )}
-
-            <div className={opt.disabled ? 'opacity-60' : undefined}>
+            <div>
               {/* Icon */}
               <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-3 shrink-0 bg-slate-100 ${opt.iconCls}`}>
                 {opt.icon}
@@ -125,15 +112,13 @@ export function SelectTicketTypeModal({ open, onClose }: SelectTicketTypeModalPr
             </div>
 
             {/* CTA button */}
-            {!opt.disabled && (
-              <button
-                className={`mt-auto w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-semibold text-white transition-opacity ${opt.btnCls}`}
-                onClick={e => { e.stopPropagation(); handleSelect(opt.href) }}
-              >
-                เลือกประเภทนี้
-                <ChevronRight size={13} />
-              </button>
-            )}
+            <button
+              className={`mt-auto w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg text-xs font-semibold text-white transition-opacity ${opt.btnCls}`}
+              onClick={e => { e.stopPropagation(); handleSelect(opt.href) }}
+            >
+              เลือกประเภทนี้
+              <ChevronRight size={13} />
+            </button>
           </div>
         ))}
       </div>

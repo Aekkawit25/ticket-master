@@ -62,7 +62,7 @@ function getConfig(t: TicketType | null, g?: GroupType | null): PageConfig {
     addLabel: 'Add Group Stock',
     addPath: null,
     clearLabel: 'ล้างข้อมูล Group',
-    clearNote: 'ข้อมูลประเภทอื่น (FIT / Ticket + Land) จะไม่ถูกลบ',
+    clearNote: 'ข้อมูลประเภทอื่น (FIT / Ticket Only) จะไม่ถูกลบ',
     searchPlaceholder: 'ค้นหา Stock Code, Name, PNR...',
   }
   // All Tickets
@@ -85,22 +85,22 @@ function SelectGroupTypeModal({ open, onClose }: { open: boolean; onClose: () =>
 
   const options = [
     {
-      label: 'Group Series',
+      label: 'Series',
       description: 'เส้นทางและวันเดินทางกำหนดแน่นอน',
       detail: 'เหมาะสำหรับซีรีส์ที่มีการวางแผนล่วงหน้า เช่น Sweden Aurora Mar 26',
       icon: <List size={22} />,
       color: '#05a94f',
       bg: '#f0fdf4',
-      href: '/tickets/add?type=Group&groupType=SERIES',
+      href: '/tickets/add?stockType=SERIES',
     },
     {
-      label: 'Group Ad Hoc',
+      label: 'Ad Hoc',
       description: 'จัดกรุ๊ปพิเศษตามสถานการณ์',
       detail: 'เหมาะสำหรับกรุ๊ปที่จัดขึ้นเป็นกรณีพิเศษ ไม่ได้อยู่ใน Series ปกติ',
       icon: <Users size={22} />,
       color: '#f59e0b',
       bg: '#fffbeb',
-      href: '/tickets/add?type=Group&groupType=ADHOC',
+      href: '/tickets/add?stockType=AD_HOC',
     },
   ]
 
@@ -211,7 +211,7 @@ export default function TicketStockPage({ fixedTicketType, fixedGroupType }: Tic
       const t = result.stockInfo.ticketType
       const valid: TicketType[] = ['Group', 'FIT', 'Ticket + Land']
       if (!valid.includes(t as TicketType)) {
-        alert('ไม่พบ Ticket Type ที่ถูกต้องในไฟล์ Excel\nกรุณาระบุ GROUP / FIT / TICKET_LAND ในคอลัมน์ ticket_type ของ Sheet STOCK_INFO')
+        alert('ไม่พบ Ticket Type ที่ถูกต้องในไฟล์ Excel\nกรุณาระบุ GROUP / FIT / TICKET_ONLY ในคอลัมน์ ticket_type ของ Sheet STOCK_INFO')
         e.target.value = ''
         return
       }
@@ -316,10 +316,10 @@ export default function TicketStockPage({ fixedTicketType, fixedGroupType }: Tic
       {/* ── Stat cards ── */}
       {isAll && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-          <StatCard title="Group Series" value={counts.series} icon={<List  size={18} />} color="#05a94f" />
-          <StatCard title="Group Ad Hoc" value={counts.adhoc}  icon={<Users size={18} />} color="#f59e0b" />
-          <StatCard title="FIT Tickets"  value={counts.fit}    icon={<Ticket size={18} />} color="#3b82f6" comingSoon />
-          <StatCard title="Ticket + Land" value={counts.land}  icon={<Globe  size={18} />} color="#8b5cf6" comingSoon />
+          <StatCard title="Series"      value={counts.series} icon={<List   size={18} />} color="#05a94f" />
+          <StatCard title="Ad Hoc"      value={counts.adhoc}  icon={<Users  size={18} />} color="#f59e0b" />
+          <StatCard title="FIT"         value={counts.fit}    icon={<Ticket size={18} />} color="#3b82f6" />
+          <StatCard title="Ticket Only" value={counts.land}   icon={<Globe  size={18} />} color="#8b5cf6" />
         </div>
       )}
       {isAllGroup && (

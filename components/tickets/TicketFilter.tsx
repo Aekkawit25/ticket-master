@@ -97,9 +97,9 @@ export default function TicketFilter({ onFilter, showTypeFilter = true, searchPl
               value={filters.ticket_type}
               onChange={e => set('ticket_type', e.target.value)}
               options={[
-                { value: 'Group', label: 'Group' },
+                { value: 'Group', label: 'Group (Series / Ad Hoc)' },
                 { value: 'FIT', label: 'FIT' },
-                { value: 'Ticket + Land', label: 'Ticket + Land' },
+                { value: 'Ticket + Land', label: 'Ticket Only' },
               ]}
               placeholder="ทุกประเภท"
             />

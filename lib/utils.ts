@@ -532,9 +532,14 @@ export function truncate(str: string, len = 30): string {
 }
 
 export function getStockCodePrefix(ticketType: string, groupType?: string | null): string {
+  // Accept new StockType keys directly
+  if (ticketType === 'SERIES')      return 'SR'
+  if (ticketType === 'AD_HOC')      return 'AH'
+  if (ticketType === 'TICKET_ONLY') return 'TO'
+  // Legacy ticket_type + group_type
   if (ticketType === 'Group') return groupType === 'ADHOC' ? 'AH' : 'SR'
-  if (ticketType === 'FIT') return 'FIT'
-  return 'LND'
+  if (ticketType === 'FIT')   return 'FIT'
+  return 'TO'  // Ticket + Land → new prefix
 }
 
 export function generateStockCode(prefix = 'SR', existingCodes: string[] = []): string {

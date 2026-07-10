@@ -45,10 +45,10 @@ export function PNRStatusBadge({ status }: { status: string }) {
 
 export function TicketTypeBadge({ type, groupType }: { type: string; groupType?: string }) {
   if (type === 'Group') {
-    if (groupType === 'ADHOC') return <Badge variant="orange">Group Ad Hoc</Badge>
-    return <Badge variant="green">Group Series</Badge>
+    if (groupType === 'ADHOC') return <Badge variant="orange">Ad Hoc</Badge>
+    return <Badge variant="green">Series</Badge>
   }
   if (type === 'FIT') return <Badge variant="blue">FIT</Badge>
-  if (type === 'Ticket + Land') return <Badge variant="purple">Ticket + Land</Badge>
+  if (type === 'Ticket + Land') return <Badge variant="purple">Ticket Only</Badge>
   return <Badge variant="gray">{type}</Badge>
 }

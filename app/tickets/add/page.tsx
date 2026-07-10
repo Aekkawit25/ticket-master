@@ -2,7 +2,7 @@
 
 import { useSearchParams, useRouter } from 'next/navigation'
 import { useState, useCallback, useMemo, Suspense } from 'react'
-import { CheckCircle2, AlertTriangle, Globe, ArrowLeft } from 'lucide-react'
+import { CheckCircle2, AlertTriangle } from 'lucide-react'
 import AppLayout from '@/components/layout/AppLayout'
 import WizardLayout from '@/components/wizard/WizardLayout'
 import Step1StockInfo from '@/components/wizard/Step1StockInfo'
@@ -12,10 +12,12 @@ import Step4PNR from '@/components/wizard/Step4PNR'
 import Step5Review from '@/components/wizard/Step5Review'
 import { validateSectors, generateStockCode, getStockCodePrefix, generateDummyPnrs, calcTravelEndFromSectors, calcSectorDate } from '@/lib/utils'
 import { MASTER_AIRLINE_CODE_SET } from '@/lib/master-data'
-import { getStockTypeConfig, getStockTypeConfigSafe } from '@/lib/stock-type-config'
+import { getStockTypeConfig, getStockTypeConfigSafe, STOCK_TYPE_CONFIG, type StockType } from '@/lib/stock-type-config'
 import { wizardStateToDemoStock, saveDemoStock, getDemoStocks, checkPNRDuplicatesInSystem, formatPNRConflictMessage } from '@/lib/demo-storage'
 import { getDefaultCurrencyCode } from '@/lib/currency-storage'
 import type { WizardState, FlightSeriesFormData, FlightSectorFormData, FlightScheduleFormData, TicketType, GroupType, TripType } from '@/types'
+
+const STOCK_TYPE_KEYS: StockType[] = ['SERIES', 'AD_HOC', 'FIT', 'TICKET_ONLY']
 
 function normalizeForReview(state: WizardState): WizardState {
   const { schedules, stockInfo, pnrs } = state
@@ -74,8 +76,17 @@ const STEP_SUBTITLES: Record<number, string> = {
 function AddStockPageInner() {
   const params = useSearchParams()
   const router = useRouter()
-  const lockedType      = params.get('type') as TicketType | null
-  const lockedGroupType = params.get('groupType') as GroupType | null
+
+  // Support new ?stockType=SERIES format AND old ?type=Group&groupType=SERIES for backward compat
+  const rawStockType    = params.get('stockType') as StockType | null
+  const lockedStockType = rawStockType && STOCK_TYPE_KEYS.includes(rawStockType) ? rawStockType : null
+  // Derive ticket_type + group_type from stockType (or fall back to old ?type= params)
+  const lockedType: TicketType | null = lockedStockType
+    ? STOCK_TYPE_CONFIG[lockedStockType].ticketType
+    : params.get('type') as TicketType | null
+  const lockedGroupType: GroupType | null = lockedStockType
+    ? (STOCK_TYPE_CONFIG[lockedStockType].groupType ?? null) as GroupType | null
+    : params.get('groupType') as GroupType | null
   const defaultType: TicketType = lockedType ?? 'Group'
   const isTypeLocked = lockedType !== null
 
@@ -163,8 +174,6 @@ function AddStockPageInner() {
   const validateStep = (s: number): string | null => {
     if (s === 1) {
       if (!isTypeLocked && !typeConfirmed) return 'กรุณาเลือกประเภท Stock'
-      if (state.stockInfo.ticket_type === 'FIT') return 'FIT ยังไม่เปิดใช้งาน'
-      if (state.stockInfo.ticket_type === 'Ticket + Land') return 'Ticket + Land ยังไม่เปิดใช้งาน'
       const stepCfg = getStockTypeConfigSafe(state.stockInfo.ticket_type, state.stockInfo.group_type)
       if (!state.stockInfo.stock_code.trim()) return `กรุณากรอก ${stepCfg.codeLabel}`
       const existingCodes = getDemoStocks().map(s => s.stockCode)
@@ -238,13 +247,12 @@ function AddStockPageInner() {
       setSaving(false)
       setSaveMsg('บันทึกข้อมูล Demo สำเร็จ')
       const redirectTarget = (() => {
-        if (state.stockInfo.ticket_type === 'Group') {
-          if (state.stockInfo.group_type === 'SERIES') return '/tickets/group/series'
-          if (state.stockInfo.group_type === 'ADHOC')  return '/tickets/group/adhoc'
-          return '/tickets/group'
-        }
-        if (state.stockInfo.ticket_type === 'FIT') return '/tickets/fit'
-        return '/tickets/land'
+        const cfg = getStockTypeConfig(state.stockInfo.ticket_type, state.stockInfo.group_type)
+        if (cfg?.key === 'SERIES')      return '/tickets/group/series'
+        if (cfg?.key === 'AD_HOC')      return '/tickets/group/adhoc'
+        if (cfg?.key === 'FIT')         return '/tickets/fit'
+        if (cfg?.key === 'TICKET_ONLY') return '/tickets/land'
+        return '/tickets'
       })()
       setTimeout(() => router.push(redirectTarget), 800)
     } catch {
@@ -254,30 +262,6 @@ function AddStockPageInner() {
   }
 
   const pageTitle = getPageTitle(state.stockInfo.ticket_type, state.stockInfo.group_type, typeConfirmed)
-
-  // FIT and Ticket + Land are not yet available — show Coming Soon screen
-  if (lockedType === 'FIT' || lockedType === 'Ticket + Land') {
-    const isFIT = lockedType === 'FIT'
-    return (
-      <AppLayout title={`${lockedType} — Coming Soon`}>
-        <div className="flex flex-col items-center justify-center py-24 text-center">
-          <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-4 ${isFIT ? 'bg-sky-100' : 'bg-violet-100'}`}>
-            <Globe size={28} className={isFIT ? 'text-sky-400' : 'text-violet-400'} />
-          </div>
-          <h2 className="text-xl font-bold text-slate-800 mb-2">{lockedType}</h2>
-          <p className="text-slate-500 mb-1">ฟีเจอร์นี้ยังไม่เปิดใช้งาน</p>
-          <p className="text-sm text-slate-400 mb-6">Coming Soon</p>
-          <button
-            onClick={() => router.push(isFIT ? '/tickets/fit' : '/tickets/land')}
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors"
-          >
-            <ArrowLeft size={14} />
-            กลับ
-          </button>
-        </div>
-      </AppLayout>
-    )
-  }
 
   return (
     <AppLayout title={pageTitle}>

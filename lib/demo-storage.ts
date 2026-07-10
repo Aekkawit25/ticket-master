@@ -1,6 +1,7 @@
 import { format, parseISO, isValid } from 'date-fns'
 import { buildRouteText, formatDate } from '@/lib/utils'
-import type { WizardState, FlightSeries, TicketType, TripType, StockStatus } from '@/types'
+import type { WizardState, FlightSeries, TicketType, TripType, StockStatus, StockType } from '@/types'
+import { getStockTypeKey } from '@/lib/stock-type-config'
 import {
   type AppStockCondition, type AppCondition, type CondCalcType, type CondDueType, type CondTtlCalcType, type CondRefundableType,
   calcCondTtlDate,
@@ -365,8 +366,9 @@ export interface DemoSummary {
 export interface DemoStock {
   stockId: string
   stockCode: string
-  ticketType: TicketType
-  groupType?: 'SERIES' | 'ADHOC'
+  stockType?: StockType         // unified type key (SERIES | AD_HOC | FIT | TICKET_ONLY)
+  ticketType: TicketType        // backward-compat DB field
+  groupType?: 'SERIES' | 'ADHOC' // backward-compat DB field
   tripType: TripType
   groupName: string
   airlineCode: string
@@ -560,10 +562,13 @@ export function getDemoStocks(): DemoStock[] {
         } satisfies AppStockCondition
       })
 
+      const migratedGroupType = s.groupType ?? (s.ticketType === 'Group' ? 'SERIES' : undefined)
       return {
         ...s,
         // Group stocks created before groupType was tracked default to SERIES
-        groupType: s.groupType ?? (s.ticketType === 'Group' ? 'SERIES' : undefined),
+        groupType: migratedGroupType,
+        // Derive unified stockType from ticketType + groupType
+        stockType: s.stockType ?? (getStockTypeKey(s.ticketType, migratedGroupType) ?? undefined),
         logs: s.logs ?? [],
         transactions: s.transactions ?? [],
         sectors: migratedSectors,
@@ -1033,6 +1038,7 @@ export function wizardStateToDemoStock(state: WizardState): DemoStock {
   return {
     stockId,
     stockCode: stockInfo.stock_code,
+    stockType: getStockTypeKey(stockInfo.ticket_type, stockInfo.group_type) ?? undefined,
     ticketType: stockInfo.ticket_type,
     groupType: stockInfo.group_type,
     tripType: stockInfo.trip_type,

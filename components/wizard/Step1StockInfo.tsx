@@ -31,50 +31,50 @@ interface TypeOption {
   disabled?: boolean
 }
 
-// Visual metadata per StockTypeKey (icons + colors only — text comes from STOCK_TYPE_CONFIG)
+// Visual metadata per StockType (icons + colors; selected state is always green)
 const TYPE_VISUAL = {
-  GROUP_SERIES: {
+  SERIES: {
     icon: <ListChecks size={18} />,
     selectedCls: 'border-emerald-400 bg-emerald-50 ring-2 ring-emerald-300',
     hoverCls: 'hover:border-emerald-300 hover:bg-emerald-50/60',
     iconCls: 'text-emerald-600',
   },
-  GROUP_ADHOC: {
+  AD_HOC: {
     icon: <Users size={18} />,
-    selectedCls: 'border-amber-400 bg-amber-50 ring-2 ring-amber-300',
-    hoverCls: 'hover:border-amber-300 hover:bg-amber-50/60',
+    selectedCls: 'border-emerald-400 bg-emerald-50 ring-2 ring-emerald-300',
+    hoverCls: 'hover:border-emerald-300 hover:bg-emerald-50/60',
     iconCls: 'text-amber-600',
   },
   FIT: {
     icon: <User size={18} />,
-    selectedCls: 'border-sky-400 bg-sky-50 ring-2 ring-sky-300',
-    hoverCls: '',
+    selectedCls: 'border-emerald-400 bg-emerald-50 ring-2 ring-emerald-300',
+    hoverCls: 'hover:border-emerald-300 hover:bg-emerald-50/60',
     iconCls: 'text-sky-600',
   },
-  TICKET_LAND: {
+  TICKET_ONLY: {
     icon: <Globe size={18} />,
-    selectedCls: 'border-violet-400 bg-violet-50 ring-2 ring-violet-300',
-    hoverCls: '',
+    selectedCls: 'border-emerald-400 bg-emerald-50 ring-2 ring-emerald-300',
+    hoverCls: 'hover:border-emerald-300 hover:bg-emerald-50/60',
     iconCls: 'text-violet-600',
   },
 } as const
 
 const TYPE_OPTIONS: TypeOption[] = [
   {
-    key: 'group-series',
-    label: STOCK_TYPE_CONFIG.GROUP_SERIES.displayName,
+    key: 'series',
+    label: STOCK_TYPE_CONFIG.SERIES.displayName,
     ticketType: 'Group',
     groupType: 'SERIES',
-    description: STOCK_TYPE_CONFIG.GROUP_SERIES.description,
-    ...TYPE_VISUAL.GROUP_SERIES,
+    description: STOCK_TYPE_CONFIG.SERIES.description,
+    ...TYPE_VISUAL.SERIES,
   },
   {
-    key: 'group-adhoc',
-    label: STOCK_TYPE_CONFIG.GROUP_ADHOC.displayName,
+    key: 'ad-hoc',
+    label: STOCK_TYPE_CONFIG.AD_HOC.displayName,
     ticketType: 'Group',
     groupType: 'ADHOC',
-    description: STOCK_TYPE_CONFIG.GROUP_ADHOC.description,
-    ...TYPE_VISUAL.GROUP_ADHOC,
+    description: STOCK_TYPE_CONFIG.AD_HOC.description,
+    ...TYPE_VISUAL.AD_HOC,
   },
   {
     key: 'fit',
@@ -83,16 +83,14 @@ const TYPE_OPTIONS: TypeOption[] = [
     groupType: undefined,
     description: STOCK_TYPE_CONFIG.FIT.description,
     ...TYPE_VISUAL.FIT,
-    disabled: true,
   },
   {
-    key: 'ticket-land',
-    label: STOCK_TYPE_CONFIG.TICKET_LAND.displayName,
+    key: 'ticket-only',
+    label: STOCK_TYPE_CONFIG.TICKET_ONLY.displayName,
     ticketType: 'Ticket + Land',
     groupType: undefined,
-    description: STOCK_TYPE_CONFIG.TICKET_LAND.description,
-    ...TYPE_VISUAL.TICKET_LAND,
-    disabled: true,
+    description: STOCK_TYPE_CONFIG.TICKET_ONLY.description,
+    ...TYPE_VISUAL.TICKET_ONLY,
   },
 ]
 
@@ -164,17 +162,22 @@ export default function Step1StockInfo({
   const codePrefix    = typeConfig.prefix
   const codeLabel     = typeConfig.codeLabel
   const nameLabel     = typeConfig.nameLabel
-  const namePlaceholder = typeConfig.key === 'GROUP_ADHOC'
+  const namePlaceholder = typeConfig.key === 'AD_HOC'
     ? 'เช่น Japan Cherry Blossom Apr 26'
-    : 'เช่น Sweden Aurora Mar 26'
-  const nameHelper = typeConfig.key === 'GROUP_ADHOC' ? 'ชื่อ Group Ad Hoc' : 'ชื่อ Stock หรือชื่อซีรีส์'
+    : typeConfig.key === 'FIT'
+      ? 'เช่น Tokyo FIT Jul 26'
+      : typeConfig.key === 'TICKET_ONLY'
+        ? 'เช่น Europe Ticket Jul 26'
+        : 'เช่น Sweden Aurora Mar 26'
+  const nameHelper = typeConfig.key === 'AD_HOC' ? 'ชื่อ Ad Hoc' : 'ชื่อ Stock หรือชื่อซีรีส์'
   const runningNumber = data.stock_code.startsWith(codePrefix)
     ? data.stock_code.slice(codePrefix.length)
     : data.stock_code
 
   const pendingLabel = pendingType
-    ? (pendingType.ticketType === 'Group' && pendingType.groupType === 'SERIES' ? 'Group Series'
-      : pendingType.ticketType === 'Group' && pendingType.groupType === 'ADHOC' ? 'Group Ad Hoc'
+    ? (pendingType.ticketType === 'Group' && pendingType.groupType === 'SERIES' ? 'Series'
+      : pendingType.ticketType === 'Group' && pendingType.groupType === 'ADHOC' ? 'Ad Hoc'
+      : pendingType.ticketType === 'Ticket + Land' ? 'Ticket Only'
       : pendingType.ticketType)
     : ''
 
@@ -189,7 +192,7 @@ export default function Step1StockInfo({
           {isTypeLocked ? (
             /* Read-only locked card — always renders from config, never empty */
             (() => {
-              const visual = TYPE_VISUAL[typeConfig.key]
+              const visual = TYPE_VISUAL[typeConfig.key as keyof typeof TYPE_VISUAL]
               return (
                 <div className={`relative p-4 rounded-xl border-2 ${visual.selectedCls}`}>
                   <span className="absolute top-2.5 right-3 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-white/80 text-slate-500 border border-slate-200 shadow-sm">
@@ -210,41 +213,31 @@ export default function Step1StockInfo({
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               {TYPE_OPTIONS.map(opt => {
                 const selected = isCurrentType(opt)
-                const disabled = !!opt.disabled
                 return (
                   <button
                     key={opt.key}
                     type="button"
                     onClick={() => handleTypeClick(opt)}
-                    className={`text-left p-4 rounded-xl border-2 transition-all relative ${
-                      disabled
-                        ? 'border-slate-200 bg-slate-50 cursor-not-allowed'
-                        : selected
-                          ? opt.selectedCls
-                          : `border-slate-200 bg-white ${opt.hoverCls} cursor-pointer`
+                    className={`text-left p-4 rounded-xl border-2 transition-all ${
+                      selected
+                        ? opt.selectedCls
+                        : `border-slate-200 bg-white ${opt.hoverCls} cursor-pointer`
                     }`}
                   >
-                    {disabled && (
-                      <span className="absolute top-2 right-2 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-200 text-slate-400 leading-none">
-                        Coming Soon
-                      </span>
-                    )}
-                    <div className={disabled ? 'opacity-60' : undefined}>
-                      <div className="flex items-start gap-3">
-                        <div className={`mt-0.5 ${selected ? opt.iconCls : 'text-slate-400'}`}>
-                          {opt.icon}
+                    <div className="flex items-start gap-3">
+                      <div className={`mt-0.5 ${selected ? opt.iconCls : 'text-slate-400'}`}>
+                        {opt.icon}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className={`text-sm font-semibold ${selected ? 'text-slate-900' : 'text-slate-600'}`}>
+                            {opt.label}
+                          </span>
+                          {selected && <Check size={13} className="text-emerald-600" />}
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <span className={`text-sm font-semibold ${selected ? 'text-slate-900' : 'text-slate-600'}`}>
-                              {opt.label}
-                            </span>
-                            {selected && <Check size={13} className={opt.iconCls} />}
-                          </div>
-                          <p className={`text-xs mt-0.5 ${selected ? 'text-slate-600' : 'text-slate-400'}`}>
-                            {opt.description}
-                          </p>
-                        </div>
+                        <p className={`text-xs mt-0.5 ${selected ? 'text-slate-600' : 'text-slate-400'}`}>
+                          {opt.description}
+                        </p>
                       </div>
                     </div>
                   </button>
@@ -335,12 +328,12 @@ export default function Step1StockInfo({
           <li>Route จะสร้างอัตโนมัติจาก Sector ใน Step 2</li>
           <li>Period จะคำนวณอัตโนมัติจาก PNR ใน Step 4</li>
           <li>Trip Type (One-way / Round-trip / Multi-city) กำหนดได้ใน Step 2 Flight Segments</li>
-          <li><strong>{nameLabel}</strong> = {typeConfig.key === 'GROUP_ADHOC' ? 'ชื่อ Group เช่น "Japan Cherry Blossom Apr 26"' : 'ชื่อ Series เช่น "Sweden Aurora Mar 26"'}</li>
+          <li><strong>{nameLabel}</strong> = {typeConfig.key === 'AD_HOC' ? 'ชื่อ Ad Hoc เช่น "Japan Cherry Blossom Apr 26"' : 'ชื่อ Stock เช่น "Sweden Aurora Mar 26"'}</li>
           <li>Currency แสดงเฉพาะสกุลเงินที่ ACTIVE จาก Currencies Master (ISO 4217)</li>
-          {(data.ticket_type === 'Group' || data.ticket_type === 'Ticket + Land') && (
-            <li>{data.ticket_type} ต้องมี Sector ขั้นต่ำ 2 รายการ (Departure + Arrival)</li>
+          {(typeConfig.key === 'SERIES' || typeConfig.key === 'AD_HOC' || typeConfig.key === 'TICKET_ONLY') && (
+            <li>ต้องมี Sector ขั้นต่ำ 2 รายการ (Departure + Arrival)</li>
           )}
-          {data.ticket_type === 'FIT' && (
+          {typeConfig.key === 'FIT' && (
             <li>FIT รองรับ One-way (1 Sector), Round-trip และ Multi-city (≥ 2 Sector)</li>
           )}
         </ul>

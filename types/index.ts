@@ -2,6 +2,7 @@
 // Core Enums / Union Types
 // ============================================================
 
+export type StockType  = 'SERIES' | 'AD_HOC' | 'FIT' | 'TICKET_ONLY'
 export type TicketType = 'Group' | 'FIT' | 'Ticket + Land'
 export type GroupType  = 'SERIES' | 'ADHOC'
 export type TripType = 'One-way' | 'Round-trip' | 'Multi-city'
