@@ -7,6 +7,7 @@ import {
 } from 'date-fns'
 import { ChevronLeft, ChevronRight, X, Trash2, AlertTriangle, Info, CheckCircle2 } from 'lucide-react'
 import { cn, formatDate, formatDateTime, calcTTLDatetime } from '@/lib/utils'
+import { TimeInput } from '@/components/ui/time-input'
 import { calculateStockSummary, saveDemoStock, checkPNRDuplicatesInSystem } from '@/lib/demo-storage'
 import type { DemoStock, DemoPNR, DemoLog } from '@/lib/demo-storage'
 
@@ -61,6 +62,9 @@ export interface BulkPnrRow {
   isDummy: boolean
   pnrCode: string
   dummyPnr: string
+  ttlStatus: 'UNSET' | 'SET'
+  ttlDate: string | null
+  ttlTime: string | null
 }
 
 export interface BulkPnrBuilderProps {
@@ -95,6 +99,9 @@ interface SharedCfg {
   conditionCode: string
   status: string
   remark: string
+  ttlStatus: 'UNSET' | 'SET'
+  ttlDate: string
+  ttlTime: string
 }
 
 interface CountCfg { startDate: string; count: number; intervalDays: number }
@@ -109,18 +116,23 @@ interface InternalRow {
   conditionCode: string; status: string; remark: string
   isDummy: boolean
   paymentDueDate: string | null; ttlDateTime: string | null
+  ttlStatus: 'UNSET' | 'SET'
+  ttlDate: string | null
+  ttlTime: string | null
   errors: string[]; selected: boolean
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const DAY_ABBR = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'] as const
-const STATUS_OPTS = ['Pending', 'Confirmed', 'Ticketed', 'Cancelled']
+const STATUS_OPTS = ['Pending', 'Confirmed']
+const STATUS_LABELS: Record<string, string> = { Pending: 'รอยืนยัน', Confirmed: 'ยืนยันแล้ว' }
 
 const INIT_SHARED: SharedCfg = {
   seatTotal: 0, flightSetId: '',
   priceFormat: 'FARE', fare: '', yq: '', allIn: '', breakdown: false,
   tax: '', conditionCode: '', status: 'Pending', remark: '',
+  ttlStatus: 'UNSET', ttlDate: '', ttlTime: '',
 }
 const INIT_COUNT: CountCfg = { startDate: '', count: 1, intervalDays: 1 }
 const INIT_WD: WdCfg = { startDate: '', endDate: '', weekdays: new Set() }
@@ -254,6 +266,9 @@ function buildInternalRows(
       conditionCode: shared.conditionCode, status: shared.status, remark: shared.remark,
       paymentDueDate: calcPaymentDue(s, travelEnd, cond),
       ttlDateTime: null,
+      ttlStatus: shared.ttlStatus,
+      ttlDate: shared.ttlStatus === 'SET' ? (shared.ttlDate || null) : null,
+      ttlTime: shared.ttlStatus === 'SET' ? (shared.ttlTime || null) : null,
       errors: [], selected: false,
     }
   })
@@ -606,6 +621,12 @@ export function BulkPnrBuilder({
     if (computedTotal <= 0) { setFormErr('กรุณาระบุราคา / ยอดสุทธิมากกว่า 0'); return }
     if (breakdownMismatch)  { setFormErr('Fare + YQ + Tax ไม่เท่ากับ All In / Total'); return }
 
+    // TTL validation
+    if (shared.ttlStatus === 'SET' && (!shared.ttlDate || !shared.ttlTime)) {
+      setFormErr('กรุณาระบุวันที่และเวลา TTL ให้ครบ')
+      return
+    }
+
     const calDates = [...calItems].sort((a, b) => a.date.localeCompare(b.date)).map(it => it.date)
     const generated = buildInternalRows(method, shared, countCfg, wdCfg, calDates, effectiveSectors, conditions, stock)
     if (!generated.length) {
@@ -647,6 +668,9 @@ export function BulkPnrBuilder({
       isDummy:       !!r.dummyPnr,
       pnrCode:       r.pnrCode,
       dummyPnr:      r.dummyPnr,
+      ttlStatus:     r.ttlStatus,
+      ttlDate:       r.ttlDate,
+      ttlTime:       r.ttlTime,
     }))
 
     if (mode === 'create_stock') {
@@ -659,14 +683,9 @@ export function BulkPnrBuilder({
     // ADD_TO_EXISTING: persist to stock
     const methodLabel = method === 'count' ? 'เพิ่มตามจำนวน' : method === 'weekday' ? 'วันประจำสัปดาห์' : 'เลือกจากปฏิทิน'
     const newPnrs: DemoPNR[] = revalidated.map(r => {
-      let ttlDate: string | null = null; let ttlTime: string | null = null
-      if (r.ttlDateTime) {
-        try {
-          const d = parseISO(r.ttlDateTime)
-          ttlDate = fnsIsValid(d) ? fnsFormat(d, 'yyyy-MM-dd') : null
-          ttlTime = fnsIsValid(d) ? fnsFormat(d, 'HH:mm') : null
-        } catch {}
-      }
+      const ttlDate: string | null = r.ttlDate
+      const ttlTime: string | null = r.ttlTime
+      const ttlDateTime: string | null = (ttlDate && ttlTime) ? `${ttlDate}T${ttlTime}:00` : null
       return {
         pnrId:          newId('PNR'),
         pnrCode:        r.pnrCode.trim(),
@@ -697,7 +716,7 @@ export function BulkPnrBuilder({
         conditionCode:  r.conditionCode,
         ttlDate,
         ttlTime,
-        ttlDateTime:    r.ttlDateTime,
+        ttlDateTime,
         status:         r.status,
         remark:         r.remark,
       } as DemoPNR
@@ -1127,11 +1146,49 @@ export function BulkPnrBuilder({
                       <select value={shared.status}
                         onChange={e => setShared(s => ({ ...s, status: e.target.value }))}
                         className={iCls}>
-                        {STATUS_OPTS.map(o => <option key={o} value={o}>{o}</option>)}
+                        {STATUS_OPTS.map(o => <option key={o} value={o}>{STATUS_LABELS[o]}</option>)}
                       </select>
                     </FL>
 
-                    {/* Row 5: Remark — full width */}
+                    {/* Row 5: TTL — full width */}
+                    <div className="col-span-2 rounded-xl border border-amber-200 bg-amber-50/40 p-3 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <label className="shrink-0 text-xs font-medium text-slate-600">กำหนดส่ง NAME (TTL)</label>
+                        <select
+                          value={shared.ttlStatus}
+                          onChange={e => setShared(s => ({
+                            ...s,
+                            ttlStatus: e.target.value as 'UNSET' | 'SET',
+                            ttlDate: e.target.value === 'UNSET' ? '' : s.ttlDate,
+                            ttlTime: e.target.value === 'UNSET' ? '' : s.ttlTime,
+                          }))}
+                          className="rounded-lg border border-amber-300 bg-white px-2 py-1 text-xs outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/15">
+                          <option value="UNSET">ยังไม่ระบุ</option>
+                          <option value="SET">ระบุแล้ว</option>
+                        </select>
+                      </div>
+                      {shared.ttlStatus === 'SET' && (
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="flex flex-col gap-0.5">
+                            <label className="text-[11px] text-slate-500">วันที่ TTL</label>
+                            <input
+                              type="date"
+                              value={shared.ttlDate}
+                              onChange={e => setShared(s => ({ ...s, ttlDate: e.target.value }))}
+                              className="rounded-lg border border-amber-300 bg-white px-2 py-1.5 text-xs outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/15" />
+                          </div>
+                          <div className="flex flex-col gap-0.5">
+                            <label className="text-[11px] text-slate-500">เวลา TTL</label>
+                            <TimeInput
+                              value={shared.ttlTime}
+                              onChange={v => setShared(s => ({ ...s, ttlTime: v }))}
+                              className="rounded-lg border border-amber-300 bg-white px-2 py-1.5 text-xs outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/15" />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Row 6: Remark — full width */}
                     <FL label="Remark" className="col-span-2">
                       <textarea rows={2} value={shared.remark} placeholder="หมายเหตุ..."
                         onChange={e => setShared(s => ({ ...s, remark: e.target.value }))}
@@ -1319,10 +1376,30 @@ export function BulkPnrBuilder({
                               : <span className="text-slate-300">รอข้อมูล</span>}
                           </td>
                           {/* TTL */}
-                          <td className="px-2 py-2 text-xs whitespace-nowrap">
-                            {row.ttlDateTime
-                              ? <span className="text-red-500">{formatDateTime(row.ttlDateTime)}</span>
-                              : <span className="text-slate-300">—</span>}
+                          <td className="px-1 py-2 bg-amber-50/20">
+                            <div className="flex flex-col gap-0.5 min-w-[130px]">
+                              <select
+                                value={row.ttlStatus || 'UNSET'}
+                                onChange={e => updateRow(row.rowId, {
+                                  ttlStatus: e.target.value as 'UNSET' | 'SET',
+                                  ttlDate:   e.target.value === 'UNSET' ? null : row.ttlDate,
+                                  ttlTime:   e.target.value === 'UNSET' ? null : row.ttlTime,
+                                })}
+                                className="h-6 border border-amber-200 rounded-lg px-1.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-amber-400 bg-white">
+                                <option value="UNSET">ยังไม่ระบุ</option>
+                                <option value="SET">ระบุแล้ว</option>
+                              </select>
+                              {row.ttlStatus === 'SET' && (
+                                <div className="flex flex-col gap-0.5">
+                                  <input type="date" value={row.ttlDate || ''}
+                                    onChange={e => updateRow(row.rowId, { ttlDate: e.target.value || null })}
+                                    className="h-6 border border-amber-200 rounded-lg px-1.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-amber-400 bg-white" />
+                                  <TimeInput value={row.ttlTime || ''}
+                                    onChange={v => updateRow(row.rowId, { ttlTime: v || null })}
+                                    className="h-6 border border-amber-200 rounded-lg px-1.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-amber-400 bg-white" />
+                                </div>
+                              )}
+                            </div>
                           </td>
                           {/* Status */}
                           <td className="px-1 py-2">

@@ -31,16 +31,14 @@ export function StockStatusBadge({ status }: { status: string }) {
   return <Badge variant={map[status] || 'gray'}>{status}</Badge>
 }
 
+/** แสดงสถานะ PNR เป็นภาษาไทย — Confirmed → ยืนยันแล้ว, ค่าอื่น (รวมค่าเก่า) → รอยืนยัน */
+export function pnrStatusLabel(status: string): string {
+  return status === 'Confirmed' ? 'ยืนยันแล้ว' : 'รอยืนยัน'
+}
+
 export function PNRStatusBadge({ status }: { status: string }) {
-  const map: Record<string, 'yellow' | 'blue' | 'green' | 'red' | 'orange' | 'gray'> = {
-    Pending: 'yellow',
-    Confirmed: 'blue',
-    Ticketed: 'green',
-    Cancelled: 'red',
-    Expired: 'orange',
-    Closed: 'gray',
-  }
-  return <Badge variant={map[status] || 'gray'}>{status}</Badge>
+  const confirmed = status === 'Confirmed'
+  return <Badge variant={confirmed ? 'green' : 'orange'}>{pnrStatusLabel(status)}</Badge>
 }
 
 export function TicketTypeBadge({ type, groupType }: { type: string; groupType?: string }) {

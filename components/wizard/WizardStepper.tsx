@@ -4,9 +4,8 @@ import { Check } from 'lucide-react'
 const STEPS = [
   { no: 1, label: 'Stock Info' },
   { no: 2, label: 'Flight Segments' },
-  { no: 3, label: 'Conditions' },
-  { no: 4, label: 'PNR & Seats' },
-  { no: 5, label: 'Review & Save' },
+  { no: 3, label: 'PNR & Seats' },
+  { no: 4, label: 'Review & Save' },
 ]
 
 interface WizardStepperProps {

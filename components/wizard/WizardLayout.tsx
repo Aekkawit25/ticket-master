@@ -42,7 +42,7 @@ interface WizardLayoutProps {
  */
 export default function WizardLayout({
   step,
-  totalSteps = 5,
+  totalSteps = 4,
   pageTitle,
   subtitle,
   ticketType,

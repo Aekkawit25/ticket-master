@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
 import { Pencil, PlusCircle, Trash2, CheckCircle2, AlertTriangle, X, Copy, PlaneTakeoff } from 'lucide-react'
+import { TimeInput } from '@/components/ui/time-input'
 import { saveDemoStock, getStockFlightSets } from '@/lib/demo-storage'
 import type { DemoStock, DemoSector, DemoFlightSet, DemoLog } from '@/lib/demo-storage'
 import { MASTER_AIRLINE_CODE_SET } from '@/lib/master-data'
@@ -148,12 +149,12 @@ function SectorEditTable({ sectors, minSectors, errors, defaultAirlineCode, onCh
                   placeholder="NRT" maxLength={3} />
               </td>
               <td className="px-1 py-1.5">
-                <input type="time" value={s.depTime} onChange={e => update(i, { depTime: e.target.value })}
-                  className="w-full border border-slate-300 rounded-md px-1 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-[#05a94f]" />
+                <TimeInput compact value={s.depTime} onChange={v => update(i, { depTime: v })}
+                  className="w-full border border-slate-300 rounded-md focus-within:ring-1 focus-within:ring-[#05a94f] focus-within:border-[#05a94f]" />
               </td>
               <td className="px-1 py-1.5">
-                <input type="time" value={s.arrTime} onChange={e => update(i, { arrTime: e.target.value })}
-                  className="w-full border border-slate-300 rounded-md px-1 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-[#05a94f]" />
+                <TimeInput compact value={s.arrTime} onChange={v => update(i, { arrTime: v })}
+                  className="w-full border border-slate-300 rounded-md focus-within:ring-1 focus-within:ring-[#05a94f] focus-within:border-[#05a94f]" />
               </td>
               <td className="px-1 py-1.5 text-center">
                 <select value={s.arrDayOffset} onChange={e => update(i, { arrDayOffset: Number(e.target.value) })}

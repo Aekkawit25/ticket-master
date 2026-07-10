@@ -1,9 +1,9 @@
 import { format, parseISO, isValid } from 'date-fns'
 import { buildRouteText, formatDate } from '@/lib/utils'
-import type { WizardState, FlightSeries, TicketType, TripType, StockStatus, StockType } from '@/types'
-import { getStockTypeKey } from '@/lib/stock-type-config'
+import type { WizardState, FlightSeries, TicketType, TripType, StockStatus } from '@/types'
 import {
   type AppStockCondition, type AppCondition, type CondCalcType, type CondDueType, type CondTtlCalcType, type CondRefundableType,
+  calcCondTtlDate,
   defaultBaggagePolicy, migrateBaggagePolicy,
   defaultSeatReductionPolicy, migrateSeatReductionPolicy, defaultSeatReturnPolicy, defaultRefundPolicy, defaultTtlRule,
   migrateRefundTerms, defaultRefundTerms, defaultCancelGroupTerms,
@@ -330,11 +330,9 @@ export interface DemoPNR {
   priceFormat?: 'FARE' | 'FARE_YQ' | 'ALL_IN'
   breakdown?: boolean
   fare: number
-  /** null = ยังไม่ระบุ */
-  yq?: number | null
+  yq?: number
   taxType: string
-  /** null = ยังไม่ระบุ */
-  tax: number | null
+  tax: number
   fareIncludesTax: boolean
   taxStatus: 'completed' | 'included' | 'pending'
   total: number
@@ -362,15 +360,11 @@ export interface DemoSummary {
   nextTTL: string | null
 }
 
-/** PENDING = สร้าง Stock โดยยังไม่ระบุ Condition, ต้องกลับมาดำเนินการภายหลัง */
-export type ConditionStatus = 'PENDING' | 'SET'
-
 export interface DemoStock {
   stockId: string
   stockCode: string
-  stockType?: StockType         // unified type key (SERIES | AD_HOC | FIT | TICKET_ONLY)
-  ticketType: TicketType        // backward-compat DB field
-  groupType?: 'SERIES' | 'ADHOC' // backward-compat DB field
+  ticketType: TicketType
+  groupType?: 'SERIES' | 'ADHOC'
   tripType: TripType
   groupName: string
   airlineCode: string
@@ -379,8 +373,6 @@ export interface DemoStock {
   destination: string
   currency: string
   status: StockStatus
-  /** PENDING = ยังไม่ระบุ Condition, SET = มี Condition แล้ว */
-  conditionStatus?: ConditionStatus
   remark: string
   routeText: string
   createdAt: string
@@ -566,13 +558,10 @@ export function getDemoStocks(): DemoStock[] {
         } satisfies AppStockCondition
       })
 
-      const migratedGroupType = s.groupType ?? (s.ticketType === 'Group' ? 'SERIES' : undefined)
       return {
         ...s,
         // Group stocks created before groupType was tracked default to SERIES
-        groupType: migratedGroupType,
-        // Derive unified stockType from ticketType + groupType
-        stockType: s.stockType ?? (getStockTypeKey(s.ticketType, migratedGroupType) ?? undefined),
+        groupType: s.groupType ?? (s.ticketType === 'Group' ? 'SERIES' : undefined),
         logs: s.logs ?? [],
         transactions: s.transactions ?? [],
         sectors: migratedSectors,
@@ -735,7 +724,7 @@ export function calculateStockSummary(pnrs: DemoPNR[]): DemoSummary {
   const fareTotal = pnrs.reduce((sum, p) => sum + p.fare, 0)
   const taxTotal = pnrs
     .filter(p => p.taxType === 'separate')
-    .reduce((sum, p) => sum + (p.tax ?? 0), 0)
+    .reduce((sum, p) => sum + p.tax, 0)
   const grandTotal = pnrs.reduce((sum, p) => sum + p.total, 0)
 
   // Period: min and max of travelStart
@@ -936,12 +925,27 @@ export function wizardStateToDemoStock(state: WizardState): DemoStock {
     const pnrType: 'real' | 'dummy' = isReal ? 'real' : 'dummy'
     const pnrDisplay = isReal ? p.pnr_code! : (p.dummy_pnr || '')
 
+    // Find linked condition to compute TTL
+    let ttlDateTime: string | null = null
     const linkedSC = conditionById[p.condition_id ?? '']
+    if (linkedSC && p.travel_start) {
+      ttlDateTime = calcCondTtlDate(linkedSC.condition.ttlRule, p.travel_start)
+    }
 
-    // TTL is user-entered per PNR — not calculated from Condition
-    const ttlDate: string | null = (p.ttl_status === 'SET' && p.ttl_date) ? p.ttl_date : null
-    const ttlTimeStr: string | null = (p.ttl_status === 'SET' && p.ttl_time) ? p.ttl_time : null
-    const ttlDateTime: string | null = (ttlDate && ttlTimeStr) ? `${ttlDate}T${ttlTimeStr}:00` : null
+    // Extract ttlDate and ttlTime for display
+    let ttlDate: string | null = null
+    let ttlTimeStr: string | null = null
+    if (ttlDateTime) {
+      try {
+        const d = parseISO(ttlDateTime)
+        if (isValid(d)) {
+          ttlDate = format(d, 'yyyy-MM-dd')
+          ttlTimeStr = format(d, 'HH:mm')
+        }
+      } catch {
+        // keep null
+      }
+    }
 
     // taxStatus
     let taxStatus: 'completed' | 'included' | 'pending'
@@ -970,11 +974,9 @@ export function wizardStateToDemoStock(state: WizardState): DemoStock {
       seatTotal: p.seat_total,
       seatUsed: 0,
       seatBalance: p.seat_total,
-      priceFormat: p.price_format ?? 'FARE',
       fare: p.fare,
-      yq: p.yq ?? null,
       taxType: p.tax_type,
-      tax: p.tax,
+      tax: p.tax ?? 0,
       fareIncludesTax: p.tax_type === 'included',
       taxStatus,
       total: p.total_amount,
@@ -996,8 +998,6 @@ export function wizardStateToDemoStock(state: WizardState): DemoStock {
 
   const summary = calculateStockSummary(demoPNRs)
 
-  const conditionStatus: ConditionStatus = demoConditions.length > 0 ? 'SET' : 'PENDING'
-
   // Auto-generate initial activity logs
   const logs: DemoLog[] = [
     {
@@ -1008,15 +1008,6 @@ export function wizardStateToDemoStock(state: WizardState): DemoStock {
       createdBy: 'System',
     },
   ]
-  if (conditionStatus === 'PENDING') {
-    logs.push({
-      logId: genId('LOG'),
-      action: 'Create Stock Without Condition',
-      message: 'สร้าง Stock โดยยังไม่ระบุ Condition (condition_status = PENDING)',
-      createdAt: now,
-      createdBy: 'System',
-    })
-  }
   const dummyCount = demoPNRs.filter(p => p.pnrType === 'dummy').length
   if (dummyCount > 0) {
     logs.push({
@@ -1038,7 +1029,6 @@ export function wizardStateToDemoStock(state: WizardState): DemoStock {
   return {
     stockId,
     stockCode: stockInfo.stock_code,
-    stockType: getStockTypeKey(stockInfo.ticket_type, stockInfo.group_type) ?? undefined,
     ticketType: stockInfo.ticket_type,
     groupType: stockInfo.group_type,
     tripType: stockInfo.trip_type,
@@ -1049,7 +1039,6 @@ export function wizardStateToDemoStock(state: WizardState): DemoStock {
     destination: stockInfo.destination ?? '',
     currency: stockInfo.currency,
     status: stockInfo.status,
-    conditionStatus,
     remark: stockInfo.remark ?? '',
     routeText,
     createdAt: now,

@@ -3,10 +3,11 @@
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Badge, StockStatusBadge, TicketTypeBadge, PNRStatusBadge } from '@/components/ui/badge'
 import { Table, TableHead, TableBody, Th, Td, TableRow, EmptyRow } from '@/components/ui/table'
-import { formatDate, calcTravelEndFromSectors, buildRouteText } from '@/lib/utils'
+import { formatDate, formatDateTime, calcTravelEndFromSectors, buildRouteText } from '@/lib/utils'
 import { getStockTypeConfigSafe } from '@/lib/stock-type-config'
+import { calcCondTtlDate } from '@/lib/condition-schema'
 import { checkPNRDuplicatesInSystem, type PNRConflictDetail } from '@/lib/demo-storage'
-import { CheckCircle2, Plane, Users, FileText, AlertTriangle, Clock } from 'lucide-react'
+import { CheckCircle2, Plane, Users, FileText, CreditCard, ArrowRight, AlertTriangle } from 'lucide-react'
 import type { WizardState, FlightPNRFormData } from '@/types'
 
 interface Step5Props {
@@ -32,9 +33,7 @@ export default function Step5Review({ state, excludeStockId }: Step5Props) {
   }
 
   const totalSeats = pnrs.reduce((s, p) => s + (p.seat_total || 0), 0)
-  const totalFare = pnrs.reduce((s, p) => s + (p.fare || 0), 0)
-  const totalTax = pnrs.reduce((s, p) => s + (p.tax || 0), 0)
-  const totalAmount = totalFare + totalTax
+  const totalAmount = pnrs.reduce((s, p) => s + (p.total_amount || 0), 0)
 
   // Always recompute travelEnd from current sectors so Period reflects the latest sector edits,
   // not the stale travel_end stored in the PNR when sectors were unchanged in Step 4.
@@ -254,16 +253,56 @@ export default function Step5Review({ state, excludeStockId }: Step5Props) {
         </CardContent>
       </Card>
 
-      {/* Condition — PENDING (set after stock is created) */}
-      <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
-        <Clock size={16} className="text-amber-500 shrink-0 mt-0.5" />
-        <div className="flex-1 min-w-0">
-          <p className="font-semibold text-amber-800 text-sm">Condition — ยังไม่ระบุ</p>
-          <p className="text-xs text-amber-600 mt-0.5">
-            ข้อมูลตั๋วจะถูกบันทึกโดยไม่มี Condition สามารถเลือก Template หรือสร้าง Condition ใหม่ได้จากหน้า Stock Detail ภายหลัง
-          </p>
-        </div>
-      </div>
+      {/* Conditions */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <CreditCard size={14} />
+            Conditions ({conditions.length})
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {conditions.length === 0 ? (
+            <p className="text-sm text-slate-400">ไม่มี Condition — PNR จะแสดงเป็น "ไม่ระบุ"</p>
+          ) : (
+            conditions.map((c, i) => (
+              <div key={i} className="border border-slate-200 rounded-xl p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="font-mono text-xs text-slate-400">{c.conditionCode}</span>
+                  <span className="font-semibold text-slate-800 text-sm">{c.conditionName}</span>
+                  <Badge variant={c.status === 'Active' ? 'green' : 'gray'}>{c.status}</Badge>
+                </div>
+                <div className="space-y-1.5">
+                  {c.stages.map((s, si) => (
+                    <div key={si} className="flex items-start gap-2 text-xs text-slate-600">
+                      <span className="w-5 h-5 bg-slate-100 rounded-full flex items-center justify-center text-[11px] font-bold text-slate-400 shrink-0 mt-0.5">
+                        {s.stageNo}
+                      </span>
+                      <div className="flex-1 space-y-0.5">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-semibold text-slate-700">{s.stageName}</span>
+                          <ArrowRight size={10} className="text-slate-300" />
+                          <span className="font-medium">
+                            {s.calcType === 'FIXED_PER_PNR' ? `${s.amount.toLocaleString()} THB/PNR`
+                              : s.calcType === 'PER_SEAT' ? `${s.amount.toLocaleString()} THB/ที่นั่ง`
+                              : s.calcType === 'PERCENT_OF_BASE' ? `${s.percent}%`
+                              : 'Remaining'}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3 text-slate-400 flex-wrap">
+                          <span>Due <strong className="text-slate-600">{s.dueDays} วัน</strong>{s.dueType === 'TRAVEL_MINUS_DAYS' ? ' ก่อนเดินทาง' : ''}</span>
+                          <span>·</span>
+                          <span>เวลา: <strong className="text-slate-600">{s.dueTime}</strong></span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))
+          )}
+        </CardContent>
+      </Card>
 
       {/* PNR List */}
       <Card>
@@ -287,20 +326,22 @@ export default function Step5Review({ state, excludeStockId }: Step5Props) {
                 <Th className="text-right">Seat</Th>
                 <Th className="text-right">Fare</Th>
                 <Th className="text-right">Tax</Th>
-                <Th className="text-right">Total</Th>
+                <Th className="text-right">YQ</Th>
+                <Th className="text-right">Total/Seat</Th>
                 <Th>Condition</Th>
-                <Th className="text-amber-700">TTL</Th>
+                <Th className="text-purple-700">Name TTL</Th>
                 <Th>Status</Th>
               </tr>
             </TableHead>
             <TableBody>
               {pnrs.length === 0 ? (
-                <EmptyRow cols={10} message="ไม่มี PNR" />
+                <EmptyRow cols={11} message="ไม่มี PNR" />
               ) : (
                 pnrs.map((p, i) => {
                   const travelEnd = calcTravelEndFromSectors(p.travel_start, getPnrSectors(p)) || p.travel_end || ''
-                  const firstTTL = (p.ttl_status === 'SET' && p.ttl_date)
-                    ? (p.ttl_time ? `${formatDate(p.ttl_date)} ${p.ttl_time}` : formatDate(p.ttl_date))
+                  const cond = conditions.find(c => c.conditionId === p.condition_id)
+                  const firstTTL = (cond && p.travel_start)
+                    ? calcCondTtlDate(cond.ttlRule, p.travel_start)
                     : null
                   const isDup = dupResult.duplicateIndices.has(i)
                   return (
@@ -330,11 +371,16 @@ export default function Step5Review({ state, excludeStockId }: Step5Props) {
                       <Td className="text-xs">{travelEnd ? formatDate(travelEnd) : '—'}</Td>
                       <Td className="text-right text-sm">{p.seat_total}</Td>
                       <Td className="text-right text-xs">{p.fare > 0 ? p.fare.toLocaleString() : '—'}</Td>
-                      <Td className="text-right text-xs">{(p.tax ?? 0) > 0 ? (p.tax ?? 0).toLocaleString() : '—'}</Td>
-                      <Td className="text-right text-xs font-bold">{(p.fare + (p.tax ?? 0)) > 0 ? (p.fare + (p.tax ?? 0)).toLocaleString() : '—'}</Td>
+                      <Td className="text-right text-xs">
+                        {p.price_format === 'FARE' ? ((p.tax ?? 0) > 0 ? (p.tax ?? 0).toLocaleString() : (p.tax == null ? <span className="text-slate-300 italic text-[10px]">ยังไม่ระบุ</span> : '0.00')) : <span className="text-slate-300 text-[10px]">ไม่ใช้</span>}
+                      </Td>
+                      <Td className="text-right text-xs">
+                        {p.price_format !== 'ALL_IN' ? ((p.yq ?? 0) > 0 ? (p.yq ?? 0).toLocaleString() : (p.yq == null ? <span className="text-slate-300 italic text-[10px]">ยังไม่ระบุ</span> : '0.00')) : <span className="text-slate-300 text-[10px]">ไม่ใช้</span>}
+                      </Td>
+                      <Td className="text-right text-xs font-bold">{(p.total_amount || 0) > 0 ? (p.total_amount || 0).toLocaleString() : '—'}</Td>
                       <Td className="text-xs">{getConditionName(p.condition_id)}</Td>
                       <Td className="text-xs font-medium text-amber-600 whitespace-nowrap">
-                        {firstTTL ?? '—'}
+                        {firstTTL ? formatDateTime(firstTTL) : '—'}
                       </Td>
                       <Td><PNRStatusBadge status={p.status} /></Td>
                     </TableRow>
@@ -347,17 +393,13 @@ export default function Step5Review({ state, excludeStockId }: Step5Props) {
       </Card>
 
       {/* Seat Summary */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 gap-3">
         <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-center">
           <p className="text-xs text-slate-400">Seat Total</p>
           <p className="text-xl font-bold text-slate-800">{totalSeats}</p>
         </div>
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-center">
-          <p className="text-xs text-blue-600">Total Fare</p>
-          <p className="text-xl font-bold text-blue-700">{totalFare.toLocaleString()}</p>
-        </div>
         <div className="bg-green-50 border border-green-200 rounded-xl p-3 text-center">
-          <p className="text-xs text-green-600">Grand Total ({stockInfo.currency})</p>
+          <p className="text-xs text-green-600">Total/Seat (รวมทุก PNR)</p>
           <p className="text-xl font-bold text-[#05a94f]">{totalAmount.toLocaleString()}</p>
         </div>
       </div>

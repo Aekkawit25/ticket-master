@@ -4,7 +4,7 @@ import { useEffect, useState, Suspense } from 'react'
 import { useRouter } from 'next/navigation'
 import AppLayout from '@/components/layout/AppLayout'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
+import { Badge, PNRStatusBadge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableHead, TableBody, Th, Td, TableRow, EmptyRow } from '@/components/ui/table'
 import {
@@ -811,9 +811,7 @@ function ImportReviewInner() {
                         : '—'}
                     </Td>
                     <Td>
-                      <Badge variant={p.status === 'Confirmed' ? 'blue' : p.status === 'Ticketed' ? 'green' : p.status === 'Cancelled' ? 'red' : 'yellow'}>
-                        {p.status}
-                      </Badge>
+                      <PNRStatusBadge status={p.status} />
                     </Td>
                   </TableRow>
                 ))

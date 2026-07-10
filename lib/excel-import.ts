@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx'
 import { format, parse, isValid } from 'date-fns'
+import { normalizeTime, isValidHHmm } from './time-utils'
 
 // ============================================================
 // Types
@@ -146,6 +147,12 @@ function str(val: unknown): string {
   return String(val).trim()
 }
 
+function mapPnrStatus(val: string): 'Pending' | 'Confirmed' {
+  const v = val.trim()
+  if (v === 'Confirmed' || v === 'ยืนยันแล้ว') return 'Confirmed'
+  return 'Pending'
+}
+
 /**
  * Convert a sheet to an array of objects using the first row as headers.
  */
@@ -160,6 +167,15 @@ function sheetToObjects(ws: XLSX.WorkSheet): Record<string, unknown>[] {
     })
     return obj
   })
+}
+
+function parseTimeStr(val: unknown): { value: string; wasReset: boolean; raw: string } {
+  const raw = str(val)
+  if (!raw) return { value: '', wasReset: false, raw: '' }
+  const normalized = normalizeTime(raw)
+  if (normalized) return { value: normalized, wasReset: false, raw }
+  // Invalid → reset to 00:00
+  return { value: '00:00', wasReset: true, raw }
 }
 
 // ============================================================
@@ -225,6 +241,15 @@ export async function parseExcelImport(file: File): Promise<ImportReviewData> {
         issues.push({ level: 'warning', sheet: 'FLIGHT_SECTORS', field: 'flightNo', row: rowNum, message: `Row ${rowNum}: flightNo ว่าง` })
       }
 
+      const depTimeResult = parseTimeStr(r['depTime'])
+      const arrTimeResult = parseTimeStr(r['arrTime'])
+      if (depTimeResult.wasReset) {
+        issues.push({ level: 'warning', sheet: 'FLIGHT_SECTORS', field: 'depTime', row: rowNum, message: `Row ${rowNum}: depTime "${depTimeResult.raw}" ไม่ถูกต้อง ระบบปรับเป็น 00:00` })
+      }
+      if (arrTimeResult.wasReset) {
+        issues.push({ level: 'warning', sheet: 'FLIGHT_SECTORS', field: 'arrTime', row: rowNum, message: `Row ${rowNum}: arrTime "${arrTimeResult.raw}" ไม่ถูกต้อง ระบบปรับเป็น 00:00` })
+      }
+
       sectors.push({
         seq:            parseNum(r['seq']) || idx + 1,
         sectorType:     sectorType,
@@ -232,8 +257,8 @@ export async function parseExcelImport(file: File): Promise<ImportReviewData> {
         flightNo:       flightNo,
         depAirportCode: from,
         arrAirportCode: to,
-        depTime:        str(r['depTime']),
-        arrTime:        str(r['arrTime']),
+        depTime:        depTimeResult.value,
+        arrTime:        arrTimeResult.value,
         arrDayOffset:   parseNum(r['arrDayOffset']),
         dayOffset:      parseNum(r['dayOffset']),
         remark:         str(r['remark']),
@@ -327,7 +352,7 @@ export async function parseExcelImport(file: File): Promise<ImportReviewData> {
         taxType:       taxType,
         tax:           parseNum(r['tax']),
         conditionCode: conditionCode,
-        status:        str(r['status']) || 'Pending',
+        status:        mapPnrStatus(str(r['status'])),
         remark:        str(r['remark']),
       })
     })

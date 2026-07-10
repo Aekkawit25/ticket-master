@@ -1,9 +1,11 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { Fragment, useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { cn } from '@/lib/utils'
 import { PlusCircle, Trash2, AlertTriangle, Info, Pencil, Copy, Star, CheckCircle2 } from 'lucide-react'
+import { TimeInput } from '@/components/ui/time-input'
+import { isValidHHmm, sameAirport } from '@/lib/time-utils'
 import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
 import type { FlightSectorFormData, FlightScheduleFormData, SectorType, TicketType, TripType } from '@/types'
@@ -22,6 +24,7 @@ const MIDDLE_TYPE_OPTIONS = SECTOR_TYPE_OPTIONS.filter(o => o.value === 'Transit
 // ─── Helper: compute +Day ─────────────────────────────────────────────────────
 function calcArrDayOffset(depTime: string, arrTime: string): number {
   if (!depTime || !arrTime) return 0
+  if (!isValidHHmm(depTime) || !isValidHHmm(arrTime)) return 0
   return arrTime < depTime ? 1 : 0
 }
 
@@ -169,7 +172,6 @@ function buildRoute(sectors: FlightSectorFormData[]): string {
   return segments.filter(Boolean).join(' / ')
 }
 
-const timeInputCls = 'w-full text-center px-1 py-[5px] text-xs bg-transparent outline-none focus:bg-blue-50'
 
 // ─── Default blank sector ─────────────────────────────────────────────────────
 function blankSector(seq: number, type: SectorType, airlineCode: string, depFrom = ''): FlightSectorFormData {
@@ -288,7 +290,9 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
   const [copyModalOpen, setCopyModalOpen]   = useState(false)
   const [renameModalOpen, setRenameModalOpen] = useState(false)
   const [successMsg, setSuccessMsg] = useState('')
-  const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const successTimerRef    = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const firstErrorRowRef   = useRef<HTMLTableRowElement | null>(null)
+  const prevSameCountRef   = useRef(0)
 
   // ── Airport master data (Active only) ──────────────────────────────────────
   const [airports, setAirports] = useState<StoredAirport[]>([])
@@ -531,7 +535,27 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
     updateSectors(sectors.filter((_, i) => i !== idx).map((s, i) => ({ ...s, seq: i + 1 })))
   }
 
-  const route = buildRoute(sectors)
+  // ── Same-airport detection ────────────────────────────────────────────────────
+  // Computed reactively: any sector where both From and To are filled and equal
+  const sameAirportSet = new Set(
+    sectors.reduce<number[]>((acc, s, i) => {
+      if (sameAirport(s.dep_airport_code, s.arr_airport_code)) acc.push(i)
+      return acc
+    }, [])
+  )
+  const firstSameAirportIdx = sameAirportSet.size > 0 ? Math.min(...[...sameAirportSet]) : -1
+
+  // Scroll to first offending row when errors first appear (0 → >0 transition)
+  useEffect(() => {
+    const cur = sameAirportSet.size
+    if (cur > 0 && prevSameCountRef.current === 0) {
+      firstErrorRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+    prevSameCountRef.current = cur
+  }, [sameAirportSet.size]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Skip route calculation when any sector has matching From/To
+  const route = sameAirportSet.size > 0 ? '' : buildRoute(sectors)
 
   // Home airport = Sector 1 From (Thai airport)
   const homeAirport = sectors[0]?.dep_airport_code ?? ''
@@ -843,10 +867,14 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
                   const deletable = canDeleteRow(idx)
                   const rowBg     = idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/40'
                   const typeOpt   = SECTOR_TYPE_OPTIONS.find(o => o.value === s.sector_type)
-
+                  const isSameAP  = sameAirportSet.has(idx)
 
                   return (
-                    <tr key={idx} className={cn('group hover:bg-blue-50/30 transition-colors', rowBg)}>
+                    <Fragment key={idx}>
+                    <tr
+                      ref={idx === firstSameAirportIdx ? firstErrorRowRef : undefined}
+                      className={cn('group hover:bg-blue-50/30 transition-colors', rowBg)}
+                    >
 
                       {/* # */}
                       <td className="border border-slate-200 text-center text-slate-400 font-medium select-none bg-slate-50 text-[11px] align-middle">
@@ -893,7 +921,7 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
                       </XL>
 
                       {/* From */}
-                      <XL className={!s.dep_airport_code ? 'bg-red-50/60' : ''}>
+                      <XL className={cn(!s.dep_airport_code ? 'bg-red-50/60' : '', isSameAP && 'border-red-400 bg-red-50/40')}>
                         {idx === 0 ? (
                           <AirportCell
                             airports={airports.filter(a => a.countryCode === 'THA')}
@@ -922,7 +950,7 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
                       </XL>
 
                       {/* To */}
-                      <XL className={!s.arr_airport_code ? 'bg-red-50/60' : ''}>
+                      <XL className={cn(!s.arr_airport_code ? 'bg-red-50/60' : '', isSameAP && 'border-red-400 bg-red-50/40')}>
                         <AirportCell
                           airports={airports}
                           value={s.arr_airport_code}
@@ -940,18 +968,23 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
 
                       {/* Dep Time */}
                       <XL center>
-                        <input type="time" value={s.dep_time} onChange={e => update(idx, { dep_time: e.target.value })} className={timeInputCls} />
+                        <TimeInput compact value={s.dep_time} onChange={v => update(idx, { dep_time: v })} className="w-full" />
                       </XL>
 
                       {/* Arr Time */}
                       <XL center>
-                        <input type="time" value={s.arr_time} onChange={e => update(idx, { arr_time: e.target.value })} className={timeInputCls} />
+                        <TimeInput compact value={s.arr_time} onChange={v => update(idx, { arr_time: v })} className="w-full" />
                       </XL>
 
                       {/* +Day (auto) */}
                       <XL center readOnly className="bg-amber-50/50">
-                        <span className={cn('px-2 py-[5px] text-xs font-semibold select-none', s.arr_day_offset > 0 ? 'text-amber-600' : 'text-slate-400')}>
-                          {s.arr_day_offset > 0 ? `+${s.arr_day_offset}` : '0'}
+                        <span className={cn(
+                          'px-2 py-[5px] text-xs font-semibold select-none',
+                          (!isValidHHmm(s.dep_time) || !isValidHHmm(s.arr_time))
+                            ? 'text-slate-300'
+                            : s.arr_day_offset > 0 ? 'text-amber-600' : 'text-slate-400'
+                        )}>
+                          {(!isValidHHmm(s.dep_time) || !isValidHHmm(s.arr_time)) ? '—' : s.arr_day_offset > 0 ? `+${s.arr_day_offset}` : '0'}
                         </span>
                       </XL>
 
@@ -1017,6 +1050,17 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
                         </button>
                       </td>
                     </tr>
+                    {isSameAP && (
+                      <tr>
+                        <td colSpan={COLS} className="border border-red-200 bg-red-50 px-3 py-1.5">
+                          <span className="flex items-center gap-1.5 text-xs text-red-600">
+                            <AlertTriangle size={11} className="shrink-0" />
+                            สนามบินต้นทางและปลายทางต้องไม่เป็นสนามบินเดียวกัน
+                          </span>
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   )
                 })
               )}
@@ -1065,6 +1109,18 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
           <span>
             พบ Flight No ซ้ำใน Flight Set นี้:{' '}
             <strong>{[...duplicateFlightKeys].join(', ')}</strong>
+            {' '}— กรุณาแก้ไขก่อนดำเนินการต่อ
+          </span>
+        </div>
+      )}
+
+      {/* Same-airport errors (blocking) */}
+      {sameAirportSet.size > 0 && (
+        <div className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700">
+          <AlertTriangle size={13} className="shrink-0" />
+          <span>
+            พบสนามบินต้นทางและปลายทางเหมือนกัน (Sector{' '}
+            {[...sameAirportSet].map(i => i + 1).join(', ')})
             {' '}— กรุณาแก้ไขก่อนดำเนินการต่อ
           </span>
         </div>

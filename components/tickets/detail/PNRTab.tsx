@@ -1001,7 +1001,8 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
     : mockPNRs
 
   const conditions = liveStock?.conditions ?? []
-  const pnrStatuses = ['Pending', 'Confirmed', 'Ticketed', 'Cancelled', 'Expired', 'Closed']
+  const pnrStatuses = ['Pending', 'Confirmed']
+  const pnrStatusLabels: Record<string, string> = { Pending: 'รอยืนยัน', Confirmed: 'ยืนยันแล้ว' }
 
   const activeConditions = conditions.filter(c => c.condition.status === 'Active')
   const noCond = (liveStock?.pnrs ?? []).filter(p => !p.conditionCode)
@@ -1315,7 +1316,7 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
               <label className="block text-xs font-medium text-slate-700 mb-1">Status</label>
               <select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
                 className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30">
-                {pnrStatuses.map(s => <option key={s} value={s}>{s}</option>)}
+                {pnrStatuses.map(s => <option key={s} value={s}>{pnrStatusLabels[s]}</option>)}
               </select>
             </div>
           </div>

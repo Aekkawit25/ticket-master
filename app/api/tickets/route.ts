@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSupabase } from '@/lib/supabase'
 import { calcSectorDate, calcTravelEndFromSectors } from '@/lib/utils'
+import { isValidHHmm, sameAirport } from '@/lib/time-utils'
 
 export async function GET(request: NextRequest) {
   try {
@@ -44,6 +45,34 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
 
     const { stockInfo, sectors, conditions, pnrs } = body
+
+    // Validate sector times before any DB inserts
+    if (sectors?.length) {
+      for (let i = 0; i < sectors.length; i++) {
+        const s = sectors[i]
+        if (s.dep_time && !isValidHHmm(s.dep_time)) {
+          return NextResponse.json({
+            data: null,
+            error: 'Invalid time format',
+            fieldErrors: [{ field: `sectors[${i}].dep_time`, message: 'Invalid time format. Expected HH:mm' }],
+          }, { status: 400 })
+        }
+        if (s.arr_time && !isValidHHmm(s.arr_time)) {
+          return NextResponse.json({
+            data: null,
+            error: 'Invalid time format',
+            fieldErrors: [{ field: `sectors[${i}].arr_time`, message: 'Invalid time format. Expected HH:mm' }],
+          }, { status: 400 })
+        }
+        if (sameAirport(s.dep_airport_code ?? '', s.arr_airport_code ?? '')) {
+          return NextResponse.json({
+            data: null,
+            error: 'Origin and destination airports must be different',
+            fieldErrors: [{ field: `sectors[${i}].to`, message: 'Origin and destination airports must be different' }],
+          }, { status: 400 })
+        }
+      }
+    }
 
     // 1. Insert flight_series
     const { data: series, error: seriesError } = await supabase
@@ -139,6 +168,22 @@ export async function POST(request: NextRequest) {
         : (sectors || []).map((s: any): SectorMeta => ({ id: null, seq: s.seq, sector_type: s.sector_type, day_offset: s.day_offset || 0 }))
 
       for (const pnr of pnrs) {
+        // Validate price fields match price_format
+        // Tax valid for ALL_IN only; YQ valid for FARE_YQ and ALL_IN
+        const priceFmt = pnr.price_format ?? 'FARE'
+        if (priceFmt !== 'ALL_IN' && pnr.tax != null) {
+          return NextResponse.json({
+            data: null, error: 'FARE/FARE_YQ: tax must be null',
+            fieldErrors: [{ field: 'pnrs.tax', message: 'Tax is only valid for ALL_IN price format' }]
+          }, { status: 400 })
+        }
+        if (priceFmt === 'FARE' && pnr.yq != null) {
+          return NextResponse.json({
+            data: null, error: 'FARE: yq must be null',
+            fieldErrors: [{ field: 'pnrs.yq', message: 'YQ must be null for FARE price format' }]
+          }, { status: 400 })
+        }
+
         const conditionId = pnr.condition_id ? (conditionIdMap[pnr.condition_id] || null) : null
         const travelEnd = pnr.travel_end || calcTravelEndFromSectors(pnr.travel_start || null, sectorMeta)
 

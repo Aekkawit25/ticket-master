@@ -211,7 +211,6 @@ export function ConditionsTab({
     const updated: DemoStock = {
       ...liveStock,
       conditions: newConditions,
-      conditionStatus: newConditions.length > 0 ? 'SET' : 'PENDING',
       updatedAt: now,
       logs: [log, ...liveStock.logs],
     }

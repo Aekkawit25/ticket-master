@@ -3294,9 +3294,8 @@ export default function ListPNRPage() {
               <label className="text-[11px] font-medium text-slate-500 block mb-1">PNR Status</label>
               <select value={filters.status} onChange={e => setFilter('status', e.target.value)} className={selectClass}>
                 <option value="">ทั้งหมด</option>
-                {['Pending', 'Confirmed', 'Ticketed', 'Cancelled', 'Expired', 'Closed'].map(s =>
-                  <option key={s} value={s}>{s}</option>
-                )}
+                <option value="Pending">รอยืนยัน</option>
+                <option value="Confirmed">ยืนยันแล้ว</option>
               </select>
             </div>
             <div>

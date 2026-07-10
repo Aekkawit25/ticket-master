@@ -244,6 +244,16 @@ export function buildSectorDateRows(
   })
 }
 
+/** Difference in days between two ISO date strings (b − a). Returns 0 if either is null/invalid. */
+export function daysBetween(a: string | null, b: string | null): number {
+  if (!a || !b) return 0
+  try {
+    return differenceInDays(parseISO(b), parseISO(a))
+  } catch {
+    return 0
+  }
+}
+
 export function calcSeatBalance(seatTotal: number, seatUsed: number): number {
   return Math.max(0, seatTotal - seatUsed)
 }
