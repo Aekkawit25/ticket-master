@@ -1,7 +1,7 @@
 import { format, parseISO, isValid } from 'date-fns'
 import { buildRouteText, formatDate } from '@/lib/utils'
 import type { WizardState, FlightSeries, TicketType, TripType, StockStatus, PnrOperationalStatus, PnrConfirmationStatus } from '@/types'
-import type { TtlType } from '@/lib/ttl-utils'
+import { calcTtlDateFromTravel, condTtlTypeToTtlType, type TtlType } from '@/lib/ttl-utils'
 import {
   type AppStockCondition, type AppCondition, type CondCalcType, type CondDueType, type CondTtlCalcType, type CondRefundableType,
   calcCondTtlDate,
@@ -875,6 +875,11 @@ export function demoStockToWizardState(stock: DemoStock): WizardState {
       confirmation_status: p.confirmationStatus,
       remark: p.remark,
       schedule_id: p.scheduleId,
+      ttl_type: p.ttlType ?? (p.ttlDate ? 'FIXED_DATE' : 'NONE'),
+      ttl_days_before: p.ttlDaysBefore ?? null,
+      ttl_date: p.ttlDate || '',
+      ttl_time: p.ttlTime || '',
+      ttl_status: p.ttlDate ? 'SET' as const : 'UNSET' as const,
       sector_dates: (p.sectorDates ?? []).map(sd => ({
         sector_type: sd.sectorType,
         day_offset: stock.sectors.find(s => s.sectorType === sd.sectorType)?.dayOffset ?? 1,
@@ -960,26 +965,52 @@ export function wizardStateToDemoStock(state: WizardState): DemoStock {
     const pnrType: 'real' | 'dummy' = isReal ? 'real' : 'dummy'
     const pnrDisplay = isReal ? p.pnr_code! : (p.dummy_pnr || '')
 
-    // Find linked condition to compute TTL
-    let ttlDateTime: string | null = null
+    // Find linked condition
     const linkedSC = conditionById[p.condition_id ?? '']
-    if (linkedSC && p.travel_start) {
-      ttlDateTime = calcCondTtlDate(linkedSC.condition.ttlRule, p.travel_start)
-    }
 
-    // Extract ttlDate and ttlTime for display
+    // Per-PNR TTL override takes priority; fall back to condition-derived TTL
     let ttlDate: string | null = null
     let ttlTimeStr: string | null = null
-    if (ttlDateTime) {
-      try {
-        const d = parseISO(ttlDateTime)
-        if (isValid(d)) {
-          ttlDate = format(d, 'yyyy-MM-dd')
-          ttlTimeStr = format(d, 'HH:mm')
+    let ttlDateTime: string | null = null
+    let ttlType: TtlType | null = null
+    let ttlDaysBefore: number | null = null
+
+    if (p.ttl_type && p.ttl_type !== 'NONE') {
+      // User set explicit per-PNR TTL in the wizard
+      ttlType = p.ttl_type
+      if (p.ttl_type === 'DAYS_BEFORE') {
+        const days = p.ttl_days_before ?? null
+        ttlDaysBefore = days
+        if (days != null && days >= 0 && p.travel_start) {
+          ttlDate = calcTtlDateFromTravel(p.travel_start, days)
+          ttlTimeStr = p.ttl_time || null
         }
-      } catch {
-        // keep null
+      } else if (p.ttl_type === 'FIXED_DATE') {
+        ttlDate = p.ttl_date || null
+        ttlTimeStr = p.ttl_time || null
       }
+    } else if (linkedSC && p.travel_start) {
+      // Fall back to condition-derived TTL
+      const condTtlDt = calcCondTtlDate(linkedSC.condition.ttlRule, p.travel_start)
+      if (condTtlDt) {
+        try {
+          const d = parseISO(condTtlDt)
+          if (isValid(d)) {
+            ttlDate = format(d, 'yyyy-MM-dd')
+            ttlTimeStr = format(d, 'HH:mm')
+            ttlType = condTtlTypeToTtlType(linkedSC.condition.ttlRule.calcType)
+            ttlDaysBefore = linkedSC.condition.ttlRule.calcType === 'TRAVEL_MINUS_DAYS'
+              ? (linkedSC.condition.ttlRule.daysBefore ?? null)
+              : null
+          }
+        } catch {
+          // keep null
+        }
+      }
+    }
+
+    if (ttlDate) {
+      ttlDateTime = ttlTimeStr ? `${ttlDate}T${ttlTimeStr}:00` : `${ttlDate}T00:00:00`
     }
 
     // taxStatus
@@ -1016,6 +1047,8 @@ export function wizardStateToDemoStock(state: WizardState): DemoStock {
       taxStatus,
       total: p.total_amount,
       conditionCode: linkedSC?.condition.conditionCode ?? '',
+      ttlType,
+      ttlDaysBefore,
       ttlDate,
       ttlTime: ttlTimeStr,
       ttlDateTime,

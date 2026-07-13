@@ -29,7 +29,7 @@ interface WizardLayoutProps {
   cancelHref?: string
   onBack: () => void
   onNext: () => void
-  onSaveDraft: () => void
+  onSaveDraft?: () => void
   onConfirm: () => void
   /** If provided, the status badge in the header becomes a clickable button */
   onManageStatus?: () => void
@@ -109,15 +109,17 @@ export default function WizardLayout({
           <p className="text-sm text-slate-500 ml-5">{subtitle}</p>
         </div>
         <div className="flex gap-2 shrink-0">
-          <Button
-            variant="outline"
-            size="sm"
-            icon={<Save size={14} />}
-            loading={saving}
-            onClick={onSaveDraft}
-          >
-            {saveDraftLabel}
-          </Button>
+          {onSaveDraft && (
+            <Button
+              variant="outline"
+              size="sm"
+              icon={<Save size={14} />}
+              loading={saving}
+              onClick={onSaveDraft}
+            >
+              {saveDraftLabel}
+            </Button>
+          )}
           <Button variant="ghost" size="sm" icon={<X size={14} />} onClick={() => router.push(cancelHref)}>Cancel</Button>
         </div>
       </div>

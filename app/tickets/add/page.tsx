@@ -390,41 +390,6 @@ function AddStockPageInner() {
     setPnrImpact(null)
   }
 
-  const saveDraft = () => {
-    // Block if any sector has matching From/To airports
-    for (const sch of state.schedules) {
-      for (let i = 0; i < sch.sectors.length; i++) {
-        const sec = sch.sectors[i]
-        if (sameAirport(sec.dep_airport_code, sec.arr_airport_code)) {
-          setErrors({ _: `ชุดเที่ยวบิน "${sch.scheduleName}" Sector ${i + 1}: สนามบินต้นทางและปลายทางต้องไม่เป็นสนามบินเดียวกัน กรุณาแก้ไขก่อนบันทึก` })
-          return
-        }
-      }
-    }
-    // Reset any invalid sector times to 00:00 before saving
-    let hadInvalidTimes = false
-    const fixedSchedules = state.schedules.map(sch => ({
-      ...sch,
-      sectors: sch.sectors.map(s => {
-        const depOk = !s.dep_time || isValidHHmm(s.dep_time)
-        const arrOk = !s.arr_time || isValidHHmm(s.arr_time)
-        if (depOk && arrOk) return s
-        hadInvalidTimes = true
-        return { ...s, dep_time: depOk ? s.dep_time : '00:00', arr_time: arrOk ? s.arr_time : '00:00' }
-      }),
-    }))
-    if (hadInvalidTimes) {
-      setState(prev => ({ ...prev, schedules: fixedSchedules }))
-      setErrors({ _: 'ระบบปรับเวลาที่ไม่ถูกต้องเป็น 00:00 กรุณาตรวจสอบก่อนบันทึก Draft' })
-      return
-    }
-    setSaving(true)
-    setTimeout(() => {
-      setSaving(false)
-      alert('บันทึก Draft แล้ว (ระบบยังต้องเชื่อมต่อ Supabase)')
-    }, 800)
-  }
-
   const confirmSave = () => {
     const pnrsToCheck = state.pnrs.map(p => ({ pnr_code: p.pnr_code, dummy_pnr: p.dummy_pnr }))
     const dupCheck = checkPNRDuplicatesInSystem(pnrsToCheck)
@@ -471,7 +436,6 @@ function AddStockPageInner() {
         nextDisabled={nextDisabled}
         onBack={goBack}
         onNext={goNext}
-        onSaveDraft={saveDraft}
         onConfirm={confirmSave}
       >
         {saveMsg && (
