@@ -328,17 +328,29 @@ function CfSectorTable({ sectors, errors, defaultAirlineCode, onChange }: CfSect
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function PNRCell({ code, dummy, type }: { code: string | null; dummy: string | null; type: string }) {
+function PNRCell({ code, dummy, type, flightSetName }: { code: string | null; dummy: string | null; type: string; flightSetName?: string }) {
   const display = code || dummy
   return (
-    <div className="flex flex-col gap-0.5">
-      <span className="font-mono text-xs font-bold">
+    <div className="flex flex-col items-start" style={{ gap: 3, minWidth: 0 }}>
+      {/* บรรทัด 1: PNR Code */}
+      <span className="font-mono text-xs font-bold whitespace-nowrap" style={{ wordBreak: 'normal', overflowWrap: 'normal' }}>
         {display || <span className="text-slate-300 italic font-normal text-[10px]">ไม่ระบุ</span>}
       </span>
+      {/* บรรทัด 2: Flight Set */}
+      {flightSetName && (
+        <span
+          className="text-[10px] text-slate-400 font-medium"
+          style={{ maxWidth: 260, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}
+          title={flightSetName}
+        >
+          {flightSetName}
+        </span>
+      )}
+      {/* บรรทัด 3: Badge ประเภทรหัส */}
       {code ? (
-        <span className="inline-flex w-fit px-1.5 py-px rounded text-[9px] font-medium bg-blue-50 text-blue-600 border border-blue-200">PNR จริง</span>
+        <span className="inline-flex w-fit px-1.5 py-px rounded text-[9px] font-medium bg-blue-50 text-blue-600 border border-blue-200 whitespace-nowrap">มี PNR แล้ว</span>
       ) : dummy ? (
-        <span className="inline-flex w-fit px-1.5 py-px rounded text-[9px] font-medium bg-amber-50 text-amber-600 border border-amber-200">Dummy</span>
+        <span className="inline-flex w-fit px-1.5 py-px rounded text-[9px] font-medium bg-amber-50 text-amber-600 border border-amber-200 whitespace-nowrap">Dummy</span>
       ) : null}
     </div>
   )
@@ -1228,8 +1240,7 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                   />
                 </Th>
               )}
-              <Th>PNR</Th>
-              <Th>Flight Set</Th>
+              <Th className="min-w-[260px]">PNR</Th>
               <Th className="text-center w-[60px]">Day</Th>
               <Th>Dep Date</Th>
               <Th>Arr Date</Th>
@@ -1250,7 +1261,7 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
           </TableHead>
           <TableBody>
             {pnrRows.length === 0 ? (
-              <EmptyRow cols={canEdit ? 19 : 17} message="ยังไม่มีข้อมูล PNR" />
+              <EmptyRow cols={canEdit ? 18 : 16} message="ยังไม่มีข้อมูล PNR" />
             ) : (
               pnrRows.map(p => {
                 const demoPnr = liveStock?.pnrs.find(dp => dp.pnrId === p.id)
@@ -1270,12 +1281,7 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                         />
                       </Td>
                     )}
-                    <Td><PNRCell code={p.pnr_code} dummy={p.dummy_pnr} type={p.pnr_type} /></Td>
-                    <Td className="text-xs">
-                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[11px] font-medium whitespace-nowrap">
-                        {p.flight_set_name}
-                      </span>
-                    </Td>
+                    <Td><PNRCell code={p.pnr_code} dummy={p.dummy_pnr} type={p.pnr_type} flightSetName={p.flight_set_name} /></Td>
                     <Td className="text-center text-xs font-semibold tracking-wide text-slate-600">{dayAbbr(p.travel_start)}</Td>
                     <Td className="text-xs">{p.travel_start ? formatDate(p.travel_start) : '—'}</Td>
                     <Td className="text-xs">{p.travel_end ? formatDate(p.travel_end) : '—'}</Td>
