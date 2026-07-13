@@ -466,6 +466,13 @@ const iCls = [
   'disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500',
 ].join(' ')
 
+// Compact inline input for TTL inline-sentence layout
+const ttlInlineCls = [
+  'h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm text-slate-900',
+  'outline-none transition placeholder:text-slate-400',
+  'hover:border-slate-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15',
+].join(' ')
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function BulkPnrBuilder({
@@ -547,6 +554,31 @@ export function BulkPnrBuilder({
   }, [method, wdCfg])
 
   const hasSummaryData = shared.seatTotal > 0 || computedTotal > 0
+
+  // First travel date — used for TTL preview text
+  const firstTravelDate = useMemo(() => {
+    if (method === 'count' && countCfg.startDate) return countCfg.startDate
+    if (method === 'weekday' && wdCfg.startDate && wdCfg.endDate && wdCfg.weekdays.size) {
+      try {
+        const all = eachDayOfInterval({ start: parseISO(wdCfg.startDate), end: parseISO(wdCfg.endDate) })
+        const first = all.find(d => wdCfg.weekdays.has(getDay(d)))
+        return first ? fnsFormat(first, 'yyyy-MM-dd') : ''
+      } catch { return '' }
+    }
+    if (method === 'calendar' && calItems.length) {
+      return [...calItems].sort((a, b) => a.date.localeCompare(b.date))[0].date
+    }
+    return ''
+  }, [method, countCfg.startDate, wdCfg, calItems])
+
+  const previewTtlDate = useMemo(() => {
+    if (shared.ttlType === 'DAYS_BEFORE' && firstTravelDate && shared.ttlDaysBefore !== '') {
+      const d = parseInt(shared.ttlDaysBefore, 10)
+      if (!isNaN(d) && d >= 0) return calcTtlDateFromTravel(firstTravelDate, d)
+    }
+    if (shared.ttlType === 'FIXED_DATE' && shared.ttlDate) return shared.ttlDate
+    return null
+  }, [shared.ttlType, shared.ttlDaysBefore, shared.ttlDate, firstTravelDate])
 
   const hasDateInput =
     method === 'count'   ? !!countCfg.startDate :
@@ -1211,8 +1243,10 @@ export function BulkPnrBuilder({
                     </FL>
 
                     {/* Row 5: TTL — full width */}
-                    <div className="col-span-2 rounded-xl border border-amber-200 bg-amber-50/40 p-3 space-y-2.5">
-                      <FL label="กำหนดส่ง NAME (TTL)">
+                    <div className="col-span-2 rounded-xl border border-slate-200 bg-white p-3.5 space-y-3">
+                      {/* Type selector */}
+                      <div>
+                        <label className="mb-1.5 block text-xs font-medium text-slate-700">กำหนดส่ง NAME (TTL)</label>
                         <select
                           value={shared.ttlType}
                           onChange={e => {
@@ -1224,42 +1258,73 @@ export function BulkPnrBuilder({
                               ttlTime: t === 'NONE' ? '' : s.ttlTime,
                             }))
                           }}
-                          className="rounded-lg border border-amber-300 bg-white px-2 py-1.5 text-xs outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/15 w-full">
+                          className={iCls}>
                           <option value="NONE">ไม่ระบุ</option>
                           <option value="DAYS_BEFORE">ก่อนวันเดินทาง</option>
                           <option value="FIXED_DATE">วันที่กำหนดเอง</option>
                         </select>
-                      </FL>
+                      </div>
+
+                      {/* NONE helper */}
+                      {shared.ttlType === 'NONE' && (
+                        <p className="text-xs text-slate-400">PNR รายการนี้จะไม่มีการกำหนดวันส่ง NAME</p>
+                      )}
+
+                      {/* DAYS_BEFORE — inline sentence */}
                       {shared.ttlType === 'DAYS_BEFORE' && (
-                        <div className="grid grid-cols-2 gap-2">
-                          <div className="flex flex-col gap-0.5">
-                            <label className="text-[11px] font-medium text-slate-600">จำนวนวันก่อนเดินทาง <span className="text-red-400">*</span></label>
-                            <input type="number" min={0} placeholder="เช่น 30" value={shared.ttlDaysBefore}
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
+                            <span className="text-xs text-slate-600 whitespace-nowrap">กำหนดส่งก่อนวันเดินทาง</span>
+                            <input
+                              type="number" min={0} placeholder="30"
+                              value={shared.ttlDaysBefore}
                               onChange={e => setShared(s => ({ ...s, ttlDaysBefore: e.target.value, ttlUserModified: true }))}
-                              className="rounded-lg border border-amber-300 bg-white px-2 py-1.5 text-xs outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/15 text-center" />
-                          </div>
-                          <div className="flex flex-col gap-0.5">
-                            <label className="text-[11px] font-medium text-slate-600">เวลา TTL</label>
-                            <TimeInput value={shared.ttlTime}
+                              aria-label="จำนวนวันก่อนเดินทาง"
+                              className={cn(ttlInlineCls, 'w-[96px] text-center')} />
+                            <span className="text-xs text-slate-600">วัน</span>
+                            <span className="text-xs text-slate-400 whitespace-nowrap">เวลา (ไม่บังคับ)</span>
+                            <TimeInput
+                              value={shared.ttlTime}
                               onChange={v => setShared(s => ({ ...s, ttlTime: v, ttlUserModified: true }))}
-                              className="rounded-lg border border-amber-300 bg-white px-2 py-1.5 text-xs outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/15" />
+                              placeholder="HH:mm"
+                              className={cn(ttlInlineCls, 'w-[130px]')} />
                           </div>
+                          {previewTtlDate && (
+                            <p className="text-xs text-slate-500">
+                              {pnrCount > 1
+                                ? <>ระบบจะคำนวณ TTL แยกตามวันเดินทางของแต่ละ PNR · เช่น PNR แรก: <strong className="text-slate-700">{formatDate(previewTtlDate)}{shared.ttlTime ? ` เวลา ${shared.ttlTime}` : ''}</strong></>
+                                : <>กำหนดส่ง NAME วันที่ <strong className="text-slate-700">{formatDate(previewTtlDate)}{shared.ttlTime ? ` เวลา ${shared.ttlTime}` : ''}</strong></>
+                              }
+                            </p>
+                          )}
                         </div>
                       )}
+
+                      {/* FIXED_DATE — inline date + time */}
                       {shared.ttlType === 'FIXED_DATE' && (
-                        <div className="grid grid-cols-2 gap-2">
-                          <div className="flex flex-col gap-0.5">
-                            <label className="text-[11px] font-medium text-slate-600">วันที่กำหนดส่ง NAME <span className="text-red-400">*</span></label>
-                            <input type="date" value={shared.ttlDate}
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                            <span className="text-xs text-slate-600 whitespace-nowrap shrink-0">
+                              วันที่กำหนดส่ง NAME <span className="text-red-400">*</span>
+                            </span>
+                            <input
+                              type="date"
+                              value={shared.ttlDate}
                               onChange={e => setShared(s => ({ ...s, ttlDate: e.target.value, ttlUserModified: true }))}
-                              className="rounded-lg border border-amber-300 bg-white px-2 py-1.5 text-xs outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/15" />
-                          </div>
-                          <div className="flex flex-col gap-0.5">
-                            <label className="text-[11px] font-medium text-slate-600">เวลา TTL</label>
-                            <TimeInput value={shared.ttlTime}
+                              aria-label="วันที่กำหนดส่ง NAME"
+                              className={cn(ttlInlineCls, 'w-[180px]')} />
+                            <span className="text-xs text-slate-400">เวลา (ไม่บังคับ)</span>
+                            <TimeInput
+                              value={shared.ttlTime}
                               onChange={v => setShared(s => ({ ...s, ttlTime: v, ttlUserModified: true }))}
-                              className="rounded-lg border border-amber-300 bg-white px-2 py-1.5 text-xs outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/15" />
+                              placeholder="HH:mm"
+                              className={cn(ttlInlineCls, 'w-[130px]')} />
                           </div>
+                          {previewTtlDate && (
+                            <p className="text-xs text-slate-500">
+                              กำหนดส่ง NAME วันที่ <strong className="text-slate-700">{formatDate(previewTtlDate)}{shared.ttlTime ? ` เวลา ${shared.ttlTime}` : ''}</strong>
+                            </p>
+                          )}
                         </div>
                       )}
                     </div>
