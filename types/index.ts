@@ -8,6 +8,8 @@ export type GroupType  = 'SERIES' | 'ADHOC'
 export type TripType = 'One-way' | 'Round-trip' | 'Multi-city'
 export type StockStatus = 'Draft' | 'Active' | 'Closed' | 'Cancelled' | 'Reopened'
 export type PNRStatus = 'Pending' | 'Confirmed'
+export type PnrOperationalStatus = 'PENDING' | 'ACTIVE' | 'CLOSED' | 'CANCELLED'
+export type PnrConfirmationStatus = 'PENDING_CONFIRMATION' | 'CONFIRMED'
 export type SectorType = 'Departure' | 'Transit' | 'Arrival'
 export type RelativeDayType = 'Travel Start' | 'Return Date' | 'Custom Day'
 export type PaymentType =
@@ -234,6 +236,8 @@ export interface FlightPNRFormData {
   breakdown?: boolean
   condition_id: string
   status: PNRStatus
+  pnr_status?: PnrOperationalStatus
+  confirmation_status?: PnrConfirmationStatus
   remark: string
   schedule_id?: string
   /** วันที่ของแต่ละ Sector คำนวณจาก travel_start + day_offset — ส่งต่อไป Step 5 */
@@ -243,6 +247,9 @@ export interface FlightPNRFormData {
   ttl_date?: string | null
   ttl_time?: string | null
   ttl_remark?: string
+  /** รูปแบบ TTL: ไม่ระบุ / ก่อนวันเดินทาง N วัน / วันที่กำหนดเอง */
+  ttl_type?: 'NONE' | 'DAYS_BEFORE' | 'FIXED_DATE'
+  ttl_days_before?: number | null
   /** 'SYNCED' = วันที่ตรงกับ Flight Set ล่าสุด, 'OUTDATED' = Flight Set เปลี่ยนแล้วแต่ยังไม่อัปเดตวันที่ */
   date_sync_status?: 'SYNCED' | 'OUTDATED'
   /** true = ผู้ใช้แก้ไข Arr Date เองโดยไม่ใช้ค่าคำนวณจาก Flight Set */

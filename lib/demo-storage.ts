@@ -1,6 +1,6 @@
 import { format, parseISO, isValid } from 'date-fns'
 import { buildRouteText, formatDate } from '@/lib/utils'
-import type { WizardState, FlightSeries, TicketType, TripType, StockStatus } from '@/types'
+import type { WizardState, FlightSeries, TicketType, TripType, StockStatus, PnrOperationalStatus, PnrConfirmationStatus } from '@/types'
 import {
   type AppStockCondition, type AppCondition, type CondCalcType, type CondDueType, type CondTtlCalcType, type CondRefundableType,
   calcCondTtlDate,
@@ -341,6 +341,15 @@ export interface DemoPNR {
   ttlTime: string | null
   ttlDateTime: string | null
   status: string
+  pnrStatus?: PnrOperationalStatus
+  confirmationStatus?: PnrConfirmationStatus
+  activatedAt?: string | null
+  activatedBy?: string | null
+  closedAt?: string | null
+  closedBy?: string | null
+  cancelledAt?: string | null
+  cancelledBy?: string | null
+  cancellationReason?: string | null
   remark: string
   initialSeatCount?: number                         // seat count at PNR creation (INITIAL_SEAT basis)
   stageSnapshots?: Record<string, PNRStageSnapshot> // keyed by stageId
@@ -396,6 +405,10 @@ export interface DemoStock {
   reopenAllowedSections?: string[]
   reopenEvents?: DemoReopenEvent[]
   defaultConditionCode?: string
+  // Cancelled state
+  cancelledAt?: string
+  cancelledBy?: string
+  cancellationReason?: string
 }
 
 // ============================================================
@@ -757,6 +770,19 @@ export function calculateStockSummary(pnrs: DemoPNR[]): DemoSummary {
 }
 
 // ============================================================
+// PNR Status helpers — backward-compat accessors
+// ============================================================
+
+export function getPnrOperationalStatus(pnr: DemoPNR): PnrOperationalStatus {
+  return pnr.pnrStatus ?? 'PENDING'
+}
+
+export function getPnrConfirmationStatus(pnr: DemoPNR): PnrConfirmationStatus {
+  if (pnr.confirmationStatus) return pnr.confirmationStatus
+  return pnr.status === 'Confirmed' ? 'CONFIRMED' : 'PENDING_CONFIRMATION'
+}
+
+// ============================================================
 // DemoStock → WizardState conversion  (for Edit page)
 // ============================================================
 
@@ -765,6 +791,7 @@ export function demoStockToWizardState(stock: DemoStock): WizardState {
     step: 1,
     stockInfo: {
       ticket_type: stock.ticketType,
+      group_type: stock.groupType as import('@/types').GroupType | undefined,
       trip_type: stock.tripType,
       stock_code: stock.stockCode,
       group_name: stock.groupName,
@@ -833,11 +860,16 @@ export function demoStockToWizardState(stock: DemoStock): WizardState {
       travel_end: p.travelEnd,
       seat_total: p.seatTotal,
       fare: p.fare,
+      price_format: p.priceFormat,
+      yq: p.yq ?? null,
+      breakdown: p.breakdown,
       tax_type: p.taxType as WizardState['pnrs'][0]['tax_type'],
       tax: p.tax,
       total_amount: p.total,
       condition_id: p.conditionCode,
       status: p.status as WizardState['pnrs'][0]['status'],
+      pnr_status: p.pnrStatus,
+      confirmation_status: p.confirmationStatus,
       remark: p.remark,
       schedule_id: p.scheduleId,
       sector_dates: (p.sectorDates ?? []).map(sd => ({
@@ -985,6 +1017,12 @@ export function wizardStateToDemoStock(state: WizardState): DemoStock {
       ttlTime: ttlTimeStr,
       ttlDateTime,
       status: p.status ?? 'Pending',
+      pnrStatus: p.pnr_status ?? 'PENDING',
+      confirmationStatus: p.confirmation_status ?? (p.status === 'Confirmed' ? 'CONFIRMED' : 'PENDING_CONFIRMATION'),
+      activatedAt: null, activatedBy: null,
+      closedAt: null, closedBy: null,
+      cancelledAt: null, cancelledBy: null,
+      cancellationReason: null,
       remark: p.remark ?? '',
       initialSeatCount: p.seat_total,
       stageSnapshots: {},

@@ -15,6 +15,15 @@ import Step3Conditions from '@/components/wizard/Step3Conditions'
 import Step4PNR from '@/components/wizard/Step4PNR'
 import Step5Review from '@/components/wizard/Step5Review'
 import {
+  UnsavedWarningModal,
+  StockStatusManagementModal,
+  DraftToActiveModal,
+  ActiveToClosedModal,
+  ClosedToActiveModal,
+  CancelStockModal,
+} from '@/components/wizard/StockStatusModals'
+import type { DraftToActiveResult, ClosedToActiveResult } from '@/components/wizard/StockStatusModals'
+import {
   validateSectors, generateDummyPnrs, formatDate,
   calcTravelEndFromSectors, calcSectorDate,
 } from '@/lib/utils'
@@ -24,10 +33,13 @@ import {
   demoStockToWizardState, wizardStateToDemoStock,
   saveDemoStock, calculateStockSummary,
   checkPNRDuplicatesInSystem, formatPNRConflictMessage,
+  getPnrOperationalStatus,
 } from '@/lib/demo-storage'
 import type { WizardState, FlightSeriesFormData, FlightSectorFormData, FlightScheduleFormData, TripType, TicketType } from '@/types'
 import type { DemoStock, DemoLog } from '@/lib/demo-storage'
 import { getStockTypeConfig } from '@/lib/stock-type-config'
+
+const CURRENT_DEMO_USER = { userId: 'u-admin', name: 'Admin User', role: 'Admin' }
 
 // ─── Change tracking ──────────────────────────────────────────────────────────
 
@@ -48,7 +60,6 @@ function computeChanges(original: DemoStock, state: WizardState): ChangeItem[] {
     ['Series Name',  original.groupName,   stockInfo.group_name],
     ['Airline',      original.airlineCode, stockInfo.airline_code],
     ['Currency',     original.currency,    stockInfo.currency],
-    ['Status',       original.status,      stockInfo.status],
     ['Destination',  original.destination, stockInfo.destination],
     ['Remark',       original.remark,      stockInfo.remark],
   ]
@@ -112,8 +123,6 @@ function computeChanges(original: DemoStock, state: WizardState): ChangeItem[] {
       changes.push({ category: 'PNR', field: `${label} Fare`, oldValue: String(op.fare), newValue: String(np.fare) })
     if (op.tax !== np.tax)
       changes.push({ category: 'PNR', field: `${label} Tax`, oldValue: op.tax != null ? String(op.tax) : '—', newValue: np.tax != null ? String(np.tax) : '—' })
-    if (op.status !== np.status)
-      changes.push({ category: 'PNR', field: `${label} Status`, oldValue: op.status, newValue: np.status })
   })
 
   return changes
@@ -198,10 +207,6 @@ function sectorsChanged(stock: DemoStock, newSchedules: FlightScheduleFormData[]
 }
 
 // ─── Pre-review normalization ─────────────────────────────────────────────────
-//
-// Called when the user advances from Step 4 → Step 5.
-// Recomputes every derived PNR field from the CURRENT sectors and fare values,
-// so Step 5 always reflects the latest edits regardless of which step was edited last.
 
 function normalizeForReview(state: WizardState, excludeStockCode?: string): WizardState {
   const { schedules, stockInfo, pnrs } = state
@@ -251,6 +256,36 @@ const STEP_SUBTITLES: Record<number, string> = {
   5: 'Review Changes & บันทึก',
 }
 
+// ─── PNR metadata merge helper ────────────────────────────────────────────────
+
+function mergePnrMetadata(original: DemoStock, freshPnrs: DemoStock['pnrs']): DemoStock['pnrs'] {
+  return freshPnrs.map((np, i) => {
+    const orig = original.pnrs.find(
+      op =>
+        (op.pnrCode && op.pnrCode === np.pnrCode) ||
+        (op.dummyPnr && op.dummyPnr === np.dummyPnr),
+    ) ?? (i < original.pnrs.length ? original.pnrs[i] : null)
+
+    if (!orig) return np
+    return {
+      ...np,
+      pnrId: orig.pnrId,
+      seatUsed: orig.seatUsed,
+      seatBalance: Math.max(0, np.seatTotal - orig.seatUsed),
+      pnrStatus: orig.pnrStatus ?? 'PENDING',
+      confirmationStatus: orig.confirmationStatus ?? 'PENDING_CONFIRMATION',
+      activatedAt: orig.activatedAt ?? null,
+      activatedBy: orig.activatedBy ?? null,
+      closedAt: orig.closedAt ?? null,
+      closedBy: orig.closedBy ?? null,
+      cancelledAt: orig.cancelledAt ?? null,
+      cancelledBy: orig.cancelledBy ?? null,
+      cancellationReason: orig.cancellationReason ?? null,
+      stageSnapshots: orig.stageSnapshots ?? {},
+    }
+  })
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 function EditStockPageInner() {
@@ -265,6 +300,17 @@ function EditStockPageInner() {
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [saveMsg, setSaveMsg] = useState('')
   const [saveError, setSaveError] = useState('')
+
+  // Dirty detection
+  const [savedStateStr, setSavedStateStr] = useState('')
+
+  // Status management modal states
+  const [showUnsavedWarning, setShowUnsavedWarning]   = useState(false)
+  const [showStatusManage,   setShowStatusManage]     = useState(false)
+  const [showDraftToActive,  setShowDraftToActive]    = useState(false)
+  const [showActiveToClose,  setShowActiveToClose]    = useState(false)
+  const [showClosedToActive, setShowClosedToActive]   = useState(false)
+  const [showCancelStock,    setShowCancelStock]      = useState(false)
 
   const [state, setState] = useState<WizardState>({
     step: 1,
@@ -284,13 +330,18 @@ function EditStockPageInner() {
     setOriginalStock(stock)
     if (stock) {
       try {
-        setState(demoStockToWizardState(stock))
+        const ws = demoStockToWizardState(stock)
+        setState(ws)
+        setSavedStateStr(JSON.stringify(ws))
       } catch {
         // conversion error — leave blank state; user will see form with defaults
       }
     }
     setIsMounted(true)
   }, [id])
+
+  // Derived: dirty flag
+  const isDirty = savedStateStr !== '' && JSON.stringify(state) !== savedStateStr
 
   // Derived: locking rules based on seatUsed
   const seatUsedTotal = originalStock?.summary.seatUsed ?? 0
@@ -435,7 +486,209 @@ function EditStockPageInner() {
     setStep(s => Math.max(s - 1, 1))
   }
 
-  // ── Save ────────────────────────────────────────────────────────────────────
+  // ── Build updated stock from current form state ──────────────────────────────
+
+  const buildUpdatedStock = (overrides?: Partial<DemoStock>): DemoStock => {
+    const now = new Date().toISOString()
+    const freshStock = wizardStateToDemoStock(state)
+    const mergedPNRs = mergePnrMetadata(originalStock, freshStock.pnrs)
+
+    const changeLog =
+      changes.length > 0
+        ? changes.map(c => `${c.field}: "${c.oldValue}" → "${c.newValue}"`).join(' | ')
+        : 'แก้ไขข้อมูล Stock (ไม่มีการเปลี่ยนแปลงค่า)'
+
+    const newLog: DemoLog = {
+      logId: `LOG-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      action: 'Edit Stock',
+      message: changeLog,
+      createdAt: now,
+      createdBy: CURRENT_DEMO_USER.name,
+    }
+
+    return {
+      ...freshStock,
+      ...overrides,
+      stockId: originalStock.stockId,
+      stockCode: originalStock.stockCode,
+      status: originalStock.status,       // always preserve status from storage
+      closedAt: originalStock.closedAt,
+      closedBy: originalStock.closedBy,
+      cancelledAt: (originalStock as DemoStock & { cancelledAt?: string }).cancelledAt,
+      cancelledBy: (originalStock as DemoStock & { cancelledBy?: string }).cancelledBy,
+      cancellationReason: (originalStock as DemoStock & { cancellationReason?: string }).cancellationReason,
+      reopenedAt: (originalStock as DemoStock & { reopenedAt?: string }).reopenedAt,
+      reopenedBy: (originalStock as DemoStock & { reopenedBy?: string }).reopenedBy,
+      createdAt: originalStock.createdAt,
+      updatedAt: now,
+      pnrs: mergedPNRs,
+      summary: calculateStockSummary(mergedPNRs),
+      logs: [newLog, ...originalStock.logs],
+      transactions: originalStock.transactions ?? [],
+    }
+  }
+
+  // ── Quick save (header button — stays on page, updates originalStock) ────────
+
+  const doQuickSave = () => {
+    const pnrsToCheck = state.pnrs.map(p => ({ pnr_code: p.pnr_code, dummy_pnr: p.dummy_pnr }))
+    const dupCheck = checkPNRDuplicatesInSystem(pnrsToCheck, originalStock.stockId)
+    if (dupCheck.hasConflicts) {
+      setSaveError(formatPNRConflictMessage(dupCheck.conflicts))
+      setTimeout(() => setSaveError(''), 7000)
+      return
+    }
+    setSaving(true)
+    try {
+      const updated = buildUpdatedStock()
+      saveDemoStock(updated)
+      setOriginalStock(updated)
+      setSavedStateStr(JSON.stringify(state))
+      setSaving(false)
+      setSaveMsg('บันทึกการแก้ไขสำเร็จ')
+      setTimeout(() => setSaveMsg(''), 2500)
+    } catch {
+      setSaving(false)
+      setSaveError('เกิดข้อผิดพลาดในการบันทึก')
+    }
+  }
+
+  // ── Open status management (with dirty-check) ────────────────────────────────
+
+  const openStatusManage = () => {
+    if (isDirty) {
+      setShowUnsavedWarning(true)
+    } else {
+      setShowStatusManage(true)
+    }
+  }
+
+  // ── Status transition helpers ─────────────────────────────────────────────────
+
+  const commitStatusChange = (overrides: Partial<DemoStock>, logMessage: string) => {
+    const now = new Date().toISOString()
+    const log: DemoLog = {
+      logId: `LOG-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      action: overrides.status ?? 'Status Change',
+      message: logMessage,
+      createdAt: now,
+      createdBy: CURRENT_DEMO_USER.name,
+    }
+    const updated: DemoStock = {
+      ...originalStock,
+      ...overrides,
+      updatedAt: now,
+      logs: [log, ...originalStock.logs],
+    }
+    saveDemoStock(updated)
+    setOriginalStock(updated)
+    // Keep form state's status in sync
+    setState(prev => ({ ...prev, stockInfo: { ...prev.stockInfo, status: updated.status } }))
+  }
+
+  const handleDraftToActive = (result: DraftToActiveResult) => {
+    const now = new Date().toISOString()
+    const updatedPnrs = originalStock.pnrs.map(p => {
+      const opStatus = getPnrOperationalStatus(p)
+      let shouldActivate = false
+      if (result.scope === 'ALL_READY') {
+        shouldActivate = opStatus === 'PENDING' && !!p.travelStart && p.seatTotal > 0 && !!p.fare && !!p.conditionCode
+      } else if (result.scope === 'SELECTED') {
+        shouldActivate = result.selectedPnrIds.includes(p.pnrId) && opStatus === 'PENDING'
+      }
+      if (!shouldActivate) return p
+      return { ...p, pnrStatus: 'ACTIVE' as const, activatedAt: now, activatedBy: CURRENT_DEMO_USER.name }
+    })
+
+    const log: DemoLog = {
+      logId: `LOG-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      action: 'STOCK_ACTIVATED',
+      message: `เปิดใช้งาน Stock ${originalStock.stockCode} (scope: ${result.scope})`,
+      createdAt: now,
+      createdBy: CURRENT_DEMO_USER.name,
+    }
+    const updated: DemoStock = {
+      ...originalStock,
+      status: 'Active',
+      pnrs: updatedPnrs,
+      summary: calculateStockSummary(updatedPnrs),
+      updatedAt: now,
+      logs: [log, ...originalStock.logs],
+    }
+    saveDemoStock(updated)
+    setOriginalStock(updated)
+    setState(prev => ({ ...prev, stockInfo: { ...prev.stockInfo, status: 'Active' } }))
+    setShowDraftToActive(false)
+    setShowStatusManage(false)
+    setSaveMsg('เปิดใช้งาน Stock สำเร็จ')
+    setTimeout(() => setSaveMsg(''), 3000)
+  }
+
+  const handleActiveToClose = () => {
+    const now = new Date().toISOString()
+    commitStatusChange(
+      { status: 'Closed', closedAt: now, closedBy: CURRENT_DEMO_USER.name },
+      `ปิด Stock ${originalStock.stockCode}`,
+    )
+    setShowActiveToClose(false)
+    setShowStatusManage(false)
+    setSaveMsg('ปิด Stock สำเร็จ')
+    setTimeout(() => setSaveMsg(''), 3000)
+  }
+
+  const handleClosedToActive = (result: ClosedToActiveResult) => {
+    const now = new Date().toISOString()
+    const updatedPnrs = originalStock.pnrs.map(p => {
+      if (result.scope === 'SELECTED' && result.selectedPnrIds.includes(p.pnrId) && getPnrOperationalStatus(p) === 'PENDING') {
+        return { ...p, pnrStatus: 'ACTIVE' as const, activatedAt: now, activatedBy: CURRENT_DEMO_USER.name }
+      }
+      return p
+    })
+    const log: DemoLog = {
+      logId: `LOG-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      action: 'STOCK_REOPENED',
+      message: `เปิด Stock ${originalStock.stockCode} อีกครั้ง (scope: ${result.scope})`,
+      createdAt: now,
+      createdBy: CURRENT_DEMO_USER.name,
+    }
+    const updated: DemoStock = {
+      ...originalStock,
+      status: 'Active',
+      pnrs: updatedPnrs,
+      summary: calculateStockSummary(updatedPnrs),
+      updatedAt: now,
+      logs: [log, ...originalStock.logs],
+    }
+    saveDemoStock(updated)
+    setOriginalStock(updated)
+    setState(prev => ({ ...prev, stockInfo: { ...prev.stockInfo, status: 'Active' } }))
+    setShowClosedToActive(false)
+    setShowStatusManage(false)
+    setSaveMsg('เปิดใช้งาน Stock อีกครั้งสำเร็จ')
+    setTimeout(() => setSaveMsg(''), 3000)
+  }
+
+  const handleCancelStock = (reason: string) => {
+    const now = new Date().toISOString()
+    const extended = originalStock as DemoStock & { cancelledAt?: string; cancelledBy?: string; cancellationReason?: string }
+    commitStatusChange(
+      { status: 'Cancelled', ...{ cancelledAt: now, cancelledBy: CURRENT_DEMO_USER.name, cancellationReason: reason } } as Partial<DemoStock>,
+      `ยกเลิก Stock ${originalStock.stockCode}: ${reason}`,
+    )
+    // Keep extended fields on in-memory originalStock
+    setOriginalStock(prev => prev ? {
+      ...prev,
+      status: 'Cancelled',
+      ...(({ cancelledAt: now, cancelledBy: CURRENT_DEMO_USER.name, cancellationReason: reason }) as object),
+      updatedAt: now,
+    } as DemoStock : prev)
+    setShowCancelStock(false)
+    setShowStatusManage(false)
+    setSaveMsg('ยกเลิก Stock สำเร็จ')
+    setTimeout(() => setSaveMsg(''), 3000)
+  }
+
+  // ── Save (Confirm & Save — go to listing after) ──────────────────────────────
 
   const saveChangesHandler = () => {
     const pnrsToCheck = state.pnrs.map(p => ({ pnr_code: p.pnr_code, dummy_pnr: p.dummy_pnr }))
@@ -448,52 +701,7 @@ function EditStockPageInner() {
 
     setSaving(true)
     try {
-      const now = new Date().toISOString()
-      const freshStock = wizardStateToDemoStock(state)
-
-      // Preserve seatUsed per PNR by matching against originals
-      const mergedPNRs = freshStock.pnrs.map((np, i) => {
-        const origPNR = originalStock.pnrs.find(
-          op =>
-            (op.pnrCode && op.pnrCode === np.pnrCode) ||
-            (op.dummyPnr && op.dummyPnr === np.dummyPnr)
-        ) ?? (i < originalStock.pnrs.length ? originalStock.pnrs[i] : null)
-
-        if (origPNR) {
-          return {
-            ...np,
-            pnrId: origPNR.pnrId,
-            seatUsed: origPNR.seatUsed,
-            seatBalance: Math.max(0, np.seatTotal - origPNR.seatUsed),
-          }
-        }
-        return np
-      })
-
-      // Build activity log
-      const changeLog =
-        changes.length > 0
-          ? changes.map(c => `${c.field}: "${c.oldValue}" → "${c.newValue}"`).join(' | ')
-          : 'แก้ไขข้อมูล Stock (ไม่มีการเปลี่ยนแปลงค่า)'
-
-      const newLog: DemoLog = {
-        logId: `LOG-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        action: 'Edit Stock',
-        message: changeLog,
-        createdAt: now,
-        createdBy: 'System',
-      }
-
-      const updatedStock: DemoStock = {
-        ...freshStock,
-        stockId: originalStock.stockId,
-        createdAt: originalStock.createdAt,
-        updatedAt: now,
-        pnrs: mergedPNRs,
-        summary: calculateStockSummary(mergedPNRs),
-        logs: [newLog, ...originalStock.logs],
-      }
-
+      const updatedStock = buildUpdatedStock()
       saveDemoStock(updatedStock)
       setSaving(false)
       setSaveMsg('บันทึกการแก้ไขสำเร็จ')
@@ -512,6 +720,7 @@ function EditStockPageInner() {
     <AppLayout title={pageTitle}>
       <WizardLayout
         step={step}
+        totalSteps={5}
         pageTitle={pageTitle}
         subtitle={STEP_SUBTITLES[step]}
         stockStatus={state.stockInfo.status}
@@ -522,8 +731,9 @@ function EditStockPageInner() {
         cancelHref={`/tickets/${originalStock.stockId}`}
         onBack={goBack}
         onNext={goNext}
-        onSaveDraft={() => {}}
+        onSaveDraft={doQuickSave}
         onConfirm={saveChangesHandler}
+        onManageStatus={openStatusManage}
       >
         {/* Success toast */}
         {saveMsg && (
@@ -546,6 +756,10 @@ function EditStockPageInner() {
             data={state.stockInfo}
             onChange={updateStockInfo}
             errors={{}}
+            isTypeLocked
+            typeConfirmed
+            pnrStatusList={originalStock.pnrs}
+            onManageStatus={openStatusManage}
           />
         )}
 
@@ -628,6 +842,54 @@ function EditStockPageInner() {
           </div>
         )}
       </WizardLayout>
+
+      {/* ── Status Management Modals ── */}
+      <UnsavedWarningModal
+        open={showUnsavedWarning}
+        onBack={() => setShowUnsavedWarning(false)}
+        onSaveAndContinue={() => {
+          setShowUnsavedWarning(false)
+          doQuickSave()
+          setShowStatusManage(true)
+        }}
+        onDiscardAndContinue={() => {
+          setShowUnsavedWarning(false)
+          setShowStatusManage(true)
+        }}
+      />
+      <StockStatusManagementModal
+        open={showStatusManage}
+        onClose={() => setShowStatusManage(false)}
+        stock={originalStock}
+        onDraftToActive={() => { setShowStatusManage(false); setShowDraftToActive(true) }}
+        onActiveToClose={() => { setShowStatusManage(false); setShowActiveToClose(true) }}
+        onClosedToActive={() => { setShowStatusManage(false); setShowClosedToActive(true) }}
+        onAnyToCancel={() => { setShowStatusManage(false); setShowCancelStock(true) }}
+      />
+      <DraftToActiveModal
+        open={showDraftToActive}
+        onClose={() => setShowDraftToActive(false)}
+        stock={originalStock}
+        onConfirm={handleDraftToActive}
+      />
+      <ActiveToClosedModal
+        open={showActiveToClose}
+        onClose={() => setShowActiveToClose(false)}
+        stock={originalStock}
+        onConfirm={handleActiveToClose}
+      />
+      <ClosedToActiveModal
+        open={showClosedToActive}
+        onClose={() => setShowClosedToActive(false)}
+        stock={originalStock}
+        onConfirm={handleClosedToActive}
+      />
+      <CancelStockModal
+        open={showCancelStock}
+        onClose={() => setShowCancelStock(false)}
+        stock={originalStock}
+        onConfirm={handleCancelStock}
+      />
     </AppLayout>
   )
 }

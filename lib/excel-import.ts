@@ -1,6 +1,7 @@
 import * as XLSX from 'xlsx'
 import { format, parse, isValid } from 'date-fns'
 import { normalizeTime, isValidHHmm } from './time-utils'
+import { getActiveCurrencies } from './currency-storage'
 
 // ============================================================
 // Types
@@ -214,7 +215,7 @@ export async function parseExcelImport(file: File): Promise<ImportReviewData> {
         airlineCode: str(r['airlineCode']),
         countryId:   str(r['country']),
         destination: str(r['destination']),
-        currency:    str(r['currency']) || 'THB',
+        currency:    str(r['currency']).toUpperCase() || 'THB',
         status:      str(r['status']) || 'Draft',
         tripType:    str(r['tripType']),
         remark:      str(r['remark']),
@@ -371,7 +372,18 @@ export async function parseExcelImport(file: File): Promise<ImportReviewData> {
   if (!stockInfo.airlineCode) {
     issues.push({ level: 'error', sheet: 'STOCK_INFO', field: 'airlineCode', message: 'airlineCode ว่าง' })
   }
-  // currency always has a value (fallback = THB applied at parse step)
+  // Validate currency against Currency Master (fallback THB is always valid)
+  {
+    const validCodes = new Set(getActiveCurrencies().map(c => c.currencyCode))
+    if (!validCodes.has(stockInfo.currency)) {
+      issues.push({
+        level: 'error',
+        sheet: 'STOCK_INFO',
+        field: 'currency',
+        message: `currency "${stockInfo.currency}" ไม่พบใน Currency Master (ตัวอย่าง: THB, USD, JPY)`,
+      })
+    }
+  }
   if (!stockInfo.tripType) {
     issues.push({ level: 'error', sheet: 'STOCK_INFO', field: 'tripType', message: 'tripType ว่าง' })
   }

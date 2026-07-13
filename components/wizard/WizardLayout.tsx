@@ -31,6 +31,8 @@ interface WizardLayoutProps {
   onNext: () => void
   onSaveDraft: () => void
   onConfirm: () => void
+  /** If provided, the status badge in the header becomes a clickable button */
+  onManageStatus?: () => void
   children: React.ReactNode
 }
 
@@ -57,9 +59,13 @@ export default function WizardLayout({
   onNext,
   onSaveDraft,
   onConfirm,
+  onManageStatus,
   children,
 }: WizardLayoutProps) {
   const router = useRouter()
+
+  const saveDraftLabel = stockStatus && stockStatus !== 'Draft' ? 'บันทึกการแก้ไข' : 'Save Draft'
+
   return (
     <div className="max-w-[1400px] mx-auto w-full">
 
@@ -86,7 +92,18 @@ export default function WizardLayout({
               </>
             )}
             {stockStatus && (
-              <StockStatusBadge status={stockStatus} />
+              onManageStatus
+                ? (
+                  <button
+                    type="button"
+                    onClick={onManageStatus}
+                    className="hover:opacity-75 transition-opacity cursor-pointer"
+                    title="คลิกเพื่อจัดการสถานะ Stock"
+                  >
+                    <StockStatusBadge status={stockStatus} />
+                  </button>
+                )
+                : <StockStatusBadge status={stockStatus} />
             )}
           </div>
           <p className="text-sm text-slate-500 ml-5">{subtitle}</p>
@@ -99,7 +116,7 @@ export default function WizardLayout({
             loading={saving}
             onClick={onSaveDraft}
           >
-            Save Draft
+            {saveDraftLabel}
           </Button>
           <Button variant="ghost" size="sm" icon={<X size={14} />} onClick={() => router.push(cancelHref)}>Cancel</Button>
         </div>

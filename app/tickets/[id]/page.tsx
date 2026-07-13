@@ -15,7 +15,7 @@ import {
 } from 'lucide-react'
 import {
   getDemoStockById, getDemoStockByCode, exportStockJSON,
-  buildPaymentSchedule, saveDemoStock, getNextTTL,
+  buildPaymentSchedule, saveDemoStock, getNextTTL, getPnrOperationalStatus, getPnrConfirmationStatus,
 } from '@/lib/demo-storage'
 import type { DemoStock, DemoLog, PaymentScheduleItem } from '@/lib/demo-storage'
 import { PNRTab }        from '@/components/tickets/detail/PNRTab'
@@ -166,6 +166,9 @@ export default function TicketDetailPage() {
   const [showExtendScope, setShowExtendScope]   = useState(false)
   const [extendPreSections, setExtendPreSections] = useState<string[]>([])
 
+  // Activate Stock
+  const [showActivateModal, setShowActivateModal] = useState(false)
+
   // Toast
   const [toast, setToast]                     = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
 
@@ -257,10 +260,38 @@ if (stockForm.airline_code  !== liveStock.airlineCode)         changes.push(`Air
     showToast('บันทึกข้อมูล Stock สำเร็จ', 'success')
   }
 
+  // Activate stock (Draft → Active) — activates all PENDING PNRs
+  const handleActivateStock = () => {
+    if (!liveStock) return
+    const now = new Date().toISOString()
+    const activatedPnrs = liveStock.pnrs.map(p => {
+      const opStatus = getPnrOperationalStatus(p)
+      if (opStatus !== 'PENDING') return p
+      return { ...p, pnrStatus: 'ACTIVE' as const, activatedAt: now, activatedBy: CURRENT_DEMO_USER.name }
+    })
+    const log: DemoLog = {
+      logId: newId('LOG'),
+      action: 'Activate Stock',
+      message: `เปิดใช้งาน Stock ${liveStock.stockCode} — เปิดใช้งาน PNR ${activatedPnrs.filter(p => p.pnrStatus === 'ACTIVE').length} รายการ`,
+      createdAt: now, createdBy: CURRENT_DEMO_USER.name,
+    }
+    const updated: DemoStock = {
+      ...liveStock,
+      status: 'Active',
+      pnrs: activatedPnrs,
+      updatedAt: now,
+      logs: [log, ...liveStock.logs],
+    }
+    saveDemoStock(updated)
+    setLiveStock(updated)
+    setShowActivateModal(false)
+    showToast('เปิดใช้งาน Stock สำเร็จ', 'success')
+  }
+
   // Close stock
   const handleCloseStock = () => {
     if (!liveStock) return
-    const pendingPNRs = liveStock.pnrs.filter(p => p.status === 'Pending').length
+    const pendingPNRs = liveStock.pnrs.filter(p => getPnrConfirmationStatus(p) === 'PENDING_CONFIRMATION').length
     const seatBal = liveStock.summary.seatBalance
     const warnings = [
       pendingPNRs > 0 && `PNR Pending: ${pendingPNRs} รายการ`,
@@ -395,6 +426,7 @@ if (stockForm.airline_code  !== liveStock.airlineCode)         changes.push(`Air
   const stockPeriod = formatStockPeriod(depDates[0] ?? null, depDates[depDates.length - 1] ?? null)
 
   // ── Permission helpers ──
+  const isDraft     = !!liveStock && liveStock.status === 'Draft'
   const isClosed    = !!liveStock && liveStock.status === 'Closed'
   const isReopened  = !!liveStock && liveStock.status === 'Reopened'
   const isCancelled = !!liveStock && liveStock.status === 'Cancelled'
@@ -448,8 +480,17 @@ if (stockForm.airline_code  !== liveStock.airlineCode)         changes.push(`Air
             Export
           </Button>
 
-          {/* Close Stock — show for Active/Reopened only */}
-          {!isClosed && !isCancelled && !isReopened && (
+          {/* Activate Stock — show for Draft only */}
+          {isDraft && (
+            <Button size="sm" icon={<CheckCircle2 size={14} />}
+              onClick={() => setShowActivateModal(true)} disabled={!liveStock}
+              className="bg-[#05a94f] hover:bg-[#048f43] text-white">
+              เปิดใช้งาน Stock
+            </Button>
+          )}
+
+          {/* Close Stock — show for Active only */}
+          {!isClosed && !isCancelled && !isReopened && !isDraft && (
             <Button variant="outline" size="sm" icon={<Lock size={14} />}
               onClick={handleCloseStock} disabled={!liveStock}>
               Close Stock
@@ -871,6 +912,63 @@ if (stockForm.airline_code  !== liveStock.airlineCode)         changes.push(`Air
           onConfirm={handleCloseAgainConfirm}
         />
       )}
+
+      {/* ── Stock Activation Modal ── */}
+      {showActivateModal && liveStock && (() => {
+        const pendingCount = liveStock.pnrs.filter(p => getPnrOperationalStatus(p) === 'PENDING').length
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/50" onClick={() => setShowActivateModal(false)} />
+            <div className="relative z-10 w-[calc(100vw-32px)] max-w-[480px] rounded-2xl bg-white shadow-2xl overflow-hidden">
+              <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-100">
+                    <CheckCircle2 size={18} className="text-[#05a94f]" />
+                  </div>
+                  <h2 className="text-base font-semibold text-slate-900">เปิดใช้งาน Stock</h2>
+                </div>
+                <button type="button" onClick={() => setShowActivateModal(false)}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 transition">
+                  <X size={16} />
+                </button>
+              </div>
+              <div className="px-6 py-5 space-y-4">
+                <p className="text-sm text-slate-700">
+                  เปลี่ยนสถานะ Stock <strong>{liveStock.stockCode}</strong> จาก <strong>Draft</strong> เป็น <strong>Active</strong>
+                </p>
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 space-y-2 text-sm">
+                  <p className="font-semibold text-emerald-800 text-xs uppercase tracking-wide">สรุปการเปิดใช้งาน</p>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-600">PNR ที่จะเปิดใช้งาน</span>
+                    <span className="font-bold text-[#05a94f]">{pendingCount} รายการ</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-600">PNR ทั้งหมด</span>
+                    <span className="font-semibold">{liveStock.pnrs.length} รายการ</span>
+                  </div>
+                </div>
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700">
+                  <p className="font-medium mb-1">หลังเปิดใช้งาน</p>
+                  <ul className="list-disc list-inside space-y-0.5">
+                    <li>PNR ใหม่ที่เพิ่มในภายหลังจะเปิดใช้งานอัตโนมัติ</li>
+                    <li>สามารถปิดหรือยกเลิก PNR แต่ละรายการได้ในแท็บ PNR</li>
+                  </ul>
+                </div>
+              </div>
+              <div className="flex items-center justify-between gap-4 border-t border-slate-200 px-6 py-4">
+                <button type="button" onClick={() => setShowActivateModal(false)}
+                  className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors">
+                  ยกเลิก
+                </button>
+                <Button onClick={handleActivateStock} className="bg-[#05a94f] hover:bg-[#048f43] text-white">
+                  <CheckCircle2 size={14} />
+                  ยืนยันเปิดใช้งาน Stock
+                </Button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </AppLayout>
   )
 }

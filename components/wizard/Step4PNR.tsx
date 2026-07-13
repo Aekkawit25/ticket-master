@@ -3,6 +3,8 @@
 import { Fragment, useRef, useState, useMemo, useEffect } from 'react'
 import { PlusCircle, Trash2, Copy, Info, CalendarDays, FileUp, Download, AlertTriangle, RefreshCw, RotateCcw, Pencil } from 'lucide-react'
 import { cn, formatTravelDate, calcTravelEndFromSectors, calcSectorDate } from '@/lib/utils'
+import { hasTtl, formatTtlDisplay as formatTtlDisplayUtil } from '@/lib/ttl-utils'
+import { TtlEditor } from '@/components/shared/TtlEditor'
 import { BulkPnrBuilder } from '@/components/shared/BulkPnrBuilder'
 import type { BulkPnrRow, BulkPnrSector, BulkPnrCondition } from '@/components/shared/BulkPnrBuilder'
 import type { FlightPNRFormData, FlightSectorFormData, FlightScheduleFormData, PNRStatus, TaxType } from '@/types'
@@ -12,7 +14,8 @@ import ImportExcelModal from '@/components/wizard/ImportExcelModal'
 import type { PastedExcelRow } from '@/lib/paste-excel'
 import { downloadPnrTemplate } from '@/lib/excel-template'
 import { getDemoStocks } from '@/lib/demo-storage'
-import { getCurrencyOptions, type CurrencyData } from '@/lib/currency-storage'
+import { getCurrencyOptions } from '@/lib/currency-storage'
+import { CurrencyCombobox } from '@/components/shared/CurrencyCombobox'
 import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
 
@@ -38,12 +41,16 @@ function emptyPNR(defaultCurrency = 'THB'): FlightPNRFormData {
     currency: defaultCurrency,
     condition_id: '',
     status: 'Pending',
+    pnr_status: 'PENDING',
+    confirmation_status: 'PENDING_CONFIRMATION',
     remark: '',
     sector_dates: [],
     ttl_status: 'UNSET',
     ttl_date: null,
     ttl_time: null,
     ttl_remark: '',
+    ttl_type: 'NONE',
+    ttl_days_before: null,
   }
 }
 
@@ -249,109 +256,6 @@ interface Step4Props {
 // ─── Cell input style ─────────────────────────────────────────────────────────
 const xi = 'w-full px-2 py-[6px] text-xs bg-transparent outline-none focus:bg-blue-50 placeholder:text-slate-300'
 
-// ─── CurrencyCombobox ─────────────────────────────────────────────────────────
-function CurrencyCombobox({
-  value, stockDefault, options, onChange,
-}: {
-  value: string
-  stockDefault: string
-  options: CurrencyData[]
-  onChange: (code: string) => void
-}) {
-  const [open, setOpen] = useState(false)
-  const [query, setQuery] = useState('')
-  const [highlighted, setHighlighted] = useState(0)
-  const [dropPos, setDropPos] = useState<{ top: number; left: number; minWidth: number } | null>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
-  const itemRefs = useRef<(HTMLDivElement | null)[]>([])
-  const isDiff = value !== stockDefault
-
-  const filtered = useMemo(() => {
-    if (!query) return options
-    const q = query.toUpperCase()
-    const starts = options.filter(c => c.currencyCode.startsWith(q))
-    const rest = options.filter(c =>
-      !c.currencyCode.startsWith(q) && (c.currencyCode.includes(q) || c.currencyName.toUpperCase().includes(q) || (c.displayName?.toUpperCase().includes(q) ?? false))
-    )
-    return [...starts, ...rest]
-  }, [query, options])
-
-  useEffect(() => { itemRefs.current[highlighted]?.scrollIntoView({ block: 'nearest' }) }, [highlighted])
-
-  useEffect(() => {
-    if (!open) return
-    const close = () => { setOpen(false); setQuery('') }
-    window.addEventListener('scroll', close, true)
-    window.addEventListener('resize', close)
-    return () => { window.removeEventListener('scroll', close, true); window.removeEventListener('resize', close) }
-  }, [open])
-
-  const handleOpen = () => {
-    if (!containerRef.current) return
-    const rect = containerRef.current.getBoundingClientRect()
-    const vh = window.innerHeight
-    const maxDropH = 7 * 30 + 16
-    const top = vh - rect.bottom >= maxDropH + 4 ? rect.bottom + 2 : Math.max(4, rect.top - maxDropH - 2)
-    setDropPos({ top, left: rect.left, minWidth: Math.max(rect.width, 220) })
-    setQuery(''); setHighlighted(0); setOpen(true)
-  }
-
-  const commit = (code: string) => {
-    if (code !== value) onChange(code)
-    setOpen(false); setQuery('')
-  }
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Escape') { e.preventDefault(); setOpen(false); setQuery(''); return }
-    if (e.key === 'Enter') { e.preventDefault(); if (filtered.length > 0) commit(filtered[Math.min(highlighted, filtered.length - 1)].currencyCode); return }
-    if (e.key === 'ArrowDown') { e.preventDefault(); setHighlighted(h => Math.min(h + 1, filtered.length - 1)); return }
-    if (e.key === 'ArrowUp') { e.preventDefault(); setHighlighted(h => Math.max(h - 1, 0)); return }
-    if (e.key === 'Tab') {
-      if (filtered.length > 0) { e.preventDefault(); commit(filtered[Math.min(highlighted, filtered.length - 1)].currencyCode) }
-      else { setOpen(false); setQuery('') }
-    }
-  }
-
-  const currInfo = options.find(c => c.currencyCode === value)
-  const tooltipText = isDiff ? `${value}${currInfo ? ` — ${currInfo.currencyName}` : ''} (Stock default: ${stockDefault})` : currInfo?.currencyName
-
-  return (
-    <div ref={containerRef} className="relative" onClick={() => { if (!open) handleOpen() }}>
-      {open ? (
-        <input autoFocus value={query}
-          onChange={e => { setQuery(e.target.value.toUpperCase().replace(/[^A-Z]/g, '')); setHighlighted(0) }}
-          onKeyDown={handleKeyDown} onBlur={() => { setOpen(false); setQuery('') }}
-          placeholder={value} maxLength={10}
-          className="w-full px-1 py-[6px] text-center text-[11px] font-semibold bg-blue-50/80 outline-none placeholder:text-slate-400" />
-      ) : (
-        <span title={tooltipText} className={cn('block w-full px-1 py-[6px] text-center text-[11px] font-semibold cursor-pointer select-none hover:bg-slate-50 transition-colors', isDiff ? 'text-amber-700' : 'text-slate-700')}>
-          {value || '—'}
-        </span>
-      )}
-      {isDiff && !open && <span className="absolute top-1 right-0.5 w-1.5 h-1.5 rounded-full bg-amber-400 pointer-events-none" />}
-      {open && dropPos && (
-        <div style={{ position: 'fixed', top: dropPos.top, left: dropPos.left, minWidth: dropPos.minWidth, zIndex: 9999 }}
-          className="bg-white border border-slate-200 rounded-lg shadow-xl overflow-hidden" onMouseDown={e => e.preventDefault()}>
-          <div className="max-h-[210px] overflow-y-auto py-1">
-            {filtered.length === 0 ? (
-              <div className="px-3 py-2 text-xs text-slate-400 italic">ไม่พบสกุลเงินใน Currency Master</div>
-            ) : (
-              filtered.map((c, i) => (
-                <div key={c.currencyCode} ref={el => { itemRefs.current[i] = el }}
-                  onClick={() => commit(c.currencyCode)} onMouseEnter={() => setHighlighted(i)}
-                  className={cn('flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer select-none', i === highlighted ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-50')}>
-                  <span className="font-mono font-bold w-8 shrink-0 text-slate-800">{c.currencyCode}</span>
-                  <span className="truncate text-slate-500 text-[11px]">{c.currencyName}{c.displayName ? ` / ${c.displayName}` : ''}</span>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
 // ─── addDaysToDate ────────────────────────────────────────────────────────────
 function addDaysToDate(dateStr: string, days: number): string {
   if (!dateStr) return ''
@@ -372,68 +276,6 @@ function TravelDatesPopover({ pos, onClose }: { pos: { top: number; left: number
   )
 }
 
-// ─── TtlPopover ───────────────────────────────────────────────────────────────
-function TtlPopover({ pos, date, time, onSave, onClear, onClose }: {
-  pos: { top: number; left: number; width: number }
-  date: string | null; time: string | null
-  onSave: (date: string, time: string) => void
-  onClear: () => void; onClose: () => void
-}) {
-  const [editDate, setEditDate] = useState(date || '')
-  const [editTime, setEditTime] = useState(time || '')
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); onClose() } }
-    window.addEventListener('keydown', onKey, true)
-    return () => window.removeEventListener('keydown', onKey, true)
-  }, [onClose])
-
-  useEffect(() => {
-    const close = () => onClose()
-    window.addEventListener('scroll', close, true); window.addEventListener('resize', close)
-    return () => { window.removeEventListener('scroll', close, true); window.removeEventListener('resize', close) }
-  }, [onClose])
-
-  const canSave = !!editDate
-  const preview = editDate ? formatTtlDisplay(editDate, editTime || null) : null
-  const st = getTtlStatus(editDate || null, editTime || null)
-  const handleSave = () => { if (canSave) onSave(editDate, editTime) }
-
-  return (
-    <div style={{ position: 'fixed', top: pos.top, left: pos.left, width: pos.width, zIndex: 9999 }} className="bg-white border border-slate-200 rounded-xl shadow-2xl">
-      <div className="px-3 py-2 border-b border-slate-100 flex items-center justify-between">
-        <span className="text-xs font-semibold text-slate-700">แก้ไข TTL</span>
-        <button type="button" onClick={onClose} className="text-slate-300 hover:text-slate-500 transition-colors text-base leading-none">×</button>
-      </div>
-      <div className="px-3 pt-3 pb-2 space-y-2.5">
-        <div>
-          <label className="block text-[10px] font-medium text-slate-500 mb-1">วันที่ TTL</label>
-          <input type="date" value={editDate} onChange={e => setEditDate(e.target.value)} autoFocus onKeyDown={e => { if (e.key === 'Enter') handleSave() }}
-            className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-amber-300/40 focus:border-amber-400" />
-        </div>
-        <div>
-          <label className="block text-[10px] font-medium text-slate-500 mb-1">เวลา</label>
-          <TimeInput value={editTime} onChange={setEditTime} compact placeholder="HH:mm" className="border border-slate-200 rounded-lg bg-white w-full" />
-        </div>
-        {preview && (
-          <div className={cn('px-2 py-1.5 rounded-lg text-[10px] font-semibold text-center border',
-            st === 'past' ? 'bg-red-50 text-red-600 border-red-100' : st === 'near' ? 'bg-amber-50 text-amber-700 border-amber-100' : 'bg-green-50 text-green-700 border-green-100')}>
-            TTL: {preview}
-          </div>
-        )}
-      </div>
-      <div className="px-3 pb-2.5 flex gap-2">
-        <button type="button" disabled={!canSave} onClick={handleSave}
-          className="flex-1 py-1.5 text-xs font-semibold text-white bg-[#05a94f] hover:bg-[#048f43] rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed">บันทึก</button>
-        <button type="button" onClick={onClose}
-          className="px-3 py-1.5 text-xs text-slate-500 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">ยกเลิก</button>
-      </div>
-      <div className="mx-3 mb-3 pt-2 border-t border-slate-100">
-        <button type="button" onClick={onClear} className="w-full py-1 text-xs text-red-400 hover:text-red-600 transition-colors text-center">ล้างค่า TTL</button>
-      </div>
-    </div>
-  )
-}
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function Step4PNR({ pnrs, schedules, conditions, currency, onChange, showValidation = false }: Step4Props) {
@@ -751,6 +593,8 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
       pnr.condition_id = row.conditionCode
       pnr.status = (row.status || 'Pending') as PNRStatus
       pnr.remark = row.remark
+      pnr.ttl_type = row.ttlType
+      pnr.ttl_days_before = row.ttlDaysBefore
       pnr.ttl_status = (row.ttlType !== 'NONE' && row.ttlDate) ? 'SET' : 'UNSET'
       pnr.ttl_date = row.ttlDate ?? null
       pnr.ttl_time = row.ttlTime ?? null
@@ -803,7 +647,7 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
   const getTargetPnrIndices = (): number[] => {
     if (bulkTtlScope === 'all') return pnrs.map((_, i) => i)
     if (bulkTtlScope === 'selected') return [...bulkTtlSelectedPnrs].sort((a, b) => a - b)
-    return pnrs.reduce<number[]>((acc, p, i) => { if (p.ttl_status !== 'SET' || !p.ttl_date) acc.push(i); return acc }, [])
+    return pnrs.reduce<number[]>((acc, p, i) => { if (!hasTtl(p)) acc.push(i); return acc }, [])
   }
 
   const computeTtlDateForPnr = (pnr: FlightPNRFormData): string | null => {
@@ -818,10 +662,12 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
   const commitBulkTtl = (mode: 'all' | 'skip_existing') => {
     const targets = getTargetPnrIndices(); const updated = [...pnrs]; let changed = false
     for (const i of targets) {
-      if (mode === 'skip_existing' && updated[i].ttl_status === 'SET' && updated[i].ttl_date) continue
+      if (mode === 'skip_existing' && hasTtl(updated[i])) continue
       const ttlDate = computeTtlDateForPnr(updated[i])
       if (!ttlDate) continue
-      updated[i] = { ...updated[i], ttl_status: 'SET', ttl_date: ttlDate, ttl_time: bulkTtlTime || null }
+      const ttlType = bulkTtlMode === 'days_before' ? 'DAYS_BEFORE' : 'FIXED_DATE'
+      const ttlDaysBefore = bulkTtlMode === 'days_before' ? parseInt(bulkTtlDays, 10) : null
+      updated[i] = { ...updated[i], ttl_type: ttlType, ttl_days_before: ttlDaysBefore, ttl_status: 'SET', ttl_date: ttlDate, ttl_time: bulkTtlTime || null }
       changed = true
     }
     if (changed) onChange(updated)
@@ -831,7 +677,7 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
   const handleBulkTtlConfirm = () => {
     const targets = getTargetPnrIndices()
     if (targets.length === 0) return
-    const hasExisting = targets.some(i => pnrs[i].ttl_status === 'SET' && pnrs[i].ttl_date)
+    const hasExisting = targets.some(i => hasTtl(pnrs[i]))
     if (hasExisting && bulkTtlScope !== 'no_ttl') { setBulkTtlInnerStep('overwrite_confirm'); return }
     commitBulkTtl('all')
   }
@@ -853,8 +699,8 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
   const totals = pnrs.reduce((acc, p) => ({ seat: acc.seat + (p.seat_total || 0) }), { seat: 0 })
 
   const ttlTargetIndices = bulkTtlOpen ? getTargetPnrIndices() : []
-  const ttlExistingTtlCount = ttlTargetIndices.filter(i => pnrs[i].ttl_status === 'SET' && pnrs[i].ttl_date).length
-  const ttlNoTtlCount = ttlTargetIndices.filter(i => !(pnrs[i].ttl_status === 'SET' && pnrs[i].ttl_date)).length
+  const ttlExistingTtlCount = ttlTargetIndices.filter(i => hasTtl(pnrs[i])).length
+  const ttlNoTtlCount = ttlTargetIndices.filter(i => !hasTtl(pnrs[i])).length
   const ttlDaysNum = parseInt(bulkTtlDays, 10)
   const ttlDaysValid = !isNaN(ttlDaysNum) && ttlDaysNum >= 0
   const ttlTimeValid = /^\d{2}:\d{2}$/.test(bulkTtlTime)
@@ -934,7 +780,7 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
                 <th className="border border-slate-300 px-2 text-center text-slate-600 font-semibold whitespace-nowrap" style={{ width: 56 }}>สกุลเงิน</th>
                 <th className="border border-slate-300 px-2 text-left text-slate-600 font-semibold whitespace-nowrap" style={{ width: 120 }}>Condition</th>
                 <th className="border border-slate-300 px-2 text-center text-amber-700 font-semibold whitespace-nowrap bg-amber-50/40" style={{ width: 150 }}>TTL</th>
-                <th className="border border-slate-300 px-2 text-center text-slate-600 font-semibold whitespace-nowrap" style={{ width: 80 }}>Status</th>
+                <th className="border border-slate-300 px-2 text-center text-slate-600 font-semibold whitespace-nowrap" style={{ width: 80 }}>การยืนยัน</th>
                 <th className="border border-slate-300 px-2 text-left text-slate-600 font-semibold whitespace-nowrap">Remark</th>
                 <th className="border border-slate-300 px-2 text-center text-slate-500 font-medium whitespace-nowrap bg-slate-50" style={{ width: 52 }}>Action</th>
               </tr>
@@ -1153,7 +999,7 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
 
                               {/* Currency */}
                               <td rowSpan={sectorCount} className="border border-slate-200 p-0 align-middle">
-                                <CurrencyCombobox value={p.currency || currency} stockDefault={currency} options={currencyOptions}
+                                <CurrencyCombobox variant="inline" value={p.currency || currency} stockDefault={currency} currencies={currencyOptions}
                                   onChange={code => handleCurrencyChange(idx, code)} />
                               </td>
 
@@ -1171,30 +1017,48 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
                                 ttlSt === 'past' ? 'bg-red-50/40' : ttlSt === 'near' ? 'bg-amber-50/40' : '')}>
                                 <div onClick={(e) => {
                                   const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-                                  const vh = window.innerHeight; const pw = 272; const ph = 260
+                                  const vh = window.innerHeight; const pw = 400; const ph = 340
                                   const top = rect.bottom + 4 + ph > vh ? Math.max(4, rect.top - ph - 4) : rect.bottom + 4
                                   const left = Math.max(4, Math.min(rect.left, window.innerWidth - pw - 4))
                                   setTtlPopover({ idx, pos: { top, left, width: pw } })
                                 }}
                                   title={ttlSt === 'past' ? 'TTL เลยกำหนดแล้ว — คลิกเพื่อแก้ไข' : ttlSt === 'near' ? 'TTL ใกล้ถึงกำหนด — คลิกเพื่อแก้ไข' : 'คลิกเพื่อแก้ไข TTL'}
                                   className="group flex items-center justify-between gap-1 px-2 py-[6px] cursor-pointer hover:bg-amber-50/60 transition-colors">
-                                  {p.ttl_status === 'SET' && p.ttl_date ? (
+                                  {hasTtl(p) && p.ttl_date ? (
                                     <>
-                                      <span className={cn('text-[11px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis',
-                                        ttlSt === 'past' ? 'text-red-600' : ttlSt === 'near' ? 'text-amber-600' : 'text-slate-700')}>
-                                        {formatTtlDisplay(p.ttl_date, p.ttl_time ?? null)}
-                                      </span>
+                                      {p.ttl_type === 'DAYS_BEFORE' ? (
+                                        <div>
+                                          <p className="text-[11px] font-semibold text-slate-700">ก่อนเดินทาง {p.ttl_days_before ?? '?'} วัน</p>
+                                          {p.ttl_date && <p className="text-[10px] text-slate-500">{formatTtlDisplayUtil(p.ttl_date, p.ttl_time ?? null)}</p>}
+                                        </div>
+                                      ) : p.ttl_type === 'FIXED_DATE' ? (
+                                        <div>
+                                          <p className="text-[11px] font-semibold text-slate-700">วันที่กำหนดเอง</p>
+                                          {p.ttl_date && <p className="text-[10px] text-slate-500">{formatTtlDisplayUtil(p.ttl_date, p.ttl_time ?? null)}</p>}
+                                        </div>
+                                      ) : (
+                                        <span className={cn('text-[11px] font-semibold whitespace-nowrap overflow-hidden text-ellipsis',
+                                          ttlSt === 'past' ? 'text-red-600' : ttlSt === 'near' ? 'text-amber-600' : 'text-slate-700')}>
+                                          {formatTtlDisplay(p.ttl_date, p.ttl_time ?? null)}
+                                        </span>
+                                      )}
                                       <Pencil size={10} className="text-slate-200 group-hover:text-slate-400 transition-colors shrink-0" />
                                     </>
                                   ) : (
-                                    <span className="text-[11px] text-amber-400 italic">ยังไม่ระบุ</span>
+                                    <span className="text-[11px] text-slate-400 italic">ไม่ระบุ</span>
                                   )}
                                 </div>
                               </td>
 
-                              {/* Status */}
+                              {/* Confirmation Status */}
                               <td rowSpan={sectorCount} className="border border-slate-200 p-0 align-middle">
-                                <select value={p.status} onChange={e => update(idx, { status: e.target.value as PNRStatus })}
+                                <select value={p.status} onChange={e => {
+                                  const s = e.target.value as PNRStatus
+                                  update(idx, {
+                                    status: s,
+                                    confirmation_status: s === 'Confirmed' ? 'CONFIRMED' : 'PENDING_CONFIRMATION',
+                                  })
+                                }}
                                   className={cn(xi, 'appearance-none cursor-pointer text-center font-semibold', STATUS_COLORS[p.status] || 'text-slate-600')}>
                                   {STATUS_OPTIONS.map(s => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}
                                 </select>
@@ -1339,7 +1203,7 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
           <span>Dep/Arr Date ของแต่ละ Sector แก้ไขได้โดยตรง · วันที่ที่แก้เองจะแสดงขอบสีส้ม · คลิก ↺ เพื่อคืนค่าตาม Flight Set</span>
           <div className="flex items-center gap-1.5 shrink-0">
             <div className="w-3 h-3 rounded-sm bg-amber-100 border border-amber-300" />
-            <span>TTL = กำหนดส่ง NAME — กรอกเองต่อ PNR หรือใช้ปุ่ม "ตั้ง TTL ทุก PNR"</span>
+            <span>{'TTL = กำหนดส่ง NAME — กรอกเองต่อ PNR หรือใช้ปุ่ม "ตั้ง TTL ทุก PNR"'}</span>
           </div>
           <span className="text-slate-400 shrink-0">FARE = ระบุ Fare, Tax และ YQ · FARE+YQ = ระบุ Fare และ YQ · ALL IN = ระบุราคา All In ในช่อง Fare</span>
           <span className="text-slate-400 shrink-0">ยังไม่ระบุ = ยังไม่ได้กรอก · 0.00 = ยืนยันว่าเป็นศูนย์ · ไม่ใช้ = ไม่เกี่ยวข้องกับประเภทราคานี้</span>
@@ -1416,7 +1280,7 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
                       {scope === 'no_ttl' ? 'เฉพาะ PNR ที่ยังไม่มี TTL' : scope === 'all' ? 'ทุก PNR' : 'เฉพาะ PNR ที่เลือก'}
                     </span>
                     <span className="text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full font-medium">
-                      {scope === 'no_ttl' ? pnrs.filter(p => p.ttl_status !== 'SET' || !p.ttl_date).length :
+                      {scope === 'no_ttl' ? pnrs.filter(p => !hasTtl(p)).length :
                        scope === 'all' ? pnrs.length : bulkTtlSelectedPnrs.size}
                     </span>
                   </label>
@@ -1441,7 +1305,7 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
                         <input type="checkbox" checked={bulkTtlSelectedPnrs.has(i)} onChange={() => { const next = new Set(bulkTtlSelectedPnrs); if (next.has(i)) next.delete(i); else next.add(i); setBulkTtlSelectedPnrs(next) }} className="accent-[#05a94f]" />
                         <span className="text-xs font-mono text-slate-700 w-24 truncate shrink-0">{p.pnr_code || p.dummy_pnr || `PNR #${i + 1}`}</span>
                         <span className="text-xs text-slate-400 shrink-0">{p.travel_start ? formatTravelDate(p.travel_start) : '—'}</span>
-                        {p.ttl_status === 'SET' && p.ttl_date && (
+                        {hasTtl(p) && p.ttl_date && (
                           <span className={cn('text-[10px] px-1.5 py-0.5 rounded ml-auto shrink-0',
                             pSt === 'past' ? 'text-red-600 bg-red-50' : pSt === 'near' ? 'text-amber-700 bg-amber-50' : 'text-green-700 bg-green-50')}>
                             {formatTtlDisplay(p.ttl_date, p.ttl_time ?? null)}
@@ -1567,14 +1431,29 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
 
       <BulkPnrBuilder open={bulkOpen} onClose={() => setBulkOpen(false)} mode="create_stock" sectors={builderSectors} conditions={builderConditions} currency={currency} onConfirm={addBulkPNRs} />
 
-      {/* TTL row-level Popover */}
+      {/* TTL row-level Editor */}
       {ttlPopover !== null && (
         <>
           <div className="fixed inset-0 z-[9998]" onClick={() => setTtlPopover(null)} />
-          <TtlPopover pos={ttlPopover.pos} date={pnrs[ttlPopover.idx]?.ttl_date ?? null} time={pnrs[ttlPopover.idx]?.ttl_time ?? null}
-            onSave={(d, t) => { update(ttlPopover.idx, { ttl_status: 'SET', ttl_date: d, ttl_time: t || null }); setTtlPopover(null) }}
-            onClear={() => { update(ttlPopover.idx, { ttl_status: 'UNSET', ttl_date: null, ttl_time: null }); setTtlPopover(null) }}
-            onClose={() => setTtlPopover(null)} />
+          <TtlEditor
+            pos={ttlPopover.pos}
+            travelDate={pnrs[ttlPopover.idx]?.travel_start ?? null}
+            ttlType={pnrs[ttlPopover.idx]?.ttl_type ?? 'NONE'}
+            ttlDaysBefore={pnrs[ttlPopover.idx]?.ttl_days_before ?? null}
+            ttlDate={pnrs[ttlPopover.idx]?.ttl_date ?? null}
+            ttlTime={pnrs[ttlPopover.idx]?.ttl_time ?? null}
+            onSave={(val) => {
+              update(ttlPopover.idx, {
+                ttl_type: val.ttlType,
+                ttl_days_before: val.ttlDaysBefore,
+                ttl_status: val.ttlType !== 'NONE' ? 'SET' : 'UNSET',
+                ttl_date: val.ttlDate,
+                ttl_time: val.ttlTime,
+              })
+              setTtlPopover(null)
+            }}
+            onClose={() => setTtlPopover(null)}
+          />
         </>
       )}
     </div>

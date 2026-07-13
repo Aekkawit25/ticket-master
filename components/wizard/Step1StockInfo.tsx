@@ -1,14 +1,17 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import type { ReactNode } from 'react'
 import { Lock, Check, AlertTriangle, ListChecks, Users, User, Globe } from 'lucide-react'
+import type { StockStatus } from '@/types'
+import StockStatusCard, { calcPnrCounts } from '@/components/wizard/StockStatusCard'
+import type { PnrCounts } from '@/components/wizard/StockStatusCard'
 import { Input, Textarea } from '@/components/ui/input'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import type { FlightSeriesFormData, TicketType, GroupType } from '@/types'
 import { MASTER_AIRLINES } from '@/lib/master-data'
-import { getCurrencySelectOptions } from '@/lib/currency-storage'
+import { CurrencyCombobox } from '@/components/shared/CurrencyCombobox'
 import { getStockTypeConfigSafe, STOCK_TYPE_CONFIG } from '@/lib/stock-type-config'
 
 const AIRLINES = MASTER_AIRLINES.map(a => ({
@@ -103,6 +106,9 @@ interface Step1Props {
   isTypeLocked?: boolean
   typeConfirmed?: boolean
   onTypeConfirm?: () => void
+  /** Edit-mode: pass pnrStatusList to compute counts; onManageStatus opens the management modal */
+  pnrStatusList?: { pnrStatus?: string }[]
+  onManageStatus?: () => void
 }
 
 export default function Step1StockInfo({
@@ -112,16 +118,10 @@ export default function Step1StockInfo({
   isTypeLocked = false,
   typeConfirmed = false,
   onTypeConfirm,
+  pnrStatusList,
+  onManageStatus,
 }: Step1Props) {
-  const [currencyOptions, setCurrencyOptions] = useState<{ value: string; label: string }[]>([])
   const [pendingType, setPendingType] = useState<{ ticketType: TicketType; groupType?: GroupType } | null>(null)
-
-  useEffect(() => {
-    setCurrencyOptions(getCurrencySelectOptions())
-    const handler = () => setCurrencyOptions(getCurrencySelectOptions())
-    window.addEventListener('currencies_updated', handler)
-    return () => window.removeEventListener('currencies_updated', handler)
-  }, [])
 
   const isCurrentType = (opt: TypeOption) => {
     if (!typeConfirmed) return false
@@ -295,18 +295,26 @@ export default function Step1StockInfo({
               placeholder="เลือกสายการบิน..."
               error={errors.airline_code}
             />
-            <SearchableSelect
+            <CurrencyCombobox
               label="Currency"
               required
-              options={currencyOptions}
               value={data.currency}
               onChange={v => onChange({ currency: v })}
-              placeholder="เลือกสกุลเงิน..."
+              placeholder="ค้นหารหัสหรือชื่อสกุลเงิน"
               error={errors.currency}
             />
           </div>
         </CardContent>
       </Card>
+
+      {/* ───── สถานะ Stock (edit mode only) ───── */}
+      {pnrStatusList !== undefined && (
+        <StockStatusCard
+          status={data.status}
+          pnrCounts={calcPnrCounts(pnrStatusList)}
+          onManage={onManageStatus}
+        />
+      )}
 
       {/* ───── Remark ───── */}
       <Card>

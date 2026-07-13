@@ -232,7 +232,7 @@ function AddStockPageInner() {
     }
     if (s === 2) {
       const mainSch = state.schedules.find(sch => sch.isMain) ?? state.schedules[0]
-      const sectorErr = validateSectors(mainSch?.sectors as any, state.stockInfo.ticket_type, state.stockInfo.trip_type)
+      const sectorErr = validateSectors(mainSch?.sectors as never, state.stockInfo.ticket_type, state.stockInfo.trip_type)
       if (sectorErr) return sectorErr
       const badAirline = mainSch?.sectors.find(sec => !sec.airline_code || !MASTER_AIRLINE_CODE_SET.has(sec.airline_code))
       if (badAirline) return `Airline "${badAirline.airline_code || '—'}" ไม่พบใน Master กรุณาเลือก Airline ที่ถูกต้อง`
@@ -297,6 +297,7 @@ function AddStockPageInner() {
     if (step === 2 && sectorSnapshotRef.current && state.pnrs.some(p => p.travel_start)) {
       const snapshot = sectorSnapshotRef.current
       const affected = computePNRImpact(snapshot, state.schedules, state.pnrs)
+
       if (affected.length > 0) {
         const changes = computeSectorChanges(snapshot, state.schedules)
         setPnrImpact({ affectedPNRs: affected, sectorChanges: changes })

@@ -4,17 +4,18 @@ import { useState, useEffect, useCallback } from 'react'
 import { addDays, format as fnsFormat, parseISO, isValid } from 'date-fns'
 import { Button } from '@/components/ui/button'
 import { TimeInput } from '@/components/ui/time-input'
-import { Badge, PNRStatusBadge } from '@/components/ui/badge'
+import { Badge, PnrOperationalStatusBadge, PnrConfirmationStatusBadge } from '@/components/ui/badge'
 import { Table, TableHead, TableBody, Th, Td, TableRow, EmptyRow } from '@/components/ui/table'
 import { Modal } from '@/components/ui/modal'
 import {
-  PlusCircle, Pencil, Trash2, Copy, RefreshCw, X, CheckCircle2, AlertTriangle, PlusSquare, Route, ChevronDown, Info,
+  PlusCircle, Pencil, Trash2, Copy, RefreshCw, X, CheckCircle2, AlertTriangle, PlusSquare, Route, ChevronDown, Info, Archive, XCircle,
 } from 'lucide-react'
 import { BulkPnrBuilder } from '@/components/shared/BulkPnrBuilder'
 import type { BulkPnrFlightSet, BulkPnrCondition } from '@/components/shared/BulkPnrBuilder'
 import { formatDate, formatDateTime, formatNumber, calcTravelEndFromSectors } from '@/lib/utils'
 import {
   saveDemoStock, calculateStockSummary, checkPNRDuplicatesInSystem, getStockFlightSets,
+  getPnrOperationalStatus, getPnrConfirmationStatus,
 } from '@/lib/demo-storage'
 import type { DemoStock, DemoPNR, DemoLog, DemoSector, DemoFlightSet } from '@/lib/demo-storage'
 import { MASTER_AIRLINE_CODE_SET } from '@/lib/master-data'
@@ -391,6 +392,14 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
   const [cfMultiPnr, setCfMultiPnr]             = useState<DemoPNR | null>(null)
   const [cfMultiFS, setCfMultiFS]               = useState<DemoFlightSet | null>(null)
 
+  // PNR operational status modals
+  const [closingPnr, setClosingPnr]             = useState<DemoPNR | null>(null)
+  const [showClosePnrModal, setShowClosePnrModal] = useState(false)
+  const [cancellingPnr, setCancellingPnr]       = useState<DemoPNR | null>(null)
+  const [showCancelPnrModal, setShowCancelPnrModal] = useState(false)
+  const [cancelReason, setCancelReason]         = useState('')
+  const [cancelReasonError, setCancelReasonError] = useState('')
+
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000) }
 
   // Jump to Add PNR when triggered from dropdown
@@ -538,6 +547,15 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
       ttlTime:        ttlTimeStr,
       ttlDateTime,
       status:         form.status || 'Pending',
+      pnrStatus:      existingPnr?.pnrStatus ?? (stock.status === 'Active' ? 'ACTIVE' : 'PENDING'),
+      confirmationStatus: form.status === 'Confirmed' ? 'CONFIRMED' : 'PENDING_CONFIRMATION',
+      activatedAt:    existingPnr?.activatedAt ?? (stock.status === 'Active' ? new Date().toISOString() : null),
+      activatedBy:    existingPnr?.activatedBy ?? (stock.status === 'Active' ? 'System' : null),
+      closedAt:       existingPnr?.closedAt ?? null,
+      closedBy:       existingPnr?.closedBy ?? null,
+      cancelledAt:    existingPnr?.cancelledAt ?? null,
+      cancelledBy:    existingPnr?.cancelledBy ?? null,
+      cancellationReason: existingPnr?.cancellationReason ?? null,
       remark:         form.remark || '',
     }
   }, [form, liveStock])
@@ -650,6 +668,39 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
     saveDemoStock(updated)
     onUpdate(updated)
     showToast('Duplicate PNR สำเร็จ')
+  }
+
+  const handleClosePnr = () => {
+    if (!liveStock || !closingPnr) return
+    const now = new Date().toISOString()
+    const updatedPnrs = liveStock.pnrs.map(p =>
+      p.pnrId !== closingPnr.pnrId ? p : { ...p, pnrStatus: 'CLOSED' as const, closedAt: now, closedBy: 'System' }
+    )
+    const log: DemoLog = { logId: newId('LOG'), action: 'ปิด PNR', message: `ปิด PNR ${closingPnr.pnrDisplay}`, createdAt: now, createdBy: 'System' }
+    const updated: DemoStock = { ...liveStock, pnrs: updatedPnrs, summary: calculateStockSummary(updatedPnrs), updatedAt: now, logs: [log, ...liveStock.logs] }
+    saveDemoStock(updated)
+    onUpdate(updated)
+    setShowClosePnrModal(false)
+    setClosingPnr(null)
+    showToast('ปิด PNR สำเร็จ')
+  }
+
+  const handleCancelPnr = () => {
+    if (!liveStock || !cancellingPnr) return
+    if (!cancelReason.trim()) { setCancelReasonError('กรุณาระบุเหตุผลการยกเลิก'); return }
+    const now = new Date().toISOString()
+    const updatedPnrs = liveStock.pnrs.map(p =>
+      p.pnrId !== cancellingPnr.pnrId ? p : { ...p, pnrStatus: 'CANCELLED' as const, cancelledAt: now, cancelledBy: 'System', cancellationReason: cancelReason.trim() }
+    )
+    const log: DemoLog = { logId: newId('LOG'), action: 'ยกเลิก PNR', message: `ยกเลิก PNR ${cancellingPnr.pnrDisplay} — เหตุผล: ${cancelReason.trim()}`, createdAt: now, createdBy: 'System' }
+    const updated: DemoStock = { ...liveStock, pnrs: updatedPnrs, summary: calculateStockSummary(updatedPnrs), updatedAt: now, logs: [log, ...liveStock.logs] }
+    saveDemoStock(updated)
+    onUpdate(updated)
+    setShowCancelPnrModal(false)
+    setCancellingPnr(null)
+    setCancelReason('')
+    setCancelReasonError('')
+    showToast('ยกเลิก PNR สำเร็จ')
   }
 
   const handleConvertToReal = () => {
@@ -1102,7 +1153,7 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
               <Th className="text-right whitespace-nowrap">ยอดสุทธิ</Th>
               <Th>Condition</Th>
               <Th>TTL Date</Th>
-              <Th>Status</Th>
+              <Th className="whitespace-nowrap">สถานะ</Th>
               {canEdit && <Th className="text-center">Actions</Th>}
             </tr>
           </TableHead>
@@ -1211,7 +1262,12 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                     <Td className="text-xs text-slate-700">
                       {p.next_ttl ? formatDateTime(p.next_ttl) : '—'}
                     </Td>
-                    <Td><PNRStatusBadge status={p.status} /></Td>
+                    <Td>
+                      <div className="flex flex-col gap-1">
+                        <PnrOperationalStatusBadge status={demoPnr ? getPnrOperationalStatus(demoPnr) : 'PENDING'} />
+                        <PnrConfirmationStatusBadge status={demoPnr ? getPnrConfirmationStatus(demoPnr) : p.status} />
+                      </div>
+                    </Td>
                     {canEdit && (
                       <Td>
                         {demoPnr ? (
@@ -1229,6 +1285,16 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                               <button title="เปลี่ยนเป็น PNR จริง" onClick={() => { setConvertingPnr(demoPnr); setShowConvertModal(true) }} className="p-1 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded-md transition-colors">
                                 <RefreshCw size={13} />
                               </button>
+                            )}
+                            {getPnrOperationalStatus(demoPnr) === 'ACTIVE' && (
+                              <>
+                                <button title="ปิด PNR" onClick={() => { setClosingPnr(demoPnr); setShowClosePnrModal(true) }} className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors">
+                                  <Archive size={13} />
+                                </button>
+                                <button title="ยกเลิก PNR" onClick={() => { setCancellingPnr(demoPnr); setCancelReason(''); setCancelReasonError(''); setShowCancelPnrModal(true) }} className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors">
+                                  <XCircle size={13} />
+                                </button>
+                              </>
                             )}
                             <button title="ลบ" onClick={() => { setDeletingPnr(demoPnr); setShowDeleteModal(true) }} className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors">
                               <Trash2 size={13} />
@@ -1615,6 +1681,70 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                 <li>Payment Schedule ของ PNR นี้จะถูกลบทั้งหมด</li>
                 <li>ประวัติ TTL และ Payment ของ PNR นี้จะไม่สามารถกู้คืนได้</li>
               </ul>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Close PNR Modal */}
+      <Modal
+        open={showClosePnrModal}
+        onClose={() => { setShowClosePnrModal(false); setClosingPnr(null) }}
+        title="ยืนยันการปิด PNR"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => { setShowClosePnrModal(false); setClosingPnr(null) }}>ยกเลิก</Button>
+            <Button onClick={handleClosePnr}>ยืนยันปิด PNR</Button>
+          </>
+        }
+      >
+        {closingPnr && (
+          <div className="space-y-3">
+            <p className="text-sm">ต้องการปิด PNR <strong className="font-mono">{closingPnr.pnrDisplay}</strong> หรือไม่?</p>
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-700 space-y-1">
+              <p className="font-semibold">ผลของการปิด PNR</p>
+              <ul className="list-disc list-inside space-y-0.5">
+                <li>สถานะการใช้งานจะเปลี่ยนเป็น &ldquo;ปิดแล้ว&rdquo;</li>
+                <li>PNR จะไม่สามารถใช้งานได้อีกจนกว่าจะเปิดใหม่</li>
+                <li>ข้อมูลที่นั่งและราคายังคงบันทึกไว้</li>
+              </ul>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Cancel PNR Modal */}
+      <Modal
+        open={showCancelPnrModal}
+        onClose={() => { setShowCancelPnrModal(false); setCancellingPnr(null); setCancelReason(''); setCancelReasonError('') }}
+        title="ยกเลิก PNR"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => { setShowCancelPnrModal(false); setCancellingPnr(null); setCancelReason(''); setCancelReasonError('') }}>ปิด</Button>
+            <Button variant="danger" onClick={handleCancelPnr}>ยืนยันยกเลิก PNR</Button>
+          </>
+        }
+      >
+        {cancellingPnr && (
+          <div className="space-y-3">
+            <p className="text-sm">ต้องการยกเลิก PNR <strong className="font-mono">{cancellingPnr.pnrDisplay}</strong> หรือไม่?</p>
+            <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-700 space-y-1">
+              <p className="font-semibold flex items-center gap-1"><AlertTriangle size={11} /> คำเตือน</p>
+              <ul className="list-disc list-inside space-y-0.5">
+                <li>สถานะการใช้งานจะเปลี่ยนเป็น &ldquo;ยกเลิก&rdquo; ถาวร</li>
+                <li>ที่นั่งที่ยังเหลืออยู่จะไม่นับในยอดรวม</li>
+              </ul>
+            </div>
+            <div className="space-y-1">
+              <label className="block text-xs font-medium text-slate-700">เหตุผลการยกเลิก <span className="text-red-500">*</span></label>
+              <textarea
+                value={cancelReason}
+                onChange={e => { setCancelReason(e.target.value); setCancelReasonError('') }}
+                rows={3}
+                placeholder="ระบุเหตุผลที่ยกเลิก PNR นี้..."
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-red-400/30 focus:border-red-400"
+              />
+              {cancelReasonError && <p className="text-xs text-red-500">{cancelReasonError}</p>}
             </div>
           </div>
         )}

@@ -41,6 +41,24 @@ export function PNRStatusBadge({ status }: { status: string }) {
   return <Badge variant={confirmed ? 'green' : 'orange'}>{pnrStatusLabel(status)}</Badge>
 }
 
+/** สถานะการใช้งาน PNR (Operational) */
+export function PnrOperationalStatusBadge({ status }: { status: string }) {
+  const map: Record<string, { label: string; variant: BadgeProps['variant'] }> = {
+    PENDING:   { label: 'รอเปิดใช้งาน', variant: 'gray' },
+    ACTIVE:    { label: 'เปิดใช้งาน',    variant: 'green' },
+    CLOSED:    { label: 'ปิดแล้ว',       variant: 'blue' },
+    CANCELLED: { label: 'ยกเลิก',        variant: 'red' },
+  }
+  const c = map[status] ?? { label: status, variant: 'gray' as const }
+  return <Badge variant={c.variant}>{c.label}</Badge>
+}
+
+/** สถานะการยืนยัน PNR (Confirmation) */
+export function PnrConfirmationStatusBadge({ status }: { status: string }) {
+  const confirmed = status === 'CONFIRMED' || status === 'Confirmed'
+  return <Badge variant={confirmed ? 'green' : 'orange'}>{confirmed ? 'ยืนยันแล้ว' : 'รอยืนยัน'}</Badge>
+}
+
 export function TicketTypeBadge({ type, groupType }: { type: string; groupType?: string }) {
   if (type === 'Group') {
     if (groupType === 'ADHOC') return <Badge variant="orange">Ad Hoc</Badge>

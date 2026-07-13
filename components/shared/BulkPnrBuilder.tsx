@@ -889,7 +889,7 @@ export function BulkPnrBuilder({
               </div>
 
               {/* ── Two-column layout ── */}
-              <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1.4fr_1fr] lg:items-start">
+              <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_480px] xl:items-start">
 
                 {/* ── LEFT: กำหนดรอบการเดินทาง ── */}
                 <div className="min-w-0 rounded-xl border border-slate-200 bg-white p-5">
@@ -905,8 +905,8 @@ export function BulkPnrBuilder({
                   {/* ── Count method ── */}
                   {method === 'count' && (
                     <div>
-                      <div className="grid grid-cols-1 gap-x-4 gap-y-4 md:grid-cols-2">
-                        <FL label="วันเดินทางเริ่มต้น" required>
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)]">
+                        <FL label="วันเดินทางเริ่มต้น" required className="md:col-span-2 xl:col-span-1">
                           <input type="date" value={countCfg.startDate}
                             onChange={e => setCountCfg(c => ({ ...c, startDate: e.target.value }))}
                             className={iCls} />
@@ -1272,23 +1272,33 @@ export function BulkPnrBuilder({
 
                       {/* DAYS_BEFORE — inline sentence */}
                       {shared.ttlType === 'DAYS_BEFORE' && (
-                        <div className="space-y-2">
-                          <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
-                            <span className="text-xs text-slate-600 whitespace-nowrap">กำหนดส่งก่อนวันเดินทาง</span>
-                            <input
-                              type="number" min={0} placeholder="30"
-                              value={shared.ttlDaysBefore}
-                              onChange={e => setShared(s => ({ ...s, ttlDaysBefore: e.target.value, ttlUserModified: true }))}
-                              aria-label="จำนวนวันก่อนเดินทาง"
-                              className={cn(ttlInlineCls, 'w-[96px] text-center')} />
-                            <span className="text-xs text-slate-600">วัน</span>
-                            <span className="text-xs text-slate-400 whitespace-nowrap">เวลา (ไม่บังคับ)</span>
-                            <TimeInput
-                              value={shared.ttlTime}
-                              onChange={v => setShared(s => ({ ...s, ttlTime: v, ttlUserModified: true }))}
-                              placeholder="HH:mm"
-                              className={cn(ttlInlineCls, 'w-[130px]')} />
+                        <div className="space-y-1.5">
+                          {/*
+                            Mobile/lg: flex-wrap — day group and time group each stay together.
+                            xl+: CSS Grid 5-col — sub-groups become display:contents so each
+                            child element is a direct grid item, giving exact column widths.
+                          */}
+                          <div className="flex flex-wrap items-center gap-2 min-w-0 w-full xl:grid xl:grid-cols-[max-content_72px_max-content_max-content_112px]">
+                            <div className="flex items-center gap-2 shrink-0 xl:contents">
+                              <span className="text-xs text-slate-600 whitespace-nowrap">กำหนดส่งก่อนวันเดินทาง</span>
+                              <input
+                                type="number" min={0} placeholder="30"
+                                value={shared.ttlDaysBefore}
+                                onChange={e => setShared(s => ({ ...s, ttlDaysBefore: e.target.value, ttlUserModified: true }))}
+                                aria-label="จำนวนวันก่อนเดินทาง"
+                                className={cn(ttlInlineCls, 'w-[72px] min-w-0 text-center')} />
+                              <span className="text-xs text-slate-600 whitespace-nowrap">วัน</span>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0 xl:contents">
+                              <span className="text-xs text-slate-600 whitespace-nowrap">เวลา</span>
+                              <TimeInput
+                                value={shared.ttlTime}
+                                onChange={v => setShared(s => ({ ...s, ttlTime: v, ttlUserModified: true }))}
+                                placeholder="HH:mm"
+                                className={cn(ttlInlineCls, 'w-[112px] min-w-0')} />
+                            </div>
                           </div>
+                          <p className="text-[10px] text-slate-400">ไม่ระบุเวลาได้ ระบบจะบันทึกเฉพาะวันที่ TTL</p>
                           {previewTtlDate && (
                             <p className="text-xs text-slate-500">
                               {pnrCount > 1
@@ -1302,24 +1312,29 @@ export function BulkPnrBuilder({
 
                       {/* FIXED_DATE — inline date + time */}
                       {shared.ttlType === 'FIXED_DATE' && (
-                        <div className="space-y-2">
-                          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                            <span className="text-xs text-slate-600 whitespace-nowrap shrink-0">
-                              วันที่กำหนดส่ง NAME <span className="text-red-400">*</span>
-                            </span>
-                            <input
-                              type="date"
-                              value={shared.ttlDate}
-                              onChange={e => setShared(s => ({ ...s, ttlDate: e.target.value, ttlUserModified: true }))}
-                              aria-label="วันที่กำหนดส่ง NAME"
-                              className={cn(ttlInlineCls, 'w-[180px]')} />
-                            <span className="text-xs text-slate-400">เวลา (ไม่บังคับ)</span>
-                            <TimeInput
-                              value={shared.ttlTime}
-                              onChange={v => setShared(s => ({ ...s, ttlTime: v, ttlUserModified: true }))}
-                              placeholder="HH:mm"
-                              className={cn(ttlInlineCls, 'w-[130px]')} />
+                        <div className="space-y-1.5">
+                          <div className="flex flex-wrap items-center gap-2 min-w-0 w-full xl:grid xl:grid-cols-[max-content_150px_max-content_112px]">
+                            <div className="flex items-center gap-2 shrink-0 xl:contents">
+                              <span className="text-xs text-slate-600 whitespace-nowrap">
+                                วันที่กำหนดส่ง NAME <span className="text-red-400">*</span>
+                              </span>
+                              <input
+                                type="date"
+                                value={shared.ttlDate}
+                                onChange={e => setShared(s => ({ ...s, ttlDate: e.target.value, ttlUserModified: true }))}
+                                aria-label="วันที่กำหนดส่ง NAME"
+                                className={cn(ttlInlineCls, 'w-[150px] min-w-0')} />
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0 xl:contents">
+                              <span className="text-xs text-slate-600 whitespace-nowrap">เวลา</span>
+                              <TimeInput
+                                value={shared.ttlTime}
+                                onChange={v => setShared(s => ({ ...s, ttlTime: v, ttlUserModified: true }))}
+                                placeholder="HH:mm"
+                                className={cn(ttlInlineCls, 'w-[112px] min-w-0')} />
+                            </div>
                           </div>
+                          <p className="text-[10px] text-slate-400">ไม่ระบุเวลาได้ ระบบจะบันทึกเฉพาะวันที่ TTL</p>
                           {previewTtlDate && (
                             <p className="text-xs text-slate-500">
                               กำหนดส่ง NAME วันที่ <strong className="text-slate-700">{formatDate(previewTtlDate)}{shared.ttlTime ? ` เวลา ${shared.ttlTime}` : ''}</strong>
