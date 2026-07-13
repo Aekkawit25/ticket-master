@@ -750,6 +750,9 @@ export interface StockFinancials {
   isUniform: boolean       // all PNRs share identical per-seat pricing
   hasTax: boolean          // any PNR has separate tax
   hasYQ: boolean           // any PNR has YQ > 0 (non-ALL_IN format)
+  completePnrCount: number   // PNRs with price data (fare > 0 || total > 0)
+  incompletePnrCount: number // PNRs with no price entered (fare === 0 && total === 0)
+  incompletePnrSeats: number // total seat count for incomplete PNRs
 }
 
 /**
@@ -793,12 +796,18 @@ export function computeStockFinancials(pnrs: DemoPNR[]): StockFinancials {
   const minTotalPerSeat = allTotals.length > 0 ? Math.min(...allTotals) : 0
   const maxTotalPerSeat = allTotals.length > 0 ? Math.max(...allTotals) : 0
 
+  const incompletePnrs = active.filter(p => p.fare === 0 && p.total === 0)
+  const incompletePnrCount = incompletePnrs.length
+  const incompletePnrSeats = incompletePnrs.reduce((s, p) => s + p.seatTotal, 0)
+  const completePnrCount = active.length - incompletePnrCount
+
   return {
     pnrCount: active.length, totalSeats,
     fareTotal, taxTotal, yqTotal, grandTotal,
     farePerSeat, taxPerSeat, yqPerSeat, totalPerSeat,
     minTotalPerSeat, maxTotalPerSeat,
     isUniform, hasTax, hasYQ,
+    completePnrCount, incompletePnrCount, incompletePnrSeats,
   }
 }
 
