@@ -93,6 +93,13 @@ function SCard({
   )
 }
 
+function formatPriceType(priceFormat?: string): string {
+  if (priceFormat === 'ALL_IN')  return 'All In'
+  if (priceFormat === 'FARE_YQ') return 'Fare+YQ'
+  if (priceFormat === 'FARE')    return 'Fare'
+  return '—'
+}
+
 // ─── Main ──────────────────────────────────────────────────────────────────────
 
 export function SummaryTab({
@@ -199,6 +206,26 @@ export function SummaryTab({
   // ── Financial (from PNRs directly — immune to stale stored summary) ─────────
   const finStats = useMemo(() => computeStockFinancials(pnrs), [pnrs])
   const [showPnrBreakdown, setShowPnrBreakdown] = useState(false)
+
+  // Price tiers: group active PNRs with same fare/tax/yq/total/format
+  const priceTiers = useMemo(() => {
+    const active = pnrs.filter(p => p.status !== 'Cancelled')
+    const map = new Map<string, {
+      key: string; fare: number; tax: number; yq: number; total: number
+      priceFormat: string; taxType: string; pnrCount: number; seatCount: number; tierTotal: number
+    }>()
+    for (const p of active) {
+      const key = `${p.fare}|${p.tax}|${p.yq ?? 0}|${p.total}|${p.priceFormat ?? ''}|${p.taxType}`
+      const ex = map.get(key)
+      if (ex) { ex.pnrCount++; ex.seatCount += p.seatTotal; ex.tierTotal += p.total * p.seatTotal }
+      else map.set(key, {
+        key, fare: p.fare, tax: p.tax, yq: p.yq ?? 0, total: p.total,
+        priceFormat: p.priceFormat ?? '', taxType: p.taxType,
+        pnrCount: 1, seatCount: p.seatTotal, tierTotal: p.total * p.seatTotal,
+      })
+    }
+    return Array.from(map.values()).sort((a, b) => a.total - b.total)
+  }, [pnrs])
 
   // ── Seat (from stored summary — seatUsed/Balance managed by PNRTab actions) ─
   const { seatTotal, seatUsed, seatBalance } = liveStock.summary
@@ -470,22 +497,29 @@ export function SummaryTab({
 
       {/* ── 7. สรุปราคาและมูลค่า Stock ── full width ───────────── */}
       <Card>
-        <div className="px-4 py-3 border-b border-slate-100">
+        {/* Card header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
           <h3 className="text-sm font-semibold text-slate-700">
             สรุปราคาและมูลค่า Stock ({currency})
           </h3>
+          {!finStats.isUniform && finStats.pnrCount > 0 && (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-violet-100 text-violet-700">
+              มี {priceTiers.length} ระดับราคา
+            </span>
+          )}
         </div>
+
         <CardContent className="px-4 py-4">
           {finStats.pnrCount === 0 ? (
             <p className="py-6 text-center text-xs text-slate-400">ยังไม่มีข้อมูลราคา</p>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-5">
 
-              {/* ─ 3 summary boxes ─ */}
+              {/* A: 3 highlight boxes */}
               <div className="grid grid-cols-3 gap-3">
                 <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-center">
                   <p className="text-[10px] text-emerald-600 mb-1">
-                    {finStats.isUniform ? 'ราคาสุทธิต่อคน' : 'ราคาเฉลี่ยต่อคน'}
+                    {finStats.isUniform ? 'ราคาสุทธิต่อที่นั่ง' : 'ราคาเฉลี่ยต่อที่นั่ง'}
                   </p>
                   <p className="text-xl font-bold text-[#05a94f]">{formatNumber(finStats.totalPerSeat, 2)}</p>
                   <p className="text-[10px] text-emerald-500 mt-0.5">{currency}</p>
@@ -502,108 +536,196 @@ export function SummaryTab({
                 </div>
               </div>
 
-              {/* ─ Price breakdown table ─ */}
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-b border-slate-100">
-                      <th className="py-2 text-left font-medium text-slate-500 w-32">รายการ</th>
-                      <th className="py-2 text-right font-medium text-slate-500">
-                        {finStats.isUniform ? 'ราคาต่อคน' : 'ราคาเฉลี่ยต่อคน'}
-                      </th>
-                      <th className="py-2 text-right font-medium text-slate-500 w-28">จำนวนที่นั่ง</th>
-                      <th className="py-2 text-right font-medium text-slate-500 w-36">รวมทั้งหมด</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr className="border-b border-slate-50">
-                      <td className="py-2 text-slate-600">Fare</td>
-                      <td className="py-2 text-right text-slate-700">{formatNumber(finStats.farePerSeat, 2)}</td>
-                      <td className="py-2 text-right text-slate-400">{finStats.totalSeats}</td>
-                      <td className="py-2 text-right text-slate-700">{formatNumber(finStats.fareTotal, 2)}</td>
-                    </tr>
-                    {finStats.hasTax && (
-                      <tr className="border-b border-slate-50">
-                        <td className="py-2 text-slate-600">Tax</td>
-                        <td className="py-2 text-right text-slate-700">{formatNumber(finStats.taxPerSeat, 2)}</td>
-                        <td className="py-2 text-right text-slate-400">{finStats.totalSeats}</td>
-                        <td className="py-2 text-right text-slate-700">{formatNumber(finStats.taxTotal, 2)}</td>
-                      </tr>
-                    )}
-                    {finStats.hasYQ && (
-                      <tr className="border-b border-slate-50">
-                        <td className="py-2 text-slate-600">YQ</td>
-                        <td className="py-2 text-right text-slate-700">{formatNumber(finStats.yqPerSeat, 2)}</td>
-                        <td className="py-2 text-right text-slate-400">{finStats.totalSeats}</td>
-                        <td className="py-2 text-right text-slate-700">{formatNumber(finStats.yqTotal, 2)}</td>
-                      </tr>
-                    )}
-                    <tr className="border-t-2 border-emerald-100">
-                      <td className="py-2.5 font-bold text-[#05a94f]">ราคาสุทธิ</td>
-                      <td className="py-2.5 text-right font-bold text-[#05a94f]">{formatNumber(finStats.totalPerSeat, 2)}</td>
-                      <td className="py-2.5 text-right text-slate-400">{finStats.totalSeats}</td>
-                      <td className="py-2.5 text-right font-bold text-[#05a94f]">{formatNumber(finStats.grandTotal, 2)}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-
-              {/* ─ Per-PNR breakdown (prices differ) ─ */}
+              {/* B (non-uniform): ข้อมูลราคาหลายระดับ */}
               {!finStats.isUniform && (
-                <div>
-                  <button
-                    type="button"
-                    onClick={() => setShowPnrBreakdown(v => !v)}
-                    className="flex items-center gap-1.5 text-xs font-medium text-[#05a94f] hover:text-emerald-700 transition"
-                  >
-                    {showPnrBreakdown ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-                    {showPnrBreakdown ? 'ซ่อนรายละเอียดตาม PNR' : 'ดูรายละเอียดตาม PNR'}
-                  </button>
-                  {showPnrBreakdown && (
-                    <div className="mt-2 overflow-x-auto border border-slate-100 rounded-lg">
-                      <table className="w-full text-xs">
-                        <thead>
-                          <tr className="bg-slate-50 border-b border-slate-100">
-                            <th className="px-3 py-2 text-left font-medium text-slate-500">PNR</th>
-                            <th className="px-3 py-2 text-right font-medium text-slate-500">Seat</th>
-                            <th className="px-3 py-2 text-right font-medium text-slate-500">Fare/คน</th>
-                            <th className="px-3 py-2 text-right font-medium text-slate-500">Tax/คน</th>
-                            <th className="px-3 py-2 text-right font-medium text-slate-500">YQ/คน</th>
-                            <th className="px-3 py-2 text-right font-medium text-slate-500">สุทธิ/คน</th>
-                            <th className="px-3 py-2 text-right font-medium text-slate-500">รวม PNR</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {pnrs.filter(p => p.status !== 'Cancelled').map((p, i) => (
-                            <tr key={i} className="border-b border-slate-50 last:border-0">
-                              <td className="px-3 py-1.5 font-mono text-slate-700">{p.pnrDisplay}</td>
-                              <td className="px-3 py-1.5 text-right text-slate-600">{p.seatTotal}</td>
-                              <td className="px-3 py-1.5 text-right">{formatNumber(p.fare, 2)}</td>
-                              <td className="px-3 py-1.5 text-right">
-                                {p.taxType === 'separate'
-                                  ? formatNumber(p.tax, 2)
-                                  : <span className="text-slate-300">ไม่ใช้</span>}
-                              </td>
-                              <td className="px-3 py-1.5 text-right">
-                                {p.priceFormat !== 'ALL_IN'
-                                  ? formatNumber(p.yq ?? 0, 2)
-                                  : <span className="text-slate-300">ไม่ใช้</span>}
-                              </td>
-                              <td className="px-3 py-1.5 text-right font-medium">{formatNumber(p.total, 2)}</td>
-                              <td className="px-3 py-1.5 text-right font-bold text-[#05a94f]">
-                                {formatNumber(p.total * p.seatTotal, 2)}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                <div className="bg-violet-50 border border-violet-100 rounded-xl px-4 py-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-2.5 text-xs">
+                    <div>
+                      <p className="text-[10px] text-violet-400 mb-0.5">จำนวน PNR</p>
+                      <p className="font-semibold text-slate-700">{finStats.pnrCount}</p>
                     </div>
-                  )}
-                  <p className="mt-2 text-[10px] text-slate-400">
-                    * ราคาเฉลี่ยคำนวณแบบถ่วงน้ำหนักตามจำนวนที่นั่ง (มูลค่ารวม ÷ จำนวนที่นั่งทั้งหมด)
-                  </p>
+                    <div>
+                      <p className="text-[10px] text-violet-400 mb-0.5">จำนวนที่นั่ง</p>
+                      <p className="font-semibold text-slate-700">{finStats.totalSeats}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-violet-400 mb-0.5">จำนวนระดับราคา</p>
+                      <p className="font-semibold text-violet-700">{priceTiers.length}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-violet-400 mb-0.5">ราคาเฉลี่ยถ่วงน้ำหนัก</p>
+                      <p className="font-bold text-[#05a94f]">{formatNumber(finStats.totalPerSeat, 2)} {currency}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-violet-400 mb-0.5">ราคาต่ำสุด/ที่นั่ง</p>
+                      <p className="font-semibold text-slate-700">{formatNumber(finStats.minTotalPerSeat, 2)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-violet-400 mb-0.5">ราคาสูงสุด/ที่นั่ง</p>
+                      <p className="font-semibold text-slate-700">{formatNumber(finStats.maxTotalPerSeat, 2)}</p>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <p className="text-[10px] text-violet-400 mb-0.5">มูลค่ารวม Stock</p>
+                      <p className="font-bold text-amber-700">{formatNumber(finStats.grandTotal, 2)} {currency}</p>
+                    </div>
+                  </div>
                 </div>
               )}
+
+              {/* C: Fare/Tax/YQ breakdown table */}
+              <div>
+                <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-2">สรุปราคาต่อที่นั่ง</p>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-100">
+                        <th className="py-2 text-left font-medium text-slate-400 w-28">รายการ</th>
+                        <th className="py-2 text-right font-medium text-slate-400">
+                          {finStats.isUniform ? 'ราคาต่อที่นั่ง' : 'ราคาเฉลี่ย/ที่นั่ง'}
+                        </th>
+                        <th className="py-2 text-right font-medium text-slate-400 w-24">จำนวนที่นั่ง</th>
+                        <th className="py-2 text-right font-medium text-slate-400 w-36">รวมทั้งหมด</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr className="border-b border-slate-50">
+                        <td className="py-2 text-slate-600">Fare</td>
+                        <td className="py-2 text-right text-slate-700">{formatNumber(finStats.farePerSeat, 2)}</td>
+                        <td className="py-2 text-right text-slate-400">{finStats.totalSeats}</td>
+                        <td className="py-2 text-right text-slate-700">{formatNumber(finStats.fareTotal, 2)}</td>
+                      </tr>
+                      {finStats.hasTax && (
+                        <tr className="border-b border-slate-50">
+                          <td className="py-2 text-slate-600">Tax</td>
+                          <td className="py-2 text-right text-slate-700">{formatNumber(finStats.taxPerSeat, 2)}</td>
+                          <td className="py-2 text-right text-slate-400">{finStats.totalSeats}</td>
+                          <td className="py-2 text-right text-slate-700">{formatNumber(finStats.taxTotal, 2)}</td>
+                        </tr>
+                      )}
+                      {finStats.hasYQ && (
+                        <tr className="border-b border-slate-50">
+                          <td className="py-2 text-slate-600">YQ</td>
+                          <td className="py-2 text-right text-slate-700">{formatNumber(finStats.yqPerSeat, 2)}</td>
+                          <td className="py-2 text-right text-slate-400">{finStats.totalSeats}</td>
+                          <td className="py-2 text-right text-slate-700">{formatNumber(finStats.yqTotal, 2)}</td>
+                        </tr>
+                      )}
+                      <tr className="border-t-2 border-emerald-100">
+                        <td className="py-2.5 font-bold text-[#05a94f]">ราคาสุทธิ</td>
+                        <td className="py-2.5 text-right font-bold text-[#05a94f]">{formatNumber(finStats.totalPerSeat, 2)}</td>
+                        <td className="py-2.5 text-right text-slate-400">{finStats.totalSeats}</td>
+                        <td className="py-2.5 text-right font-bold text-[#05a94f]">{formatNumber(finStats.grandTotal, 2)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                {!finStats.isUniform && (
+                  <p className="mt-1 text-[10px] text-slate-400">
+                    * ราคาเฉลี่ยถ่วงน้ำหนัก = SUM(ราคาสุทธิ/ที่นั่ง × จำนวนที่นั่ง) ÷ จำนวนที่นั่งทั้งหมด
+                  </p>
+                )}
+              </div>
+
+              {/* D (non-uniform): สรุปตามระดับราคา */}
+              {!finStats.isUniform && (
+                <div>
+                  <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-2">สรุปตามระดับราคา</p>
+                  <div className="overflow-x-auto border border-slate-100 rounded-lg">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-100">
+                          <th className="px-3 py-2 text-left font-medium text-slate-400">ประเภทราคา</th>
+                          <th className="px-3 py-2 text-right font-medium text-slate-400">ราคาสุทธิ/ที่นั่ง</th>
+                          <th className="px-3 py-2 text-right font-medium text-slate-400">จำนวน PNR</th>
+                          <th className="px-3 py-2 text-right font-medium text-slate-400">จำนวนที่นั่ง</th>
+                          <th className="px-3 py-2 text-right font-medium text-slate-400">มูลค่ารวม</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {priceTiers.map((tier, i) => (
+                          <tr key={tier.key} className={`border-b border-slate-50 last:border-0 ${i % 2 === 1 ? 'bg-slate-50/40' : ''}`}>
+                            <td className="px-3 py-2">
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-700">
+                                {formatPriceType(tier.priceFormat)}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 text-right font-semibold text-slate-700">{formatNumber(tier.total, 2)}</td>
+                            <td className="px-3 py-2 text-right text-slate-500">{tier.pnrCount}</td>
+                            <td className="px-3 py-2 text-right text-slate-500">{tier.seatCount}</td>
+                            <td className="px-3 py-2 text-right font-bold text-[#05a94f]">{formatNumber(tier.tierTotal, 2)}</td>
+                          </tr>
+                        ))}
+                        {/* Total row */}
+                        <tr className="border-t-2 border-emerald-100 bg-emerald-50/30">
+                          <td className="px-3 py-2 font-semibold text-slate-600">รวมทั้งหมด</td>
+                          <td className="px-3 py-2 text-right font-bold text-[#05a94f]">{formatNumber(finStats.totalPerSeat, 2)}<span className="font-normal text-slate-400 ml-1">(เฉลี่ย)</span></td>
+                          <td className="px-3 py-2 text-right font-bold text-slate-700">{finStats.pnrCount}</td>
+                          <td className="px-3 py-2 text-right font-bold text-slate-700">{finStats.totalSeats}</td>
+                          <td className="px-3 py-2 text-right font-bold text-amber-700">{formatNumber(finStats.grandTotal, 2)}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* E: ดูรายละเอียดตาม PNR (always visible) */}
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setShowPnrBreakdown(v => !v)}
+                  className="flex items-center gap-1.5 text-xs font-medium text-[#05a94f] hover:text-emerald-700 transition"
+                >
+                  {showPnrBreakdown ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                  {showPnrBreakdown ? 'ซ่อนรายละเอียดตาม PNR' : 'ดูรายละเอียดตาม PNR'}
+                </button>
+                {showPnrBreakdown && (
+                  <div className="mt-2 overflow-x-auto border border-slate-100 rounded-lg">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-100">
+                          <th className="px-3 py-2 text-left font-medium text-slate-400">PNR</th>
+                          <th className="px-3 py-2 text-right font-medium text-slate-400">Seat</th>
+                          <th className="px-3 py-2 text-center font-medium text-slate-400">ประเภทราคา</th>
+                          <th className="px-3 py-2 text-right font-medium text-slate-400">Fare/ที่นั่ง</th>
+                          <th className="px-3 py-2 text-right font-medium text-slate-400">Tax/ที่นั่ง</th>
+                          <th className="px-3 py-2 text-right font-medium text-slate-400">YQ/ที่นั่ง</th>
+                          <th className="px-3 py-2 text-right font-medium text-slate-400">สุทธิ/ที่นั่ง</th>
+                          <th className="px-3 py-2 text-right font-medium text-slate-400">มูลค่ารวม PNR</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pnrs.filter(p => p.status !== 'Cancelled').map((p, i) => (
+                          <tr key={i} className="border-b border-slate-50 last:border-0">
+                            <td className="px-3 py-1.5 font-mono text-slate-700">{p.pnrDisplay}</td>
+                            <td className="px-3 py-1.5 text-right text-slate-600">{p.seatTotal}</td>
+                            <td className="px-3 py-1.5 text-center">
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-700">
+                                {formatPriceType(p.priceFormat)}
+                              </span>
+                            </td>
+                            <td className="px-3 py-1.5 text-right text-slate-700">{formatNumber(p.fare, 2)}</td>
+                            <td className="px-3 py-1.5 text-right">
+                              {p.taxType === 'separate'
+                                ? <span className="text-slate-700">{formatNumber(p.tax, 2)}</span>
+                                : <span className="text-slate-300">ไม่ใช้</span>}
+                            </td>
+                            <td className="px-3 py-1.5 text-right">
+                              {p.priceFormat !== 'ALL_IN'
+                                ? <span className="text-slate-700">{formatNumber(p.yq ?? 0, 2)}</span>
+                                : <span className="text-slate-300">ไม่ใช้</span>}
+                            </td>
+                            <td className="px-3 py-1.5 text-right font-semibold text-slate-800">{formatNumber(p.total, 2)}</td>
+                            <td className="px-3 py-1.5 text-right font-bold text-[#05a94f]">
+                              {formatNumber(p.total * p.seatTotal, 2)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
 
             </div>
           )}
