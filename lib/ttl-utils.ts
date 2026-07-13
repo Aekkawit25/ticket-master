@@ -2,6 +2,13 @@ import { formatDate } from '@/lib/utils'
 
 export type TtlType = 'NONE' | 'DAYS_BEFORE' | 'FIXED_DATE'
 
+/** Map CondTtlCalcType → TtlType used in PNR form */
+export function condTtlTypeToTtlType(calcType: string): TtlType {
+  if (calcType === 'TRAVEL_MINUS_DAYS') return 'DAYS_BEFORE'
+  if (calcType === 'MANUAL_DATE') return 'FIXED_DATE'
+  return 'NONE'
+}
+
 /** Subtract daysBefore from travelStart, noon-anchored to avoid timezone issues */
 export function calcTtlDateFromTravel(travelStart: string, daysBefore: number): string | null {
   if (!travelStart || daysBefore < 0) return null

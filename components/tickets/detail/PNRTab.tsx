@@ -13,6 +13,7 @@ import {
 import { BulkPnrBuilder } from '@/components/shared/BulkPnrBuilder'
 import type { BulkPnrFlightSet, BulkPnrCondition } from '@/components/shared/BulkPnrBuilder'
 import { formatDate, formatDateTime, formatNumber, calcTravelEndFromSectors } from '@/lib/utils'
+import { calcTtlDateFromTravel, formatTtlDisplay, condTtlTypeToTtlType, type TtlType } from '@/lib/ttl-utils'
 import {
   saveDemoStock, calculateStockSummary, checkPNRDuplicatesInSystem, getStockFlightSets,
   getPnrOperationalStatus, getPnrConfirmationStatus,
@@ -20,6 +21,8 @@ import {
 import type { DemoStock, DemoPNR, DemoLog, DemoSector, DemoFlightSet } from '@/lib/demo-storage'
 import { MASTER_AIRLINE_CODE_SET } from '@/lib/master-data'
 import { AirlineCell } from '@/components/shared/AirlineCell'
+import { TtlField } from '@/components/shared/TtlField'
+import type { ConditionTtlInfo } from '@/components/shared/TtlField'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -44,6 +47,10 @@ interface PNRRow {
   condition: string | null
   condition_code: string | null
   next_ttl: string | null
+  ttl_type: TtlType | null
+  ttl_days_before: number | null
+  ttl_date: string | null
+  ttl_time: string | null
   status: string
 }
 
@@ -62,7 +69,8 @@ interface PNRFormState {
   conditionCode: string
   status: string
   remark: string
-  ttlStatus: 'UNSET' | 'SET'
+  ttlType: TtlType
+  ttlDaysBefore: string
   ttlDate: string
   ttlTime: string
 }
@@ -71,7 +79,7 @@ const EMPTY_FORM: PNRFormState = {
   pnrCode: '', travelStart: '', flightSetId: '', seatTotal: '',
   priceFormat: 'FARE', fare: '', yq: '', allIn: '', breakdown: false,
   taxType: 'separate', tax: '', conditionCode: '', status: 'Pending', remark: '',
-  ttlStatus: 'UNSET', ttlDate: '', ttlTime: '',
+  ttlType: 'NONE', ttlDaysBefore: '', ttlDate: '', ttlTime: '',
 }
 
 const newId = (p: string) => `${p}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
@@ -457,7 +465,9 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
       conditionCode: pnr.conditionCode || '',
       status:        pnr.status || 'Pending',
       remark:        pnr.remark || '',
-      ttlStatus:     (pnr.ttlDate ? 'SET' : 'UNSET') as 'UNSET' | 'SET',
+      // Restore TTL type — backward compat: infer FIXED_DATE from date presence if ttlType not stored
+      ttlType:       pnr.ttlType ?? (pnr.ttlDate ? 'FIXED_DATE' : 'NONE'),
+      ttlDaysBefore: pnr.ttlDaysBefore != null ? String(pnr.ttlDaysBefore) : '',
       ttlDate:       pnr.ttlDate || '',
       ttlTime:       pnr.ttlTime || '',
     })
@@ -527,10 +537,18 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
       catch { return { sectorType: s.sectorType, date: '' } }
     })
 
-    // TTL is user-entered — not calculated from Condition
-    const ttlDate: string | null = (form.ttlStatus === 'SET' && form.ttlDate) ? form.ttlDate : null
-    const ttlTimeStr: string | null = (form.ttlStatus === 'SET' && form.ttlTime) ? form.ttlTime : null
-    const ttlDateTime: string | null = (ttlDate && ttlTimeStr) ? `${ttlDate}T${ttlTimeStr}:00` : null
+    // TTL computation — depends on ttlType
+    let ttlDate: string | null = null
+    const ttlTimeStr: string | null = form.ttlTime || null
+    if (form.ttlType === 'DAYS_BEFORE') {
+      const n = parseInt(form.ttlDaysBefore, 10)
+      if (!isNaN(n) && n >= 0 && travelStart) {
+        ttlDate = calcTtlDateFromTravel(travelStart, n)
+      }
+    } else if (form.ttlType === 'FIXED_DATE') {
+      ttlDate = form.ttlDate || null
+    }
+    const ttlDateTime: string | null = ttlDate ? (ttlTimeStr ? `${ttlDate}T${ttlTimeStr}:00` : `${ttlDate}T00:00:00`) : null
 
     const taxStatus: 'completed' | 'included' | 'pending' =
       taxType === 'included' ? 'included' : taxType === 'pending' ? 'pending' : 'completed'
@@ -558,6 +576,8 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
       taxStatus,
       total,
       conditionCode:  form.conditionCode || '',
+      ttlType:        form.ttlType,
+      ttlDaysBefore:  form.ttlType === 'DAYS_BEFORE' ? (parseInt(form.ttlDaysBefore, 10) || null) : null,
       ttlDate,
       ttlTime:        ttlTimeStr,
       ttlDateTime,
@@ -597,6 +617,17 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
           errs.breakdown = `ส่วนต่าง ${diff > 0 ? '+' : ''}${formatNumber(diff)} — รวม Fare+YQ+Tax ต้องเท่ากับ All In`
         }
       }
+    }
+    // TTL validation
+    if (form.ttlType === 'DAYS_BEFORE') {
+      if (form.ttlDaysBefore === '') errs.ttl = 'กรุณาระบุจำนวนวันก่อนเดินทาง'
+      else {
+        const n = parseInt(form.ttlDaysBefore, 10)
+        if (isNaN(n) || n < 0) errs.ttl = 'จำนวนวันต้องไม่น้อยกว่า 0'
+        else if (!form.travelStart) errs.ttl = 'กรุณาระบุวันเดินทางก่อนคำนวณ TTL'
+      }
+    } else if (form.ttlType === 'FIXED_DATE') {
+      if (!form.ttlDate) errs.ttl = 'กรุณาเลือกวันที่กำหนดส่ง NAME'
     }
     if (form.pnrCode.trim()) {
       const dup = checkPNRDuplicatesInSystem([{ pnr_code: form.pnrCode.trim() }])
@@ -1124,6 +1155,10 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
         condition: liveStock.conditions.find(c => c.condition.conditionCode === p.conditionCode)?.condition.conditionName || null,
         condition_code: p.conditionCode || null,
         next_ttl: p.ttlDateTime,
+        ttl_type: p.ttlType ?? null,
+        ttl_days_before: p.ttlDaysBefore ?? null,
+        ttl_date: p.ttlDate,
+        ttl_time: p.ttlTime,
         status: p.status,
       }))
     : mockPNRs
@@ -1357,7 +1392,24 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                       )}
                     </Td>
                     <Td className="text-xs text-slate-700">
-                      {p.next_ttl ? formatDateTime(p.next_ttl) : '—'}
+                      {p.ttl_type === 'NONE' || (!p.ttl_type && !p.ttl_date) ? (
+                        <span className="text-slate-300">ไม่ระบุ</span>
+                      ) : (
+                        <div className="flex flex-col gap-0.5">
+                          {p.ttl_type === 'DAYS_BEFORE' && p.ttl_days_before != null && (
+                            <span className="text-[10px] font-semibold text-slate-600 whitespace-nowrap">ก่อนเดินทาง {p.ttl_days_before} วัน</span>
+                          )}
+                          {p.ttl_type === 'FIXED_DATE' && (
+                            <span className="text-[10px] font-semibold text-slate-600 whitespace-nowrap">วันที่กำหนดเอง</span>
+                          )}
+                          {p.ttl_date && (
+                            <span className="text-[11px] text-slate-500 whitespace-nowrap">{formatTtlDisplay(p.ttl_date, p.ttl_time)}</span>
+                          )}
+                          {!p.ttl_date && p.next_ttl && (
+                            <span className="text-[11px] text-slate-500 whitespace-nowrap">{formatDateTime(p.next_ttl)}</span>
+                          )}
+                        </div>
+                      )}
                     </Td>
                     <Td><PnrOperationalStatusBadge status={demoPnr ? getPnrOperationalStatus(demoPnr) : 'PENDING'} /></Td>
                     <Td><PnrConfirmationStatusBadge status={demoPnr ? getPnrConfirmationStatus(demoPnr) : 'PENDING_CONFIRMATION'} /></Td>
@@ -1719,41 +1771,38 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
           )}
 
           {/* TTL */}
-          <div className="rounded-xl border border-amber-200 bg-amber-50/40 p-3 space-y-2">
-            <div className="flex items-center gap-2">
-              <label className="text-xs font-semibold text-amber-700">กำหนดส่ง NAME (TTL)</label>
-              <select
-                value={form.ttlStatus}
-                onChange={e => setForm(f => ({ ...f, ttlStatus: e.target.value as 'UNSET' | 'SET' }))}
-                className="border border-amber-300 rounded px-2 py-0.5 text-xs text-amber-700 bg-white focus:outline-none focus:ring-1 focus:ring-amber-400 appearance-none cursor-pointer"
-              >
-                <option value="UNSET">ยังไม่ระบุ</option>
-                <option value="SET">ระบุแล้ว</option>
-              </select>
-            </div>
-            {form.ttlStatus === 'SET' && (
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-[10px] text-amber-600 mb-0.5">TTL Date</label>
-                  <input
-                    type="date"
-                    value={form.ttlDate}
-                    onChange={e => setForm(f => ({ ...f, ttlDate: e.target.value }))}
-                    className="w-full border border-amber-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-300/50 bg-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[10px] text-amber-600 mb-0.5">TTL Time</label>
-                  <TimeInput
-                    value={form.ttlTime}
-                    onChange={v => setForm(f => ({ ...f, ttlTime: v }))}
-                    placeholder="HH:mm"
-                    className="border border-amber-300 rounded-lg bg-white w-full"
-                  />
-                </div>
-              </div>
-            )}
-          </div>
+          {(() => {
+            const selCond = conditions.find(c => c.condition.conditionCode === form.conditionCode)
+            const condTtlRule = selCond?.condition.ttlRule
+            const condInfo: ConditionTtlInfo | null = (condTtlRule && condTtlRule.calcType !== 'NOT_SET') ? {
+              code: selCond!.condition.conditionCode,
+              name: selCond!.condition.conditionName,
+              calcType: condTtlRule.calcType,
+              daysBefore: condTtlRule.daysBefore,
+              fixedDate: condTtlRule.fixedDate || undefined,
+              time: condTtlRule.time || undefined,
+            } : null
+            const applyConditionTtl = condInfo ? () => {
+              const ttlType = condTtlTypeToTtlType(condInfo.calcType)
+              const ttlDaysBefore = ttlType === 'DAYS_BEFORE' ? String(condInfo.daysBefore ?? 30) : ''
+              const ttlDate = ttlType === 'FIXED_DATE' ? (condInfo.fixedDate ?? '') : ''
+              const ttlTime = condInfo.time ?? ''
+              setForm(f => ({ ...f, ttlType, ttlDaysBefore, ttlDate, ttlTime }))
+            } : undefined
+            return (
+              <TtlField
+                travelDate={form.travelStart || null}
+                ttlType={form.ttlType}
+                ttlDaysBefore={form.ttlDaysBefore}
+                ttlDate={form.ttlDate}
+                ttlTime={form.ttlTime}
+                conditionInfo={condInfo}
+                error={errors.ttl}
+                onChange={updates => setForm(f => ({ ...f, ...updates }))}
+                onApplyCondition={applyConditionTtl}
+              />
+            )
+          })()}
 
           {/* Remark */}
           <div>

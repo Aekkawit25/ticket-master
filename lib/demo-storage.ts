@@ -1,6 +1,7 @@
 import { format, parseISO, isValid } from 'date-fns'
 import { buildRouteText, formatDate } from '@/lib/utils'
 import type { WizardState, FlightSeries, TicketType, TripType, StockStatus, PnrOperationalStatus, PnrConfirmationStatus } from '@/types'
+import type { TtlType } from '@/lib/ttl-utils'
 import {
   type AppStockCondition, type AppCondition, type CondCalcType, type CondDueType, type CondTtlCalcType, type CondRefundableType,
   calcCondTtlDate,
@@ -337,6 +338,8 @@ export interface DemoPNR {
   taxStatus: 'completed' | 'included' | 'pending'
   total: number
   conditionCode: string
+  ttlType?: TtlType | null
+  ttlDaysBefore?: number | null
   ttlDate: string | null
   ttlTime: string | null
   ttlDateTime: string | null
