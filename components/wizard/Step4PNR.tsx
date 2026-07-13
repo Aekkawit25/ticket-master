@@ -751,6 +751,9 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
       pnr.condition_id = row.conditionCode
       pnr.status = (row.status || 'Pending') as PNRStatus
       pnr.remark = row.remark
+      pnr.ttl_status = (row.ttlType !== 'NONE' && row.ttlDate) ? 'SET' : 'UNSET'
+      pnr.ttl_date = row.ttlDate ?? null
+      pnr.ttl_time = row.ttlTime ?? null
       return pnr
     })
     onChange([...pnrs, ...newPNRs])

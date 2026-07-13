@@ -62,7 +62,8 @@ export interface BulkPnrRow {
   isDummy: boolean
   pnrCode: string
   dummyPnr: string
-  ttlStatus: 'UNSET' | 'SET'
+  ttlType: 'NONE' | 'DAYS_BEFORE' | 'FIXED_DATE'
+  ttlDaysBefore: number | null
   ttlDate: string | null
   ttlTime: string | null
 }
@@ -99,9 +100,11 @@ interface SharedCfg {
   conditionCode: string
   status: string
   remark: string
-  ttlStatus: 'UNSET' | 'SET'
+  ttlType: 'NONE' | 'DAYS_BEFORE' | 'FIXED_DATE'
+  ttlDaysBefore: string
   ttlDate: string
   ttlTime: string
+  ttlUserModified: boolean
 }
 
 interface CountCfg { startDate: string; count: number; intervalDays: number }
@@ -116,7 +119,7 @@ interface InternalRow {
   conditionCode: string; status: string; remark: string
   isDummy: boolean
   paymentDueDate: string | null; ttlDateTime: string | null
-  ttlStatus: 'UNSET' | 'SET'
+  ttlType: 'NONE' | 'DAYS_BEFORE' | 'FIXED_DATE'
   ttlDate: string | null
   ttlTime: string | null
   errors: string[]; selected: boolean
@@ -132,12 +135,21 @@ const INIT_SHARED: SharedCfg = {
   seatTotal: 0, flightSetId: '',
   priceFormat: 'FARE', fare: '', yq: '', allIn: '', breakdown: false,
   tax: '', conditionCode: '', status: 'Pending', remark: '',
-  ttlStatus: 'UNSET', ttlDate: '', ttlTime: '',
+  ttlType: 'NONE', ttlDaysBefore: '', ttlDate: '', ttlTime: '', ttlUserModified: false,
 }
 const INIT_COUNT: CountCfg = { startDate: '', count: 1, intervalDays: 1 }
 const INIT_WD: WdCfg = { startDate: '', endDate: '', weekdays: new Set() }
 
 const newId = (p: string) => `${p}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+
+function calcTtlDateFromTravel(travelStart: string, daysBefore: number): string | null {
+  if (!travelStart || daysBefore < 0) return null
+  try {
+    const d = new Date(travelStart + 'T12:00:00')
+    d.setDate(d.getDate() - daysBefore)
+    return d.toISOString().split('T')[0]
+  } catch { return null }
+}
 
 // ─── Internal Helpers ─────────────────────────────────────────────────────────
 
@@ -266,9 +278,23 @@ function buildInternalRows(
       conditionCode: shared.conditionCode, status: shared.status, remark: shared.remark,
       paymentDueDate: calcPaymentDue(s, travelEnd, cond),
       ttlDateTime: null,
-      ttlStatus: shared.ttlStatus,
-      ttlDate: shared.ttlStatus === 'SET' ? (shared.ttlDate || null) : null,
-      ttlTime: shared.ttlStatus === 'SET' ? (shared.ttlTime || null) : null,
+      ttlType: (() => {
+        if (shared.ttlType === 'DAYS_BEFORE') {
+          const d = parseInt(shared.ttlDaysBefore, 10)
+          return (!isNaN(d) && d >= 0 && calcTtlDateFromTravel(s, d)) ? 'DAYS_BEFORE' : 'NONE'
+        }
+        if (shared.ttlType === 'FIXED_DATE' && shared.ttlDate) return 'FIXED_DATE'
+        return 'NONE'
+      })(),
+      ttlDate: (() => {
+        if (shared.ttlType === 'DAYS_BEFORE') {
+          const d = parseInt(shared.ttlDaysBefore, 10)
+          return (!isNaN(d) && d >= 0) ? calcTtlDateFromTravel(s, d) : null
+        }
+        if (shared.ttlType === 'FIXED_DATE') return shared.ttlDate || null
+        return null
+      })(),
+      ttlTime: shared.ttlType !== 'NONE' ? (shared.ttlTime || null) : null,
       errors: [], selected: false,
     }
   })
@@ -463,6 +489,7 @@ export function BulkPnrBuilder({
   const [rows,    setRows]    = useState<InternalRow[]>([])
   const [saving,  setSaving]  = useState(false)
   const [formErr, setFormErr] = useState('')
+  const [condTtlConfirm, setCondTtlConfirm] = useState<{ pendingCode: string } | null>(null)
 
   // Bulk toolbar
   const [bSeat, setBSeat]   = useState('')
@@ -527,13 +554,31 @@ export function BulkPnrBuilder({
     calItems.length > 0
   const canPreview = hasDateInput && shared.seatTotal > 0
 
+  const applyConditionCode = (code: string, cond?: BulkPnrCondition) => {
+    const patch: Partial<SharedCfg> = { conditionCode: code, ttlUserModified: false }
+    if (!code) {
+      patch.ttlType = 'NONE'; patch.ttlDaysBefore = ''; patch.ttlDate = ''; patch.ttlTime = ''
+    } else if (cond?.ttlRule) {
+      const { calcType, daysBefore, date, time } = cond.ttlRule
+      if (calcType === 'TRAVEL_MINUS_DAYS') {
+        patch.ttlType = 'DAYS_BEFORE'; patch.ttlDaysBefore = String(daysBefore ?? 0); patch.ttlTime = time || ''
+      } else if (calcType === 'MANUAL_DATE') {
+        patch.ttlType = 'FIXED_DATE'; patch.ttlDate = date || ''; patch.ttlTime = time || ''
+      } else {
+        patch.ttlType = 'NONE'; patch.ttlDaysBefore = ''; patch.ttlDate = ''; patch.ttlTime = ''
+      }
+    }
+    setShared(s => ({ ...s, ...patch }))
+    setCondTtlConfirm(null)
+  }
+
   // ── Reset ─────────────────────────────────────────────────────────────────
 
   const resetAll = () => {
     setStep('form'); setMethod('count')
     setShared({ ...INIT_SHARED, flightSetId: '' })
     setCountCfg(INIT_COUNT); setWdCfg(INIT_WD); setCalItems([])
-    setRows([]); setSaving(false); setFormErr('')
+    setRows([]); setSaving(false); setFormErr(''); setCondTtlConfirm(null)
   }
 
   const handleClose = () => { resetAll(); onClose() }
@@ -622,9 +667,13 @@ export function BulkPnrBuilder({
     if (breakdownMismatch)  { setFormErr('Fare + YQ + Tax ไม่เท่ากับ All In / Total'); return }
 
     // TTL validation
-    if (shared.ttlStatus === 'SET' && (!shared.ttlDate || !shared.ttlTime)) {
-      setFormErr('กรุณาระบุวันที่และเวลา TTL ให้ครบ')
-      return
+    if (shared.ttlType === 'DAYS_BEFORE') {
+      const d = parseInt(shared.ttlDaysBefore, 10)
+      if (shared.ttlDaysBefore === '' || isNaN(d)) { setFormErr('กรุณาระบุจำนวนวันก่อนเดินทาง'); return }
+      if (d < 0) { setFormErr('จำนวนวันก่อนเดินทางต้องไม่ติดลบ'); return }
+    }
+    if (shared.ttlType === 'FIXED_DATE' && !shared.ttlDate) {
+      setFormErr('กรุณาเลือกวันที่กำหนดส่ง NAME (TTL)'); return
     }
 
     const calDates = [...calItems].sort((a, b) => a.date.localeCompare(b.date)).map(it => it.date)
@@ -668,7 +717,8 @@ export function BulkPnrBuilder({
       isDummy:       !!r.dummyPnr,
       pnrCode:       r.pnrCode,
       dummyPnr:      r.dummyPnr,
-      ttlStatus:     r.ttlStatus,
+      ttlType:       r.ttlType,
+      ttlDaysBefore: shared.ttlType === 'DAYS_BEFORE' ? (parseInt(shared.ttlDaysBefore, 10) || 0) : null,
       ttlDate:       r.ttlDate,
       ttlTime:       r.ttlTime,
     }))
@@ -1134,7 +1184,17 @@ export function BulkPnrBuilder({
                     {/* Condition */}
                     <FL label="Condition" className="col-span-2">
                       <select value={shared.conditionCode}
-                        onChange={e => setShared(s => ({ ...s, conditionCode: e.target.value }))}
+                        onChange={e => {
+                          const newCode = e.target.value
+                          const cond = conditions.find(c => c.code === newCode)
+                          const ttlCalc = cond?.ttlRule?.calcType
+                          const hasNewTtl = ttlCalc === 'TRAVEL_MINUS_DAYS' || ttlCalc === 'MANUAL_DATE'
+                          if (shared.ttlUserModified && shared.ttlType !== 'NONE' && hasNewTtl) {
+                            setCondTtlConfirm({ pendingCode: newCode })
+                          } else {
+                            applyConditionCode(newCode, cond)
+                          }
+                        }}
                         className={iCls}>
                         <option value="">ไม่ระบุ</option>
                         {conditions.map(c => <option key={c.code} value={c.code}>{c.name}</option>)}
@@ -1151,37 +1211,53 @@ export function BulkPnrBuilder({
                     </FL>
 
                     {/* Row 5: TTL — full width */}
-                    <div className="col-span-2 rounded-xl border border-amber-200 bg-amber-50/40 p-3 space-y-2">
-                      <div className="flex items-center gap-2">
-                        <label className="shrink-0 text-xs font-medium text-slate-600">กำหนดส่ง NAME (TTL)</label>
+                    <div className="col-span-2 rounded-xl border border-amber-200 bg-amber-50/40 p-3 space-y-2.5">
+                      <FL label="กำหนดส่ง NAME (TTL)">
                         <select
-                          value={shared.ttlStatus}
-                          onChange={e => setShared(s => ({
-                            ...s,
-                            ttlStatus: e.target.value as 'UNSET' | 'SET',
-                            ttlDate: e.target.value === 'UNSET' ? '' : s.ttlDate,
-                            ttlTime: e.target.value === 'UNSET' ? '' : s.ttlTime,
-                          }))}
-                          className="rounded-lg border border-amber-300 bg-white px-2 py-1 text-xs outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/15">
-                          <option value="UNSET">ยังไม่ระบุ</option>
-                          <option value="SET">ระบุแล้ว</option>
+                          value={shared.ttlType}
+                          onChange={e => {
+                            const t = e.target.value as 'NONE' | 'DAYS_BEFORE' | 'FIXED_DATE'
+                            setShared(s => ({
+                              ...s, ttlType: t, ttlUserModified: true,
+                              ttlDaysBefore: t === 'NONE' ? '' : s.ttlDaysBefore,
+                              ttlDate: t === 'NONE' || t === 'DAYS_BEFORE' ? '' : s.ttlDate,
+                              ttlTime: t === 'NONE' ? '' : s.ttlTime,
+                            }))
+                          }}
+                          className="rounded-lg border border-amber-300 bg-white px-2 py-1.5 text-xs outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/15 w-full">
+                          <option value="NONE">ไม่ระบุ</option>
+                          <option value="DAYS_BEFORE">ก่อนวันเดินทาง</option>
+                          <option value="FIXED_DATE">วันที่กำหนดเอง</option>
                         </select>
-                      </div>
-                      {shared.ttlStatus === 'SET' && (
+                      </FL>
+                      {shared.ttlType === 'DAYS_BEFORE' && (
                         <div className="grid grid-cols-2 gap-2">
                           <div className="flex flex-col gap-0.5">
-                            <label className="text-[11px] text-slate-500">วันที่ TTL</label>
-                            <input
-                              type="date"
-                              value={shared.ttlDate}
-                              onChange={e => setShared(s => ({ ...s, ttlDate: e.target.value }))}
+                            <label className="text-[11px] font-medium text-slate-600">จำนวนวันก่อนเดินทาง <span className="text-red-400">*</span></label>
+                            <input type="number" min={0} placeholder="เช่น 30" value={shared.ttlDaysBefore}
+                              onChange={e => setShared(s => ({ ...s, ttlDaysBefore: e.target.value, ttlUserModified: true }))}
+                              className="rounded-lg border border-amber-300 bg-white px-2 py-1.5 text-xs outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/15 text-center" />
+                          </div>
+                          <div className="flex flex-col gap-0.5">
+                            <label className="text-[11px] font-medium text-slate-600">เวลา TTL</label>
+                            <TimeInput value={shared.ttlTime}
+                              onChange={v => setShared(s => ({ ...s, ttlTime: v, ttlUserModified: true }))}
+                              className="rounded-lg border border-amber-300 bg-white px-2 py-1.5 text-xs outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/15" />
+                          </div>
+                        </div>
+                      )}
+                      {shared.ttlType === 'FIXED_DATE' && (
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="flex flex-col gap-0.5">
+                            <label className="text-[11px] font-medium text-slate-600">วันที่กำหนดส่ง NAME <span className="text-red-400">*</span></label>
+                            <input type="date" value={shared.ttlDate}
+                              onChange={e => setShared(s => ({ ...s, ttlDate: e.target.value, ttlUserModified: true }))}
                               className="rounded-lg border border-amber-300 bg-white px-2 py-1.5 text-xs outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/15" />
                           </div>
                           <div className="flex flex-col gap-0.5">
-                            <label className="text-[11px] text-slate-500">เวลา TTL</label>
-                            <TimeInput
-                              value={shared.ttlTime}
-                              onChange={v => setShared(s => ({ ...s, ttlTime: v }))}
+                            <label className="text-[11px] font-medium text-slate-600">เวลา TTL</label>
+                            <TimeInput value={shared.ttlTime}
+                              onChange={v => setShared(s => ({ ...s, ttlTime: v, ttlUserModified: true }))}
                               className="rounded-lg border border-amber-300 bg-white px-2 py-1.5 text-xs outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/15" />
                           </div>
                         </div>
@@ -1376,30 +1452,19 @@ export function BulkPnrBuilder({
                               : <span className="text-slate-300">รอข้อมูล</span>}
                           </td>
                           {/* TTL */}
-                          <td className="px-1 py-2 bg-amber-50/20">
-                            <div className="flex flex-col gap-0.5 min-w-[130px]">
-                              <select
-                                value={row.ttlStatus || 'UNSET'}
-                                onChange={e => updateRow(row.rowId, {
-                                  ttlStatus: e.target.value as 'UNSET' | 'SET',
-                                  ttlDate:   e.target.value === 'UNSET' ? null : row.ttlDate,
-                                  ttlTime:   e.target.value === 'UNSET' ? null : row.ttlTime,
-                                })}
-                                className="h-6 border border-amber-200 rounded-lg px-1.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-amber-400 bg-white">
-                                <option value="UNSET">ยังไม่ระบุ</option>
-                                <option value="SET">ระบุแล้ว</option>
-                              </select>
-                              {row.ttlStatus === 'SET' && (
-                                <div className="flex flex-col gap-0.5">
-                                  <input type="date" value={row.ttlDate || ''}
-                                    onChange={e => updateRow(row.rowId, { ttlDate: e.target.value || null })}
-                                    className="h-6 border border-amber-200 rounded-lg px-1.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-amber-400 bg-white" />
-                                  <TimeInput value={row.ttlTime || ''}
-                                    onChange={v => updateRow(row.rowId, { ttlTime: v || null })}
-                                    className="h-6 border border-amber-200 rounded-lg px-1.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-amber-400 bg-white" />
-                                </div>
-                              )}
-                            </div>
+                          <td className="px-2 py-2 bg-amber-50/20 min-w-[120px]">
+                            {row.ttlType === 'NONE'
+                              ? <span className="text-slate-300 text-xs">ไม่ระบุ</span>
+                              : row.ttlDate
+                                ? <div className="flex flex-col gap-0.5">
+                                    {row.ttlType === 'DAYS_BEFORE' && (
+                                      <span className="text-[10px] text-amber-500">ก่อนเดินทาง {shared.ttlDaysBefore} วัน</span>
+                                    )}
+                                    <span className="text-xs font-semibold text-amber-700">{formatDate(row.ttlDate)}</span>
+                                    {row.ttlTime && <span className="text-[10px] text-slate-400">{row.ttlTime}</span>}
+                                  </div>
+                                : <span className="text-[10px] text-red-400">คำนวณไม่ได้</span>
+                            }
                           </td>
                           {/* Status */}
                           <td className="px-1 py-2">
@@ -1437,6 +1502,34 @@ export function BulkPnrBuilder({
             </div>
           )}
         </div>
+
+        {/* Condition–TTL confirmation dialog */}
+        {condTtlConfirm && (
+          <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/40 rounded-2xl">
+            <div className="bg-white rounded-2xl shadow-2xl w-80 p-6 mx-4">
+              <h3 className="text-sm font-semibold text-slate-900 mb-2">เงื่อนไขที่เลือกมีการกำหนด NAME (TTL)</h3>
+              <p className="text-xs text-slate-600 mb-5">ต้องการอัปเดตค่า TTL ตามเงื่อนไขใหม่หรือไม่?</p>
+              <div className="flex justify-end gap-3">
+                <button type="button"
+                  onClick={() => {
+                    setShared(s => ({ ...s, conditionCode: condTtlConfirm.pendingCode }))
+                    setCondTtlConfirm(null)
+                  }}
+                  className="px-4 py-2 text-sm text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">
+                  ยกเลิก
+                </button>
+                <button type="button"
+                  onClick={() => {
+                    const cond = conditions.find(c => c.code === condTtlConfirm.pendingCode)
+                    applyConditionCode(condTtlConfirm.pendingCode, cond)
+                  }}
+                  className="px-4 py-2 text-sm font-semibold bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors">
+                  อัปเดตทั้งหมด
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ══ FOOTER ══════════════════════════════════════════════════════ */}
         <div className="flex min-h-[68px] shrink-0 items-center justify-between gap-4 border-t border-slate-200 bg-white px-6 py-4 flex-wrap sm:flex-nowrap">
