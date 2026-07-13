@@ -6,6 +6,7 @@ import { Table, TableHead, TableBody, Th, Td, TableRow, EmptyRow } from '@/compo
 import { formatDate, formatDateTime, calcTravelEndFromSectors, buildRouteText } from '@/lib/utils'
 import { getStockTypeConfigSafe } from '@/lib/stock-type-config'
 import { calcCondTtlDate } from '@/lib/condition-schema'
+import { resolvePnrFormTtl } from '@/lib/ttl-utils'
 import { checkPNRDuplicatesInSystem, type PNRConflictDetail } from '@/lib/demo-storage'
 import { CheckCircle2, Plane, Users, FileText, CreditCard, ArrowRight, AlertTriangle } from 'lucide-react'
 import type { WizardState, FlightPNRFormData } from '@/types'
@@ -340,9 +341,10 @@ export default function Step5Review({ state, excludeStockId }: Step5Props) {
                 pnrs.map((p, i) => {
                   const travelEnd = calcTravelEndFromSectors(p.travel_start, getPnrSectors(p)) || p.travel_end || ''
                   const cond = conditions.find(c => c.conditionId === p.condition_id)
-                  const firstTTL = (cond && p.travel_start)
+                  const condTtl = (cond && p.travel_start)
                     ? calcCondTtlDate(cond.ttlRule, p.travel_start)
                     : null
+                  const resolvedTtl = resolvePnrFormTtl(p, condTtl)
                   const isDup = dupResult.duplicateIndices.has(i)
                   return (
                     <TableRow key={i} className={isDup ? 'bg-red-50' : ''}>
@@ -379,8 +381,15 @@ export default function Step5Review({ state, excludeStockId }: Step5Props) {
                       </Td>
                       <Td className="text-right text-xs font-bold">{(p.total_amount || 0) > 0 ? (p.total_amount || 0).toLocaleString() : '—'}</Td>
                       <Td className="text-xs">{getConditionName(p.condition_id)}</Td>
-                      <Td className="text-xs font-medium text-amber-600 whitespace-nowrap">
-                        {firstTTL ? formatDateTime(firstTTL) : '—'}
+                      <Td className="text-xs whitespace-nowrap">
+                        {resolvedTtl ? (
+                          <div className="space-y-0.5">
+                            {p.ttl_type === 'DAYS_BEFORE' && p.ttl_days_before != null && (
+                              <p className="text-[10px] text-slate-400">ก่อนเดินทาง {p.ttl_days_before} วัน</p>
+                            )}
+                            <p className="font-medium text-amber-600">{formatDate(resolvedTtl)}</p>
+                          </div>
+                        ) : '—'}
                       </Td>
                       <Td><PNRStatusBadge status={p.status} /></Td>
                     </TableRow>

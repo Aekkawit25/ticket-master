@@ -26,6 +26,36 @@ export function formatTtlDisplay(ttlDate: string | null, ttlTime: string | null)
   return ttlTime ? `${d} · ${ttlTime}` : d
 }
 
+/**
+ * Resolves the final TTL date for a PNR form row (wizard / edit context).
+ * Priority: per-PNR ttl_type override → stored ttl_date → condition-derived fallback.
+ *
+ * For DAYS_BEFORE, always recomputes from travel_start so the date stays in
+ * sync when the user changes the departure date after setting TTL.
+ */
+export function resolvePnrFormTtl(
+  p: {
+    ttl_type?: TtlType | null
+    ttl_days_before?: number | null
+    ttl_date?: string | null
+    travel_start?: string
+  },
+  conditionTtlDate?: string | null,
+): string | null {
+  if (p.ttl_type === 'DAYS_BEFORE') {
+    // Always recompute — keeps TTL in sync when travel_start changes
+    if (p.ttl_days_before != null && p.ttl_days_before >= 0 && p.travel_start) {
+      return calcTtlDateFromTravel(p.travel_start, p.ttl_days_before)
+    }
+    return p.ttl_date || null   // fallback: stored date (no travel_start yet)
+  }
+  if (p.ttl_type === 'FIXED_DATE') return p.ttl_date || null
+  if (p.ttl_type === 'NONE') return null
+  // No explicit ttl_type (legacy / no TTL set): fall back to stored date then condition
+  if (p.ttl_date) return p.ttl_date
+  return conditionTtlDate ?? null
+}
+
 /** Check if a PNR has a set TTL (ttl_type is not NONE and ttl_date is set) */
 export function hasTtl(p: { ttl_type?: TtlType; ttl_date?: string | null }): boolean {
   // Explicitly cleared
