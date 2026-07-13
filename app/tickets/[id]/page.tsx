@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import AppLayout from '@/components/layout/AppLayout'
-import { Badge, StockStatusBadge, TicketTypeBadge } from '@/components/ui/badge'
+import { Badge, StockStatusBadge, TicketTypeBadge, PnrOperationalStatusBadge } from '@/components/ui/badge'
 import { Table, TableHead, TableBody, Th, Td, TableRow, EmptyRow } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
@@ -24,6 +24,10 @@ import { ConditionsTab } from '@/components/tickets/detail/ConditionsTab'
 import { ReopenStockModal, REOPEN_SECTIONS, CURRENT_DEMO_USER } from '@/components/tickets/detail/ReopenStockModal'
 import { ExtendScopeModal } from '@/components/tickets/detail/ExtendScopeModal'
 import { SummaryTab } from '@/components/tickets/detail/SummaryTab'
+import {
+  DraftToActiveModal, ActiveToClosedModal, CancelStockModal,
+} from '@/components/wizard/StockStatusModals'
+import type { DraftToActiveResult, ActiveToClosedResult } from '@/components/wizard/StockStatusModals'
 
 
 const TABS = ['Summary', 'PNR', 'Flight Segments', 'Conditions', 'Payment Schedule', 'Logs']
@@ -166,8 +170,10 @@ export default function TicketDetailPage() {
   const [showExtendScope, setShowExtendScope]   = useState(false)
   const [extendPreSections, setExtendPreSections] = useState<string[]>([])
 
-  // Activate Stock
+  // Stock status modals
   const [showActivateModal, setShowActivateModal] = useState(false)
+  const [showCloseModal, setShowCloseModal]       = useState(false)
+  const [showCancelModal, setShowCancelModal]     = useState(false)
 
   // Toast
   const [toast, setToast]                     = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
@@ -260,25 +266,36 @@ if (stockForm.airline_code  !== liveStock.airlineCode)         changes.push(`Air
     showToast('บันทึกข้อมูล Stock สำเร็จ', 'success')
   }
 
-  // Activate stock (Draft → Active) — activates all PENDING PNRs
-  const handleActivateStock = () => {
+  // Activate stock (Draft → Active) — scope via DraftToActiveModal
+  const handleActivateStock = (result: DraftToActiveResult) => {
     if (!liveStock) return
     const now = new Date().toISOString()
-    const activatedPnrs = liveStock.pnrs.map(p => {
-      const opStatus = getPnrOperationalStatus(p)
-      if (opStatus !== 'PENDING') return p
-      return { ...p, pnrStatus: 'ACTIVE' as const, activatedAt: now, activatedBy: CURRENT_DEMO_USER.name }
-    })
+    let updatedPnrs = liveStock.pnrs
+    if (result.scope === 'ALL_READY') {
+      updatedPnrs = liveStock.pnrs.map(p => {
+        if (getPnrOperationalStatus(p) !== 'PENDING') return p
+        const isReady = !!(p.travelStart && p.seatTotal > 0 && p.fare && p.conditionCode)
+        if (!isReady) return p
+        return { ...p, pnrStatus: 'ACTIVE' as const, activatedAt: now, activatedBy: CURRENT_DEMO_USER.name }
+      })
+    } else if (result.scope === 'SELECTED') {
+      updatedPnrs = liveStock.pnrs.map(p => {
+        if (!result.selectedPnrIds.includes(p.pnrId)) return p
+        if (getPnrOperationalStatus(p) !== 'PENDING') return p
+        return { ...p, pnrStatus: 'ACTIVE' as const, activatedAt: now, activatedBy: CURRENT_DEMO_USER.name }
+      })
+    }
+    const activatedCount = updatedPnrs.filter(p => p.pnrStatus === 'ACTIVE').length
     const log: DemoLog = {
       logId: newId('LOG'),
       action: 'Activate Stock',
-      message: `เปิดใช้งาน Stock ${liveStock.stockCode} — เปิดใช้งาน PNR ${activatedPnrs.filter(p => p.pnrStatus === 'ACTIVE').length} รายการ`,
+      message: `เปิดใช้งาน Stock ${liveStock.stockCode} (scope: ${result.scope}) — เปิดใช้งาน PNR ${activatedCount} รายการ`,
       createdAt: now, createdBy: CURRENT_DEMO_USER.name,
     }
     const updated: DemoStock = {
       ...liveStock,
       status: 'Active',
-      pnrs: activatedPnrs,
+      pnrs: updatedPnrs,
       updatedAt: now,
       logs: [log, ...liveStock.logs],
     }
@@ -288,27 +305,29 @@ if (stockForm.airline_code  !== liveStock.airlineCode)         changes.push(`Air
     showToast('เปิดใช้งาน Stock สำเร็จ', 'success')
   }
 
-  // Close stock
-  const handleCloseStock = () => {
+  // Close stock — via ActiveToClosedModal, enforces PNR closure
+  const handleCloseStock = (result: ActiveToClosedResult) => {
     if (!liveStock) return
-    const pendingPNRs = liveStock.pnrs.filter(p => getPnrConfirmationStatus(p) === 'PENDING_CONFIRMATION').length
-    const seatBal = liveStock.summary.seatBalance
-    const warnings = [
-      pendingPNRs > 0 && `PNR Pending: ${pendingPNRs} รายการ`,
-      seatBal > 0 && `Seat Balance: ${seatBal} ที่นั่ง`,
-    ].filter(Boolean).join('\n')
-    const msg = `ปิด Stock "${liveStock.stockCode}" หรือไม่?${warnings ? `\n\nรายการค้าง:\n${warnings}` : ''}`
-    if (!window.confirm(msg)) return
     const now = new Date().toISOString()
+    let updatedPnrs = liveStock.pnrs
+    if (result.closeOpenPnrs) {
+      updatedPnrs = liveStock.pnrs.map(p => {
+        const s = getPnrOperationalStatus(p)
+        if (s !== 'PENDING' && s !== 'ACTIVE') return p
+        return { ...p, pnrStatus: 'CLOSED' as const, closedAt: now, closedBy: CURRENT_DEMO_USER.name }
+      })
+    }
+    const closedPnrCount = updatedPnrs.filter(p => p.pnrStatus === 'CLOSED').length
     const log: DemoLog = {
       logId: newId('LOG'),
       action: 'Close Stock',
-      message: `ปิด Stock ${liveStock.stockCode}`,
+      message: `ปิด Stock ${liveStock.stockCode}${result.closeOpenPnrs ? ` — ปิด PNR ที่ค้างทั้งหมด (${closedPnrCount} รายการ)` : ''}`,
       createdAt: now, createdBy: CURRENT_DEMO_USER.name,
     }
     const updated: DemoStock = {
       ...liveStock,
       status: 'Closed',
+      pnrs: updatedPnrs,
       closedAt: now,
       closedBy: CURRENT_DEMO_USER.name,
       updatedAt: now,
@@ -316,7 +335,40 @@ if (stockForm.airline_code  !== liveStock.airlineCode)         changes.push(`Air
     }
     saveDemoStock(updated)
     setLiveStock(updated)
+    setShowCloseModal(false)
     showToast('Stock ถูกปิดแล้ว', 'success')
+  }
+
+  // Cancel stock — auto-cancel PENDING/ACTIVE PNRs
+  const handleCancelStock = (reason: string) => {
+    if (!liveStock) return
+    const now = new Date().toISOString()
+    const updatedPnrs = liveStock.pnrs.map(p => {
+      const s = getPnrOperationalStatus(p)
+      if (s !== 'PENDING' && s !== 'ACTIVE') return p
+      return { ...p, pnrStatus: 'CANCELLED' as const, cancelledAt: now, cancelledBy: CURRENT_DEMO_USER.name, cancellationReason: reason }
+    })
+    const cancelledCount = updatedPnrs.filter(p => p.pnrStatus === 'CANCELLED').length
+    const log: DemoLog = {
+      logId: newId('LOG'),
+      action: 'Cancel Stock',
+      message: `ยกเลิก Stock ${liveStock.stockCode} — เหตุผล: ${reason}${cancelledCount > 0 ? ` — ยกเลิก PNR ${cancelledCount} รายการอัตโนมัติ` : ''}`,
+      createdAt: now, createdBy: CURRENT_DEMO_USER.name,
+    }
+    const updated: DemoStock = {
+      ...liveStock,
+      status: 'Cancelled',
+      pnrs: updatedPnrs,
+      cancelledAt: now,
+      cancelledBy: CURRENT_DEMO_USER.name,
+      cancellationReason: reason,
+      updatedAt: now,
+      logs: [log, ...liveStock.logs],
+    }
+    saveDemoStock(updated)
+    setLiveStock(updated)
+    setShowCancelModal(false)
+    showToast('Stock ถูกยกเลิกแล้ว', 'success')
   }
 
   // Reopen confirmed
@@ -470,6 +522,20 @@ if (stockForm.airline_code  !== liveStock.airlineCode)         changes.push(`Air
               {liveStock && <span className="inline-flex items-center px-1.5 py-px text-[9px] font-bold bg-amber-100 text-amber-600 rounded">DEMO</span>}
             </div>
             <p className="text-sm text-slate-500">{stock.group_name}</p>
+            {liveStock && liveStock.pnrs.length > 0 && (() => {
+              const counts = liveStock.pnrs.reduce<Record<string, number>>((acc, p) => {
+                const s = getPnrOperationalStatus(p); acc[s] = (acc[s] ?? 0) + 1; return acc
+              }, {})
+              return (
+                <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                  <span className="text-[10px] text-slate-400 font-medium">PNR:</span>
+                  {(counts.PENDING  ?? 0) > 0 && <PnrOperationalStatusBadge status="PENDING"  label={`${counts.PENDING} Pending`}  />}
+                  {(counts.ACTIVE   ?? 0) > 0 && <PnrOperationalStatusBadge status="ACTIVE"   label={`${counts.ACTIVE} Active`}    />}
+                  {(counts.CLOSED   ?? 0) > 0 && <PnrOperationalStatusBadge status="CLOSED"   label={`${counts.CLOSED} Closed`}    />}
+                  {(counts.CANCELLED ?? 0) > 0 && <PnrOperationalStatusBadge status="CANCELLED" label={`${counts.CANCELLED} Cancelled`} />}
+                </div>
+              )
+            })()}
           </div>
         </div>
 
@@ -492,8 +558,17 @@ if (stockForm.airline_code  !== liveStock.airlineCode)         changes.push(`Air
           {/* Close Stock — show for Active only */}
           {!isClosed && !isCancelled && !isReopened && !isDraft && (
             <Button variant="outline" size="sm" icon={<Lock size={14} />}
-              onClick={handleCloseStock} disabled={!liveStock}>
+              onClick={() => setShowCloseModal(true)} disabled={!liveStock}>
               Close Stock
+            </Button>
+          )}
+
+          {/* Cancel Stock — show when not already Cancelled */}
+          {!isCancelled && !isReopened && (
+            <Button variant="outline" size="sm" icon={<X size={14} />}
+              onClick={() => setShowCancelModal(true)} disabled={!liveStock}
+              className="border-red-300 text-red-600 hover:bg-red-50">
+              ยกเลิก Stock
             </Button>
           )}
 
@@ -913,62 +988,35 @@ if (stockForm.airline_code  !== liveStock.airlineCode)         changes.push(`Air
         />
       )}
 
-      {/* ── Stock Activation Modal ── */}
-      {showActivateModal && liveStock && (() => {
-        const pendingCount = liveStock.pnrs.filter(p => getPnrOperationalStatus(p) === 'PENDING').length
-        return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/50" onClick={() => setShowActivateModal(false)} />
-            <div className="relative z-10 w-[calc(100vw-32px)] max-w-[480px] rounded-2xl bg-white shadow-2xl overflow-hidden">
-              <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-100">
-                    <CheckCircle2 size={18} className="text-[#05a94f]" />
-                  </div>
-                  <h2 className="text-base font-semibold text-slate-900">เปิดใช้งาน Stock</h2>
-                </div>
-                <button type="button" onClick={() => setShowActivateModal(false)}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 transition">
-                  <X size={16} />
-                </button>
-              </div>
-              <div className="px-6 py-5 space-y-4">
-                <p className="text-sm text-slate-700">
-                  เปลี่ยนสถานะ Stock <strong>{liveStock.stockCode}</strong> จาก <strong>Draft</strong> เป็น <strong>Active</strong>
-                </p>
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 space-y-2 text-sm">
-                  <p className="font-semibold text-emerald-800 text-xs uppercase tracking-wide">สรุปการเปิดใช้งาน</p>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-slate-600">PNR ที่จะเปิดใช้งาน</span>
-                    <span className="font-bold text-[#05a94f]">{pendingCount} รายการ</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-slate-600">PNR ทั้งหมด</span>
-                    <span className="font-semibold">{liveStock.pnrs.length} รายการ</span>
-                  </div>
-                </div>
-                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700">
-                  <p className="font-medium mb-1">หลังเปิดใช้งาน</p>
-                  <ul className="list-disc list-inside space-y-0.5">
-                    <li>PNR ใหม่ที่เพิ่มในภายหลังจะเปิดใช้งานอัตโนมัติ</li>
-                    <li>สามารถปิดหรือยกเลิก PNR แต่ละรายการได้ในแท็บ PNR</li>
-                  </ul>
-                </div>
-              </div>
-              <div className="flex items-center justify-between gap-4 border-t border-slate-200 px-6 py-4">
-                <button type="button" onClick={() => setShowActivateModal(false)}
-                  className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors">
-                  ยกเลิก
-                </button>
-                <Button onClick={handleActivateStock} className="bg-[#05a94f] hover:bg-[#048f43] text-white">
-                  <CheckCircle2 size={14} />
-                  ยืนยันเปิดใช้งาน Stock
-                </Button>
-              </div>
-            </div>
-          </div>
-        )
-      })()}
+      {/* ── Draft → Active Modal ── */}
+      {liveStock && (
+        <DraftToActiveModal
+          open={showActivateModal}
+          onClose={() => setShowActivateModal(false)}
+          stock={liveStock}
+          onConfirm={handleActivateStock}
+        />
+      )}
+
+      {/* ── Active → Closed Modal ── */}
+      {liveStock && (
+        <ActiveToClosedModal
+          open={showCloseModal}
+          onClose={() => setShowCloseModal(false)}
+          stock={liveStock}
+          onConfirm={handleCloseStock}
+        />
+      )}
+
+      {/* ── Cancel Stock Modal ── */}
+      {liveStock && (
+        <CancelStockModal
+          open={showCancelModal}
+          onClose={() => setShowCancelModal(false)}
+          stock={liveStock}
+          onConfirm={handleCancelStock}
+        />
+      )}
     </AppLayout>
   )
 }

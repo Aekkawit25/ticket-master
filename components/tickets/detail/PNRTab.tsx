@@ -399,6 +399,9 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
   const [showCancelPnrModal, setShowCancelPnrModal] = useState(false)
   const [cancelReason, setCancelReason]         = useState('')
   const [cancelReasonError, setCancelReasonError] = useState('')
+  const [showBulkCancel, setShowBulkCancel]     = useState(false)
+  const [bulkCancelReason, setBulkCancelReason] = useState('')
+  const [bulkCancelReasonError, setBulkCancelReasonError] = useState('')
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000) }
 
@@ -547,10 +550,10 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
       ttlTime:        ttlTimeStr,
       ttlDateTime,
       status:         form.status || 'Pending',
-      pnrStatus:      existingPnr?.pnrStatus ?? (stock.status === 'Active' ? 'ACTIVE' : 'PENDING'),
-      confirmationStatus: form.status === 'Confirmed' ? 'CONFIRMED' : 'PENDING_CONFIRMATION',
-      activatedAt:    existingPnr?.activatedAt ?? (stock.status === 'Active' ? new Date().toISOString() : null),
-      activatedBy:    existingPnr?.activatedBy ?? (stock.status === 'Active' ? 'System' : null),
+      pnrStatus:      existingPnr?.pnrStatus ?? 'PENDING',
+      confirmationStatus: existingPnr?.confirmationStatus ?? (form.status === 'Confirmed' ? 'CONFIRMED' : 'PENDING_CONFIRMATION'),
+      activatedAt:    existingPnr?.activatedAt ?? null,
+      activatedBy:    existingPnr?.activatedBy ?? null,
       closedAt:       existingPnr?.closedAt ?? null,
       closedBy:       existingPnr?.closedBy ?? null,
       cancelledAt:    existingPnr?.cancelledAt ?? null,
@@ -701,6 +704,68 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
     setCancelReason('')
     setCancelReasonError('')
     showToast('ยกเลิก PNR สำเร็จ')
+  }
+
+  const handleActivatePnr = (pnr: DemoPNR) => {
+    if (!liveStock) return
+    const now = new Date().toISOString()
+    const updatedPnrs = liveStock.pnrs.map(p =>
+      p.pnrId !== pnr.pnrId ? p : { ...p, pnrStatus: 'ACTIVE' as const, activatedAt: now, activatedBy: 'System' }
+    )
+    const log: DemoLog = { logId: newId('LOG'), action: 'เปิดใช้งาน PNR', message: `เปิดใช้งาน PNR ${pnr.pnrDisplay}`, createdAt: now, createdBy: 'System' }
+    const updated: DemoStock = { ...liveStock, pnrs: updatedPnrs, summary: calculateStockSummary(updatedPnrs), updatedAt: now, logs: [log, ...liveStock.logs] }
+    saveDemoStock(updated)
+    onUpdate(updated)
+    showToast('เปิดใช้งาน PNR สำเร็จ')
+  }
+
+  const handleBulkActivatePnr = (pnrIds: Set<string>) => {
+    if (!liveStock) return
+    const now = new Date().toISOString()
+    const updatedPnrs = liveStock.pnrs.map(p => {
+      if (!pnrIds.has(p.pnrId)) return p
+      if (getPnrOperationalStatus(p) !== 'PENDING') return p
+      return { ...p, pnrStatus: 'ACTIVE' as const, activatedAt: now, activatedBy: 'System' }
+    })
+    const log: DemoLog = { logId: newId('LOG'), action: 'เปิดใช้งาน PNR (bulk)', message: `เปิดใช้งาน ${pnrIds.size} PNR พร้อมกัน`, createdAt: now, createdBy: 'System' }
+    const updated: DemoStock = { ...liveStock, pnrs: updatedPnrs, summary: calculateStockSummary(updatedPnrs), updatedAt: now, logs: [log, ...liveStock.logs] }
+    saveDemoStock(updated)
+    onUpdate(updated)
+    setSelectedPnrIds(new Set())
+    showToast(`เปิดใช้งาน ${pnrIds.size} PNR สำเร็จ`)
+  }
+
+  const handleBulkClosePnr = (pnrIds: Set<string>) => {
+    if (!liveStock) return
+    const now = new Date().toISOString()
+    const updatedPnrs = liveStock.pnrs.map(p => {
+      if (!pnrIds.has(p.pnrId)) return p
+      if (getPnrOperationalStatus(p) !== 'ACTIVE') return p
+      return { ...p, pnrStatus: 'CLOSED' as const, closedAt: now, closedBy: 'System' }
+    })
+    const log: DemoLog = { logId: newId('LOG'), action: 'ปิด PNR (bulk)', message: `ปิด ${pnrIds.size} PNR พร้อมกัน`, createdAt: now, createdBy: 'System' }
+    const updated: DemoStock = { ...liveStock, pnrs: updatedPnrs, summary: calculateStockSummary(updatedPnrs), updatedAt: now, logs: [log, ...liveStock.logs] }
+    saveDemoStock(updated)
+    onUpdate(updated)
+    setSelectedPnrIds(new Set())
+    showToast(`ปิด ${pnrIds.size} PNR สำเร็จ`)
+  }
+
+  const handleBulkCancelPnr = (pnrIds: Set<string>, reason: string) => {
+    if (!liveStock) return
+    const now = new Date().toISOString()
+    const updatedPnrs = liveStock.pnrs.map(p => {
+      if (!pnrIds.has(p.pnrId)) return p
+      const opStatus = getPnrOperationalStatus(p)
+      if (opStatus !== 'PENDING' && opStatus !== 'ACTIVE') return p
+      return { ...p, pnrStatus: 'CANCELLED' as const, cancelledAt: now, cancelledBy: 'System', cancellationReason: reason }
+    })
+    const log: DemoLog = { logId: newId('LOG'), action: 'ยกเลิก PNR (bulk)', message: `ยกเลิก ${pnrIds.size} PNR พร้อมกัน — เหตุผล: ${reason}`, createdAt: now, createdBy: 'System' }
+    const updated: DemoStock = { ...liveStock, pnrs: updatedPnrs, summary: calculateStockSummary(updatedPnrs), updatedAt: now, logs: [log, ...liveStock.logs] }
+    saveDemoStock(updated)
+    onUpdate(updated)
+    setSelectedPnrIds(new Set())
+    showToast(`ยกเลิก ${pnrIds.size} PNR สำเร็จ`)
   }
 
   const handleConvertToReal = () => {
@@ -1094,6 +1159,14 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
         </div>
       )}
 
+      {/* Active-series notification */}
+      {canEdit && liveStock?.status === 'Active' && (
+        <div className="flex items-center gap-2 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-xl px-3 py-2">
+          <AlertTriangle size={13} className="shrink-0" />
+          PNR ใหม่ที่เพิ่มใน Series Active จะเริ่มต้นเป็น <strong>PENDING</strong> — ต้องเปิดใช้งานด้วยตนเอง
+        </div>
+      )}
+
       {/* Action Bar */}
       {canEdit && (
         <div className="space-y-2">
@@ -1106,6 +1179,23 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                 <span className="text-xs text-slate-500 ml-1">เลือก {selectedPnrIds.size} PNR</span>
                 <Button size="sm" variant="outline" onClick={() => { setBulkCondCode(''); setShowBulkCond(true) }}>
                   เปลี่ยน Condition
+                </Button>
+                {liveStock?.status === 'Active' && (
+                  <Button size="sm" variant="outline"
+                    onClick={() => handleBulkActivatePnr(selectedPnrIds)}
+                    className="border-green-300 text-green-700 hover:bg-green-50">
+                    เปิดใช้งาน
+                  </Button>
+                )}
+                <Button size="sm" variant="outline"
+                  onClick={() => handleBulkClosePnr(selectedPnrIds)}
+                  className="border-slate-400 text-slate-600 hover:bg-slate-50">
+                  ปิด PNR
+                </Button>
+                <Button size="sm" variant="outline"
+                  onClick={() => { setBulkCancelReason(''); setBulkCancelReasonError(''); setShowBulkCancel(true) }}
+                  className="border-red-300 text-red-600 hover:bg-red-50">
+                  ยกเลิก PNR
                 </Button>
                 <button onClick={() => setSelectedPnrIds(new Set())} className="p-1 rounded hover:bg-slate-100 text-slate-400">
                   <X size={12} />
@@ -1153,13 +1243,14 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
               <Th className="text-right whitespace-nowrap">ยอดสุทธิ</Th>
               <Th>Condition</Th>
               <Th>TTL Date</Th>
-              <Th className="whitespace-nowrap">สถานะ</Th>
+              <Th className="whitespace-nowrap">การใช้งาน</Th>
+              <Th className="whitespace-nowrap">การยืนยัน</Th>
               {canEdit && <Th className="text-center">Actions</Th>}
             </tr>
           </TableHead>
           <TableBody>
             {pnrRows.length === 0 ? (
-              <EmptyRow cols={canEdit ? 18 : 16} message="ยังไม่มีข้อมูล PNR" />
+              <EmptyRow cols={canEdit ? 19 : 17} message="ยังไม่มีข้อมูล PNR" />
             ) : (
               pnrRows.map(p => {
                 const demoPnr = liveStock?.pnrs.find(dp => dp.pnrId === p.id)
@@ -1262,45 +1353,56 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                     <Td className="text-xs text-slate-700">
                       {p.next_ttl ? formatDateTime(p.next_ttl) : '—'}
                     </Td>
-                    <Td>
-                      <div className="flex flex-col gap-1">
-                        <PnrOperationalStatusBadge status={demoPnr ? getPnrOperationalStatus(demoPnr) : 'PENDING'} />
-                        <PnrConfirmationStatusBadge status={demoPnr ? getPnrConfirmationStatus(demoPnr) : p.status} />
-                      </div>
-                    </Td>
+                    <Td><PnrOperationalStatusBadge status={demoPnr ? getPnrOperationalStatus(demoPnr) : 'PENDING'} /></Td>
+                    <Td><PnrConfirmationStatusBadge status={demoPnr ? getPnrConfirmationStatus(demoPnr) : 'PENDING_CONFIRMATION'} /></Td>
                     {canEdit && (
                       <Td>
-                        {demoPnr ? (
-                          <div className="flex items-center gap-1 justify-center">
-                            <button title="แก้ไข" onClick={() => openEdit(demoPnr)} className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors">
-                              <Pencil size={13} />
-                            </button>
-                            <button title="Custom Flight" onClick={() => openCustomFlight(demoPnr)} className="p-1 text-slate-400 hover:text-orange-600 hover:bg-orange-50 rounded-md transition-colors">
-                              <Route size={13} />
-                            </button>
-                            <button title="Duplicate" onClick={() => handleDuplicate(demoPnr)} className="p-1 text-slate-400 hover:text-green-600 hover:bg-green-50 rounded-md transition-colors">
-                              <Copy size={13} />
-                            </button>
-                            {demoPnr.pnrType === 'dummy' && (
-                              <button title="เปลี่ยนเป็น PNR จริง" onClick={() => { setConvertingPnr(demoPnr); setShowConvertModal(true) }} className="p-1 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded-md transition-colors">
-                                <RefreshCw size={13} />
+                        {demoPnr ? (() => {
+                          const opStatus = getPnrOperationalStatus(demoPnr)
+                          const canOperate = opStatus === 'PENDING' || opStatus === 'ACTIVE'
+                          return (
+                            <div className="flex items-center gap-1 justify-center">
+                              {canOperate && (
+                                <button title="แก้ไข" onClick={() => openEdit(demoPnr)} className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors">
+                                  <Pencil size={13} />
+                                </button>
+                              )}
+                              {canOperate && (
+                                <button title="Custom Flight" onClick={() => openCustomFlight(demoPnr)} className="p-1 text-slate-400 hover:text-orange-600 hover:bg-orange-50 rounded-md transition-colors">
+                                  <Route size={13} />
+                                </button>
+                              )}
+                              <button title="Duplicate" onClick={() => handleDuplicate(demoPnr)} className="p-1 text-slate-400 hover:text-green-600 hover:bg-green-50 rounded-md transition-colors">
+                                <Copy size={13} />
                               </button>
-                            )}
-                            {getPnrOperationalStatus(demoPnr) === 'ACTIVE' && (
-                              <>
+                              {demoPnr.pnrType === 'dummy' && canOperate && (
+                                <button title="เปลี่ยนเป็น PNR จริง" onClick={() => { setConvertingPnr(demoPnr); setShowConvertModal(true) }} className="p-1 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded-md transition-colors">
+                                  <RefreshCw size={13} />
+                                </button>
+                              )}
+                              {opStatus === 'PENDING' && liveStock?.status === 'Active' && (
+                                <button title="เปิดใช้งาน PNR" onClick={() => handleActivatePnr(demoPnr)} className="p-1 text-slate-400 hover:text-green-700 hover:bg-green-50 rounded-md transition-colors">
+                                  <CheckCircle2 size={13} />
+                                </button>
+                              )}
+                              {opStatus === 'ACTIVE' && (
                                 <button title="ปิด PNR" onClick={() => { setClosingPnr(demoPnr); setShowClosePnrModal(true) }} className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors">
                                   <Archive size={13} />
                                 </button>
+                              )}
+                              {canOperate && (
                                 <button title="ยกเลิก PNR" onClick={() => { setCancellingPnr(demoPnr); setCancelReason(''); setCancelReasonError(''); setShowCancelPnrModal(true) }} className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors">
                                   <XCircle size={13} />
                                 </button>
-                              </>
-                            )}
-                            <button title="ลบ" onClick={() => { setDeletingPnr(demoPnr); setShowDeleteModal(true) }} className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors">
-                              <Trash2 size={13} />
-                            </button>
-                          </div>
-                        ) : <span className="text-slate-300 text-[10px] text-center block">—</span>}
+                              )}
+                              {opStatus === 'PENDING' && (
+                                <button title="ลบ" onClick={() => { setDeletingPnr(demoPnr); setShowDeleteModal(true) }} className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors">
+                                  <Trash2 size={13} />
+                                </button>
+                              )}
+                            </div>
+                          )
+                        })() : <span className="text-slate-300 text-[10px] text-center block">—</span>}
                       </Td>
                     )}
                   </TableRow>
@@ -1968,6 +2070,46 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                 </option>
               ))}
             </select>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Bulk Cancel PNR Modal */}
+      <Modal
+        open={showBulkCancel}
+        onClose={() => setShowBulkCancel(false)}
+        title={`ยกเลิก PNR — ${selectedPnrIds.size} รายการ`}
+        size="sm"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setShowBulkCancel(false)}>ยกเลิก</Button>
+            <Button variant="danger" onClick={() => {
+              if (!bulkCancelReason.trim()) { setBulkCancelReasonError('กรุณาระบุเหตุผล'); return }
+              setShowBulkCancel(false)
+              handleBulkCancelPnr(selectedPnrIds, bulkCancelReason.trim())
+            }}>ยืนยันยกเลิก</Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-slate-700">ยกเลิก PNR ที่เลือก <strong>{selectedPnrIds.size} รายการ</strong> หรือไม่?</p>
+          <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-700 space-y-1">
+            <p className="font-semibold flex items-center gap-1"><AlertTriangle size={11} /> ผลกระทบ</p>
+            <ul className="list-disc list-inside space-y-0.5">
+              <li>PNR ที่มีสถานะ PENDING หรือ ACTIVE จะถูกยกเลิกถาวร</li>
+              <li>PNR ที่เป็น CLOSED/CANCELLED แล้วจะไม่ถูกกระทบ</li>
+            </ul>
+          </div>
+          <div className="space-y-1">
+            <label className="block text-xs font-medium text-slate-700">เหตุผลการยกเลิก <span className="text-red-500">*</span></label>
+            <textarea
+              value={bulkCancelReason}
+              onChange={e => { setBulkCancelReason(e.target.value); setBulkCancelReasonError('') }}
+              rows={2}
+              placeholder="ระบุเหตุผล..."
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-red-400/30 focus:border-red-400"
+            />
+            {bulkCancelReasonError && <p className="text-xs text-red-500">{bulkCancelReasonError}</p>}
           </div>
         </div>
       </Modal>

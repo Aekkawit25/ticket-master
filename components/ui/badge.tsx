@@ -42,7 +42,7 @@ export function PNRStatusBadge({ status }: { status: string }) {
 }
 
 /** สถานะการใช้งาน PNR (Operational) */
-export function PnrOperationalStatusBadge({ status }: { status: string }) {
+export function PnrOperationalStatusBadge({ status, label }: { status: string; label?: string }) {
   const map: Record<string, { label: string; variant: BadgeProps['variant'] }> = {
     PENDING:   { label: 'รอเปิดใช้งาน', variant: 'gray' },
     ACTIVE:    { label: 'เปิดใช้งาน',    variant: 'green' },
@@ -50,7 +50,7 @@ export function PnrOperationalStatusBadge({ status }: { status: string }) {
     CANCELLED: { label: 'ยกเลิก',        variant: 'red' },
   }
   const c = map[status] ?? { label: status, variant: 'gray' as const }
-  return <Badge variant={c.variant}>{c.label}</Badge>
+  return <Badge variant={c.variant}>{label ?? c.label}</Badge>
 }
 
 /** สถานะการยืนยัน PNR (Confirmation) */

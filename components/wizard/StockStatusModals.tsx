@@ -105,10 +105,6 @@ const TRANSITION_MAP: Record<string, Transition[]> = {
     { label: 'เปิดใช้งานอีกครั้ง', action: 'reopen',  variant: 'success' },
     { label: 'ยกเลิก Stock',      action: 'cancel',   variant: 'danger'  },
   ],
-  Reopened: [
-    { label: 'ปิด Stock',         action: 'close',    variant: 'outline' },
-    { label: 'ยกเลิก Stock',      action: 'cancel',   variant: 'danger'  },
-  ],
   Cancelled: [],
 }
 
@@ -357,47 +353,79 @@ export function DraftToActiveModal({ open, onClose, stock, onConfirm }: DraftToA
 
 // ─── Active → Closed Modal ─────────────────────────────────────────────────────
 
+export interface ActiveToClosedResult {
+  closeOpenPnrs: boolean
+}
+
 interface ActiveToClosedModalProps {
   open: boolean
   onClose: () => void
   stock: DemoStock
-  onConfirm: () => void
+  onConfirm: (result: ActiveToClosedResult) => void
 }
 
 export function ActiveToClosedModal({ open, onClose, stock, onConfirm }: ActiveToClosedModalProps) {
-  const counts = stock.pnrs.reduce<Record<string, number>>((acc, p) => {
+  const [confirmed, setConfirmed] = useState(false)
+
+  const openPnrs = stock.pnrs.filter(p => {
     const s = getPnrOperationalStatus(p)
-    acc[s] = (acc[s] ?? 0) + 1
-    return acc
-  }, {})
+    return s === 'PENDING' || s === 'ACTIVE'
+  })
+  const hasOpenPnrs = openPnrs.length > 0
+
+  const handleClose = () => { setConfirmed(false); onClose() }
+
+  const canConfirm = !hasOpenPnrs || confirmed
 
   return (
-    <Modal open={open} onClose={onClose} title="ปิด Stock" size="sm">
+    <Modal open={open} onClose={handleClose} title="ปิด Stock" size="md">
       <div className="space-y-4">
         <p className="text-sm text-slate-600">
           ต้องการปิด Stock <strong className="font-mono">{stock.stockCode}</strong> หรือไม่?
           Stock ที่ถูกปิดจะไม่รับการจองใหม่
         </p>
 
-        <div className="rounded-xl border border-slate-200 p-3 text-xs space-y-1.5">
-          <p className="font-medium text-slate-700 mb-2">สรุป PNR ({stock.pnrs.length} รายการ):</p>
-          {(counts.PENDING  ?? 0) > 0 && <p className="text-slate-600">• รอใช้งาน: {counts.PENDING} รายการ</p>}
-          {(counts.ACTIVE   ?? 0) > 0 && <p className="text-slate-600">• ใช้งาน: {counts.ACTIVE} รายการ</p>}
-          {(counts.CLOSED   ?? 0) > 0 && <p className="text-slate-600">• ปิดแล้ว: {counts.CLOSED} รายการ</p>}
-          {(counts.CANCELLED ?? 0) > 0 && <p className="text-slate-600">• ยกเลิก: {counts.CANCELLED} รายการ</p>}
-          {stock.pnrs.length === 0 && <p className="text-slate-400">ไม่มี PNR</p>}
-          <p className="text-slate-400 mt-2 pt-2 border-t border-slate-100">
-            สถานะของ PNR จะไม่ถูกเปลี่ยน — เฉพาะสถานะ Stock เท่านั้น
-          </p>
-        </div>
+        {hasOpenPnrs && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs space-y-2">
+            <p className="font-semibold text-amber-700 flex items-center gap-1.5">
+              <AlertTriangle size={13} /> PNR ที่ยังค้างอยู่ ({openPnrs.length} รายการ)
+            </p>
+            <div className="max-h-32 overflow-y-auto space-y-1">
+              {openPnrs.map(p => (
+                <div key={p.pnrId} className="flex items-center justify-between text-amber-800">
+                  <span className="font-mono">{p.pnrDisplay || '—'}</span>
+                  <PnrOperationalStatusBadge status={getPnrOperationalStatus(p)} />
+                </div>
+              ))}
+            </div>
+            <label className="flex items-start gap-2 cursor-pointer pt-1 border-t border-amber-200">
+              <input
+                type="checkbox"
+                checked={confirmed}
+                onChange={e => setConfirmed(e.target.checked)}
+                className="mt-0.5 accent-amber-600"
+              />
+              <span className="text-amber-800 font-medium">
+                ยืนยันปิด PNR ที่ค้างอยู่ทั้งหมด ({openPnrs.length} รายการ) พร้อมกับปิด Stock
+              </span>
+            </label>
+          </div>
+        )}
+
+        {!hasOpenPnrs && (
+          <div className="rounded-xl border border-slate-200 p-3 text-xs text-slate-500">
+            PNR ทั้งหมดปิดหรือยกเลิกแล้ว — สามารถปิด Stock ได้เลย
+          </div>
+        )}
 
         <div className="flex justify-end gap-2">
-          <Button variant="ghost" onClick={onClose}>ยกเลิก</Button>
+          <Button variant="ghost" onClick={handleClose}>ยกเลิก</Button>
           <Button
             variant="outline"
             icon={<Archive size={14} />}
-            onClick={onConfirm}
-            className="border-slate-600 text-slate-700 hover:bg-slate-50"
+            onClick={() => onConfirm({ closeOpenPnrs: hasOpenPnrs })}
+            disabled={!canConfirm}
+            className="border-slate-600 text-slate-700 hover:bg-slate-50 disabled:opacity-40"
           >
             ยืนยันปิด Stock
           </Button>
@@ -556,6 +584,11 @@ export function CancelStockModal({ open, onClose, stock, onConfirm }: CancelStoc
   const [reason, setReason] = useState('')
   const [error,  setError]  = useState('')
 
+  const impactedPnrs = stock.pnrs.filter(p => {
+    const s = getPnrOperationalStatus(p)
+    return s === 'PENDING' || s === 'ACTIVE'
+  })
+
   const handleConfirm = () => {
     if (!reason.trim()) { setError('กรุณากรอกเหตุผลในการยกเลิก'); return }
     onConfirm(reason.trim())
@@ -567,12 +600,32 @@ export function CancelStockModal({ open, onClose, stock, onConfirm }: CancelStoc
     <Modal open={open} onClose={handleClose} title="ยกเลิก Stock" size="sm">
       <div className="space-y-4">
         <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-3 text-sm text-red-700">
-          <p className="font-medium mb-1">คำเตือน</p>
+          <p className="font-medium mb-1">คำเตือน — ไม่สามารถย้อนกลับได้</p>
           <p>
             การยกเลิก Stock <strong className="font-mono">{stock.stockCode}</strong>{' '}
-            ไม่สามารถย้อนกลับได้ Stock จะไม่สามารถเปิดใช้งานได้อีก
+            จะทำให้ Stock และ PNR ที่ค้างอยู่ถูกยกเลิกถาวร ไม่สามารถเปิดใช้งานได้อีก
           </p>
         </div>
+
+        {impactedPnrs.length > 0 && (
+          <div className="rounded-xl border border-red-200 p-3 text-xs space-y-2">
+            <p className="font-semibold text-red-700 flex items-center gap-1">
+              <AlertTriangle size={12} /> PNR ที่จะถูกยกเลิกอัตโนมัติ ({impactedPnrs.length} รายการ)
+            </p>
+            <div className="max-h-28 overflow-y-auto space-y-1">
+              {impactedPnrs.map(p => (
+                <div key={p.pnrId} className="flex items-center justify-between text-red-600">
+                  <span className="font-mono">{p.pnrDisplay || '—'}</span>
+                  <PnrOperationalStatusBadge status={getPnrOperationalStatus(p)} />
+                </div>
+              ))}
+            </div>
+            <p className="text-slate-500 pt-1 border-t border-red-100">
+              PNR ที่เป็น CLOSED แล้วจะยังคงสถานะ CLOSED ไม่เปลี่ยนแปลง
+            </p>
+          </div>
+        )}
+
         <div>
           <label className="block text-xs font-medium text-slate-700 mb-1.5">
             เหตุผลในการยกเลิก <span className="text-red-500">*</span>

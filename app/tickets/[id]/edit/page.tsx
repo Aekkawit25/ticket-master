@@ -22,7 +22,7 @@ import {
   ClosedToActiveModal,
   CancelStockModal,
 } from '@/components/wizard/StockStatusModals'
-import type { DraftToActiveResult, ClosedToActiveResult } from '@/components/wizard/StockStatusModals'
+import type { DraftToActiveResult, ActiveToClosedResult, ClosedToActiveResult } from '@/components/wizard/StockStatusModals'
 import {
   validateSectors, generateDummyPnrs, formatDate,
   calcTravelEndFromSectors, calcSectorDate,
@@ -624,12 +624,35 @@ function EditStockPageInner() {
     setTimeout(() => setSaveMsg(''), 3000)
   }
 
-  const handleActiveToClose = () => {
+  const handleActiveToClose = (result: ActiveToClosedResult) => {
     const now = new Date().toISOString()
-    commitStatusChange(
-      { status: 'Closed', closedAt: now, closedBy: CURRENT_DEMO_USER.name },
-      `ปิด Stock ${originalStock.stockCode}`,
-    )
+    let updatedPnrs = originalStock.pnrs
+    if (result.closeOpenPnrs) {
+      updatedPnrs = originalStock.pnrs.map(p => {
+        const s = getPnrOperationalStatus(p)
+        if (s !== 'PENDING' && s !== 'ACTIVE') return p
+        return { ...p, pnrStatus: 'CLOSED' as const, closedAt: now, closedBy: CURRENT_DEMO_USER.name }
+      })
+    }
+    const log: DemoLog = {
+      logId: `LOG-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      action: 'STOCK_CLOSED',
+      message: `ปิด Stock ${originalStock.stockCode}${result.closeOpenPnrs ? ' — ปิด PNR ที่ค้างทั้งหมด' : ''}`,
+      createdAt: now, createdBy: CURRENT_DEMO_USER.name,
+    }
+    const updated: DemoStock = {
+      ...originalStock,
+      status: 'Closed',
+      pnrs: updatedPnrs,
+      summary: calculateStockSummary(updatedPnrs),
+      closedAt: now,
+      closedBy: CURRENT_DEMO_USER.name,
+      updatedAt: now,
+      logs: [log, ...originalStock.logs],
+    }
+    saveDemoStock(updated)
+    setOriginalStock(updated)
+    setState(prev => ({ ...prev, stockInfo: { ...prev.stockInfo, status: 'Closed' } }))
     setShowActiveToClose(false)
     setShowStatusManage(false)
     setSaveMsg('ปิด Stock สำเร็จ')
@@ -670,18 +693,32 @@ function EditStockPageInner() {
 
   const handleCancelStock = (reason: string) => {
     const now = new Date().toISOString()
-    const extended = originalStock as DemoStock & { cancelledAt?: string; cancelledBy?: string; cancellationReason?: string }
-    commitStatusChange(
-      { status: 'Cancelled', ...{ cancelledAt: now, cancelledBy: CURRENT_DEMO_USER.name, cancellationReason: reason } } as Partial<DemoStock>,
-      `ยกเลิก Stock ${originalStock.stockCode}: ${reason}`,
-    )
-    // Keep extended fields on in-memory originalStock
-    setOriginalStock(prev => prev ? {
-      ...prev,
+    const updatedPnrs = originalStock.pnrs.map(p => {
+      const s = getPnrOperationalStatus(p)
+      if (s !== 'PENDING' && s !== 'ACTIVE') return p
+      return { ...p, pnrStatus: 'CANCELLED' as const, cancelledAt: now, cancelledBy: CURRENT_DEMO_USER.name, cancellationReason: reason }
+    })
+    const cancelledCount = updatedPnrs.filter(p => p.pnrStatus === 'CANCELLED').length
+    const log: DemoLog = {
+      logId: `LOG-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      action: 'STOCK_CANCELLED',
+      message: `ยกเลิก Stock ${originalStock.stockCode}: ${reason}${cancelledCount > 0 ? ` — ยกเลิก PNR ${cancelledCount} รายการอัตโนมัติ` : ''}`,
+      createdAt: now, createdBy: CURRENT_DEMO_USER.name,
+    }
+    const updated: DemoStock = {
+      ...originalStock,
       status: 'Cancelled',
-      ...(({ cancelledAt: now, cancelledBy: CURRENT_DEMO_USER.name, cancellationReason: reason }) as object),
+      pnrs: updatedPnrs,
+      summary: calculateStockSummary(updatedPnrs),
+      cancelledAt: now,
+      cancelledBy: CURRENT_DEMO_USER.name,
+      cancellationReason: reason,
       updatedAt: now,
-    } as DemoStock : prev)
+      logs: [log, ...originalStock.logs],
+    }
+    saveDemoStock(updated)
+    setOriginalStock(updated)
+    setState(prev => ({ ...prev, stockInfo: { ...prev.stockInfo, status: 'Cancelled' } }))
     setShowCancelStock(false)
     setShowStatusManage(false)
     setSaveMsg('ยกเลิก Stock สำเร็จ')
