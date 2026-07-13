@@ -34,7 +34,7 @@ export default function Step5Review({ state, excludeStockId }: Step5Props) {
   }
 
   const totalSeats = pnrs.reduce((s, p) => s + (p.seat_total || 0), 0)
-  const totalAmount = pnrs.reduce((s, p) => s + (p.total_amount || 0), 0)
+  const totalAmount = pnrs.reduce((s, p) => s + (p.total_amount || 0) * (p.seat_total || 0), 0)
 
   // Always recompute travelEnd from current sectors so Period reflects the latest sector edits,
   // not the stale travel_end stored in the PNR when sectors were unchanged in Step 4.

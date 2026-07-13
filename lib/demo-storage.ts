@@ -368,6 +368,7 @@ export interface DemoSummary {
   seatBalance: number
   fareTotal: number
   taxTotal: number
+  yqTotal: number
   grandTotal: number
   nextTTL: string | null
 }
@@ -732,16 +733,82 @@ export function getNextTTL(pnrs: DemoPNR[]): string | null {
   return candidates[0] ?? null
 }
 
+/** Shared per-seat financial totals, computed directly from DemoPNR array. */
+export interface StockFinancials {
+  pnrCount: number
+  totalSeats: number
+  fareTotal: number
+  taxTotal: number
+  yqTotal: number
+  grandTotal: number
+  farePerSeat: number
+  taxPerSeat: number
+  yqPerSeat: number
+  totalPerSeat: number
+  isUniform: boolean   // all PNRs share identical per-seat pricing
+  hasTax: boolean      // any PNR has separate tax
+  hasYQ: boolean       // any PNR has YQ > 0 (non-ALL_IN format)
+}
+
+/**
+ * Compute seat-weighted financial totals from a set of PNRs.
+ * Central function — use this in all UI and summary code so totals are consistent.
+ * Cancelled PNRs are excluded.
+ */
+export function computeStockFinancials(pnrs: DemoPNR[]): StockFinancials {
+  const active = pnrs.filter(p => p.status !== 'Cancelled')
+  const totalSeats = active.reduce((s, p) => s + p.seatTotal, 0)
+
+  // Multiply per-seat price by seat count
+  const fareTotal = active.reduce((s, p) => s + p.fare * p.seatTotal, 0)
+  const taxTotal = active
+    .filter(p => p.taxType === 'separate')
+    .reduce((s, p) => s + p.tax * p.seatTotal, 0)
+  const yqTotal = active
+    .filter(p => p.priceFormat !== 'ALL_IN')
+    .reduce((s, p) => s + (p.yq ?? 0) * p.seatTotal, 0)
+  const grandTotal = active.reduce((s, p) => s + p.total * p.seatTotal, 0)
+
+  const safeDiv = (n: number) => totalSeats > 0 ? n / totalSeats : 0
+  const farePerSeat  = safeDiv(fareTotal)
+  const taxPerSeat   = safeDiv(taxTotal)
+  const yqPerSeat    = safeDiv(yqTotal)
+  const totalPerSeat = safeDiv(grandTotal)
+
+  const first = active[0]
+  const isUniform = !first || active.every(p =>
+    p.fare === first.fare &&
+    p.tax === first.tax &&
+    (p.yq ?? 0) === (first.yq ?? 0) &&
+    p.total === first.total &&
+    p.taxType === first.taxType &&
+    p.priceFormat === first.priceFormat,
+  )
+  const hasTax = active.some(p => p.taxType === 'separate')
+  const hasYQ  = active.some(p => p.priceFormat !== 'ALL_IN' && (p.yq ?? 0) !== 0)
+
+  return {
+    pnrCount: active.length, totalSeats,
+    fareTotal, taxTotal, yqTotal, grandTotal,
+    farePerSeat, taxPerSeat, yqPerSeat, totalPerSeat,
+    isUniform, hasTax, hasYQ,
+  }
+}
+
 export function calculateStockSummary(pnrs: DemoPNR[]): DemoSummary {
   const pnrCount = pnrs.length
   const seatTotal = pnrs.reduce((sum, p) => sum + p.seatTotal, 0)
   const seatUsed = pnrs.reduce((sum, p) => sum + p.seatUsed, 0)
   const seatBalance = pnrs.reduce((sum, p) => sum + p.seatBalance, 0)
-  const fareTotal = pnrs.reduce((sum, p) => sum + p.fare, 0)
+  // Per-seat prices × seat count (single source of truth formula)
+  const fareTotal = pnrs.reduce((sum, p) => sum + p.fare * p.seatTotal, 0)
   const taxTotal = pnrs
     .filter(p => p.taxType === 'separate')
-    .reduce((sum, p) => sum + p.tax, 0)
-  const grandTotal = pnrs.reduce((sum, p) => sum + p.total, 0)
+    .reduce((sum, p) => sum + p.tax * p.seatTotal, 0)
+  const yqTotal = pnrs
+    .filter(p => p.priceFormat !== 'ALL_IN')
+    .reduce((sum, p) => sum + (p.yq ?? 0) * p.seatTotal, 0)
+  const grandTotal = pnrs.reduce((sum, p) => sum + p.total * p.seatTotal, 0)
 
   // Period: min and max of travelStart
   const travelStarts = pnrs.map(p => p.travelStart).filter(Boolean).sort()
@@ -767,6 +834,7 @@ export function calculateStockSummary(pnrs: DemoPNR[]): DemoSummary {
     seatBalance,
     fareTotal,
     taxTotal,
+    yqTotal,
     grandTotal,
     nextTTL,
   }
@@ -1040,7 +1108,9 @@ export function wizardStateToDemoStock(state: WizardState): DemoStock {
       seatTotal: p.seat_total,
       seatUsed: 0,
       seatBalance: p.seat_total,
+      priceFormat: p.price_format,
       fare: p.fare,
+      yq: p.yq ?? undefined,
       taxType: p.tax_type,
       tax: p.tax ?? 0,
       fareIncludesTax: p.tax_type === 'included',
