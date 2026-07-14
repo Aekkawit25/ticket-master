@@ -654,7 +654,7 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
         style={{ maxHeight: pnrs.length > 10 ? 'calc(100vh - 260px)' : undefined, overflowY: pnrs.length > 10 ? 'auto' : 'visible' }}>
         <table
           className="s4g text-[12px]"
-          style={{ minWidth: PNR_TABLE_WIDTH, tableLayout: 'fixed', borderCollapse: 'separate', borderSpacing: 0 }}>
+          style={{ width: PNR_TABLE_WIDTH, tableLayout: 'fixed', borderCollapse: 'separate', borderSpacing: 0 }}>
 
           {/* Single colgroup — widths used by both thead and tbody */}
           <colgroup>
@@ -670,9 +670,9 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
               <th className={cn(TH_C, 'bg-[#EDF5FF]')}>Sector</th>
               <th className={cn(TH_C, 'bg-[#EDF5FF]')}>Day</th>
               <th className={cn(TH_C, 'bg-[#EDF5FF]')}>Dep Date</th>
-              <th className={cn(TH_C, 'bg-[#EDF5FF]')}>Dep Time</th>
+              <th className={cn(TH_C, 'bg-[#EDF5FF]')} style={{ width: 78, minWidth: 78, maxWidth: 78, paddingLeft: 0, paddingRight: 0 }}>Dep Time</th>
               <th className={cn(TH_C, 'bg-[#EDF5FF]')}>Arr Date</th>
-              <th className={cn(TH_C, 'bg-[#EDF5FF]')}>Arr Time</th>
+              <th className={cn(TH_C, 'bg-[#EDF5FF]')} style={{ width: 78, minWidth: 78, maxWidth: 78, paddingLeft: 0, paddingRight: 0 }}>Arr Time</th>
               <th className={cn(TH_C, 'bg-[#EDF5FF]')}>+Day</th>
               <th className={TH_C}>Seat</th>
               <th className={TH_C}>ประเภทราคา</th>
@@ -826,7 +826,7 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
                         </td>
 
                         {/* ── Col 7: Dep Time (per-row) ── */}
-                        <td className={cn(TD_SEC_C, 'px-0', rowBorderB)} style={{ backgroundColor: hvSec }}>
+                        <td className={cn(TD_SEC_C, 'px-0', rowBorderB)} style={{ backgroundColor: hvSec, width: 78, minWidth: 78, maxWidth: 78 }}>
                           <TimeInput value={sd.dep_time ?? ''} onChange={v => handleSectorDepTimeChange(pnrIdx, sIdx, v)}
                             compact
                             className={cn('border-0 bg-transparent focus:outline-none text-center w-full min-w-0 h-7 text-[12px]',
@@ -853,7 +853,7 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
                         </td>
 
                         {/* ── Col 9: Arr Time (per-row) ── */}
-                        <td className={cn(TD_SEC_C, 'px-0', rowBorderB)} style={{ backgroundColor: hvSec }}>
+                        <td className={cn(TD_SEC_C, 'px-0', rowBorderB)} style={{ backgroundColor: hvSec, width: 78, minWidth: 78, maxWidth: 78 }}>
                           <TimeInput value={sd.arr_time ?? ''} onChange={v => handleSectorArrTimeChange(pnrIdx, sIdx, v)}
                             compact
                             className={cn('border-0 bg-transparent focus:outline-none text-center w-full min-w-0 h-7 text-[12px]',
