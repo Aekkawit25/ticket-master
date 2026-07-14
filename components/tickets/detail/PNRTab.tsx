@@ -18,7 +18,7 @@ import {
   saveDemoStock, calculateStockSummary, checkPNRDuplicatesInSystem, getStockFlightSets,
   getPnrOperationalStatus, getPnrConfirmationStatus,
 } from '@/lib/demo-storage'
-import type { DemoStock, DemoPNR, DemoLog, DemoSector, DemoFlightSet, PnrSectorSchedule } from '@/lib/demo-storage'
+import type { DemoStock, DemoPNR, DemoLog, DemoLogSectorChange, DemoSector, DemoFlightSet, PnrSectorSchedule } from '@/lib/demo-storage'
 import { buildSectorSchedules, getPnrSectorSchedules } from '@/lib/schedule-resolver'
 import { MASTER_AIRLINE_CODE_SET } from '@/lib/master-data'
 import { AirlineCell } from '@/components/shared/AirlineCell'
@@ -132,6 +132,23 @@ function buildSegmentChangeLog(
     if (diffs.length) changes.push(`Sec ${i + 1}: ${diffs.join(', ')}`)
   })
   return changes.join('; ')
+}
+
+function buildSegmentChanges(
+  oldSchedules: PnrSectorSchedule[] | undefined,
+  newSchedules: PnrSectorSchedule[],
+): DemoLogSectorChange[] {
+  if (!oldSchedules?.length) return []
+  const changes: DemoLogSectorChange[] = []
+  newSchedules.forEach((ns, i) => {
+    const os = oldSchedules[i]
+    if (!os) return
+    if (ns.departureDate !== os.departureDate) changes.push({ sectorSeq: i + 1, sectorType: ns.sectorType, field: 'Dep Date', oldValue: os.departureDate || '—', newValue: ns.departureDate || '—' })
+    if (ns.departureTime !== os.departureTime) changes.push({ sectorSeq: i + 1, sectorType: ns.sectorType, field: 'Dep Time', oldValue: os.departureTime || '—', newValue: ns.departureTime || '—' })
+    if (ns.arrivalDate !== os.arrivalDate)     changes.push({ sectorSeq: i + 1, sectorType: ns.sectorType, field: 'Arr Date', oldValue: os.arrivalDate   || '—', newValue: ns.arrivalDate   || '—' })
+    if (ns.arrivalTime !== os.arrivalTime)     changes.push({ sectorSeq: i + 1, sectorType: ns.sectorType, field: 'Arr Time', oldValue: os.arrivalTime   || '—', newValue: ns.arrivalTime   || '—' })
+  })
+  return changes
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -627,21 +644,33 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
     setSaving(true)
     const now = new Date().toISOString()
     const isEdit = !!existingPnr
-    const segChangeLog = isEdit && existingPnr ? buildSegmentChangeLog(existingPnr.sectorSchedules ?? [], newPnr.sectorSchedules ?? []) : ''
+    const segChanges = isEdit && existingPnr ? buildSegmentChanges(existingPnr.sectorSchedules ?? [], newPnr.sectorSchedules ?? []) : []
+    const segChangeLog = buildSegmentChangeLog(existingPnr?.sectorSchedules, newPnr.sectorSchedules ?? [])
+    const isBatch = applyToPnrIds.length > 0
+
     const log: DemoLog = {
       logId: newId('LOG'),
       action: isEdit ? 'แก้ไข PNR' : 'เพิ่ม PNR',
       message: isEdit
-        ? `แก้ไข PNR ${newPnr.pnrDisplay}: วันเดินทาง ${formatDate(newPnr.travelStart)}${segChangeLog ? ` — ${segChangeLog}` : ''}`
+        ? `แก้ไข PNR ${newPnr.pnrDisplay}: วันเดินทาง ${formatDate(newPnr.travelStart)}${segChangeLog ? ` — ${segChangeLog}` : ''}${isBatch ? ` [ครอบคลุม ${applyToPnrIds.length + 1} PNR]` : ''}`
         : `เพิ่ม PNR ${newPnr.pnrDisplay}: วันเดินทาง ${formatDate(newPnr.travelStart)}, Seat ${newPnr.seatTotal}`,
       createdAt: now,
       createdBy: 'System',
+      pnrDisplay: newPnr.pnrDisplay,
+      sectorChanges: segChanges.length > 0 ? segChanges : undefined,
+      scope: isEdit ? (isBatch ? 'batch' : 'single') : undefined,
+      affectedPnrCount: isBatch ? applyToPnrIds.length + 1 : 1,
+      affectedPnrList: isBatch ? [newPnr.pnrDisplay, ...applyToPnrIds.map(id => liveStock.pnrs.find(p => p.pnrId === id)?.pnrDisplay ?? id)] : undefined,
     }
+
     let newPnrs = isEdit
       ? liveStock.pnrs.map(p => p.pnrId === existingPnr!.pnrId ? newPnr : p)
       : [...liveStock.pnrs, newPnr]
 
-    if (applyToPnrIds.length > 0) {
+    const extraLogs: DemoLog[] = []
+
+    if (isBatch) {
+      // Apply time overrides to other PNRs atomically
       newPnrs = newPnrs.map(p => {
         if (!applyToPnrIds.includes(p.pnrId)) return p
         const updatedSch = (p.sectorSchedules ?? []).map((sc, i) => {
@@ -651,17 +680,33 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
         })
         return { ...p, sectorSchedules: updatedSch }
       })
-      const applyLog: DemoLog = { logId: newId('LOG'), action: 'นำเวลาบินไปใช้กับ PNR อื่น', message: `อัปเดตเวลาบิน ${applyToPnrIds.length} PNR จาก ${newPnr.pnrDisplay}`, createdAt: now, createdBy: 'System' }
-      log.message += ` [นำไปใช้กับ ${applyToPnrIds.length} PNR]`
-      newPnrs = newPnrs.map(p => p) // already updated above
-      const updated: DemoStock = { ...liveStock, pnrs: newPnrs, summary: calculateStockSummary(newPnrs), updatedAt: now, logs: [applyLog, log, ...liveStock.logs] }
-      saveDemoStock(updated)
-      onUpdate(updated)
-    } else {
-      const updated: DemoStock = { ...liveStock, pnrs: newPnrs, summary: calculateStockSummary(newPnrs), updatedAt: now, logs: [log, ...liveStock.logs] }
-      saveDemoStock(updated)
-      onUpdate(updated)
+      // Log for each PNR that received the batch update
+      applyToPnrIds.forEach(id => {
+        const target = liveStock.pnrs.find(p => p.pnrId === id)
+        if (!target) return
+        extraLogs.push({
+          logId: newId('LOG'),
+          action: 'นำเวลาบินไปใช้กับ PNR อื่น',
+          message: `อัปเดตเวลาบินของ ${target.pnrDisplay} จาก ${newPnr.pnrDisplay}`,
+          createdAt: now,
+          createdBy: 'System',
+          pnrDisplay: target.pnrDisplay,
+          sectorChanges: segChanges.length > 0 ? segChanges : undefined,
+          scope: 'batch',
+          affectedPnrCount: applyToPnrIds.length + 1,
+        })
+      })
     }
+
+    const updated: DemoStock = {
+      ...liveStock,
+      pnrs: newPnrs,
+      summary: calculateStockSummary(newPnrs),
+      updatedAt: now,
+      logs: [...extraLogs, log, ...liveStock.logs],
+    }
+    saveDemoStock(updated)
+    onUpdate(updated)
 
     setSaving(false)
     setShowScopeDialog(false)
@@ -1759,19 +1804,33 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
             })()}
             {(() => {
               const others = liveStock.pnrs.filter(p => p.pnrId !== pendingSaveData.pnr.pnrId && p.flightSetId === pendingSaveData.pnr.flightSetId)
-              return others.length > 0 ? (
+              if (!others.length) return null
+              const alreadyOverridden = others.filter(p => p.sectorSchedules?.some(s => s.isTimeOverride))
+              const totalSeats = others.reduce((s, p) => s + p.seatTotal, 0)
+              return (
                 <div className="space-y-1.5">
-                  <p className="text-[11px] font-medium text-slate-600">PNR อื่นใน Flight Set เดียวกัน ({others.length} รายการ)</p>
-                  <div className="max-h-[120px] overflow-y-auto space-y-1 rounded-lg border border-slate-200 p-2">
+                  {alreadyOverridden.length > 0 && (
+                    <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-[10px] text-amber-700 space-y-0.5">
+                      <p className="font-semibold">⚠ {alreadyOverridden.length} PNR มีเวลาที่ปรับไว้แล้ว</p>
+                      <p>เลือก &ldquo;นำไปใช้กับทุก PNR&rdquo; จะเขียนทับค่าเหล่านั้น</p>
+                      {alreadyOverridden.map(p => <p key={p.pnrId} className="font-mono">· {p.pnrDisplay}</p>)}
+                    </div>
+                  )}
+                  <p className="text-[11px] font-medium text-slate-600">PNR อื่นใน Flight Set ({others.length} รายการ · {totalSeats} ที่นั่งรวม)</p>
+                  <div className="max-h-[110px] overflow-y-auto space-y-0.5 rounded-lg border border-slate-200 p-2">
                     {others.map(p => (
                       <div key={p.pnrId} className="flex items-center gap-2 text-[10px] text-slate-600">
                         <span className="font-mono font-bold">{p.pnrDisplay}</span>
                         <span className="text-slate-400">{formatDate(p.travelStart)}</span>
+                        <span className="text-slate-400">· {p.seatTotal} ที่นั่ง</span>
+                        {p.sectorSchedules?.some(s => s.isTimeOverride) && (
+                          <span className="text-amber-500 text-[9px] font-medium">ปรับแล้ว</span>
+                        )}
                       </div>
                     ))}
                   </div>
                 </div>
-              ) : null
+              )
             })()}
           </div>
         </Modal>

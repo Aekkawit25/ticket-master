@@ -20,7 +20,8 @@ import type { DemoStock, DemoLog, PaymentScheduleItem } from '@/lib/demo-storage
 import { PNRTab }        from '@/components/tickets/detail/PNRTab'
 import { SegmentsTab }   from '@/components/tickets/detail/SegmentsTab'
 import { ConditionsTab } from '@/components/tickets/detail/ConditionsTab'
-import { SummaryTab } from '@/components/tickets/detail/SummaryTab'
+import { SummaryTab }    from '@/components/tickets/detail/SummaryTab'
+import { LogsTab }       from '@/components/tickets/detail/LogsTab'
 
 
 const TABS = ['Summary', 'PNR', 'Flight Segments', 'Conditions', 'Payment Schedule', 'Logs']
@@ -178,8 +179,6 @@ export default function TicketDetailPage() {
   }))
 
   const paymentSchedule: PaymentScheduleItem[] = buildPaymentSchedule(liveStock)
-
-  const logs = liveStock.logs.map(l => ({ logId: l.logId, created_at: l.createdAt, created_by: l.createdBy, action: l.action, message: l.message }))
 
   const depDates    = pnrRows.map(p => p.travel_start).filter(Boolean).sort()
   const stockPeriod = formatStockPeriod(depDates[0] ?? null, depDates[depDates.length - 1] ?? null)
@@ -461,36 +460,7 @@ export default function TicketDetailPage() {
 
       {/* ── Logs ── */}
       {tab === 'Logs' && (
-        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-          <Table>
-            <TableHead>
-              <tr><Th>Date/Time</Th><Th>User</Th><Th>Action</Th><Th>Detail</Th></tr>
-            </TableHead>
-            <TableBody>
-              {logs.length === 0 ? (
-                <EmptyRow cols={4} message="ยังไม่มี Logs" />
-              ) : (
-                logs.map((l, i) => (
-                  <TableRow key={l.logId ?? i}>
-                    <Td className="text-xs text-slate-500">{formatDateTime(l.created_at)}</Td>
-                    <Td className="text-xs font-medium">{l.created_by}</Td>
-                    <Td>
-                      <Badge variant={
-                        l.action.includes('SCOPE')  ? 'green' :
-                        l.action.includes('REOPEN') ? 'yellow' :
-                        l.action.includes('RECLOS') ? 'gray' :
-                        'blue'
-                      }>
-                        {l.action}
-                      </Badge>
-                    </Td>
-                    <Td className="text-xs text-slate-600">{l.message}</Td>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </div>
+        <LogsTab liveStock={liveStock} />
       )}
 
       {/* ── Unsaved Changes Warning ── */}

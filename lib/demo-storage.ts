@@ -169,12 +169,26 @@ export interface DemoCondition {
   freeTextCondition?: string         // copied from template freeTextCondition
 }
 
+export interface DemoLogSectorChange {
+  sectorSeq: number
+  sectorType: string
+  field: string       // 'Dep Date' | 'Dep Time' | 'Arr Date' | 'Arr Time'
+  oldValue: string
+  newValue: string
+}
+
 export interface DemoLog {
   logId: string
   action: string
   message: string
   createdAt: string
   createdBy: string
+  // Enhanced audit fields (optional, backward-compatible)
+  pnrDisplay?: string
+  sectorChanges?: DemoLogSectorChange[]
+  scope?: 'single' | 'batch'
+  affectedPnrCount?: number
+  affectedPnrList?: string[]
 }
 
 // ─── Financial Transactions ───────────────────────────────────────────────────
