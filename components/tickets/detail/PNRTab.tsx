@@ -251,6 +251,9 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
   const [bulkCondCode, setBulkCondCode]     = useState('')
   const [detailPnr, setDetailPnr]           = useState<PNRRow | null>(null)
 
+  const [showScopeDialog, setShowScopeDialog] = useState(false)
+  const [pendingSaveData, setPendingSaveData] = useState<{ pnr: DemoPNR; existingPnr?: DemoPNR } | null>(null)
+
   // PNR operational status modals
   const [closingPnr, setClosingPnr]             = useState<DemoPNR | null>(null)
   const [showClosePnrModal, setShowClosePnrModal] = useState(false)
@@ -316,6 +319,37 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
       newOverrides[idx] = { ...newOverrides[idx], [field]: value, isTimeOverride: true }
       return { ...prev, sectorOverrides: newOverrides }
     })
+  }
+
+  const resetSectorTime = (idx: number, field: 'departureTime' | 'arrivalTime') => {
+    const allFS = liveStock ? getStockFlightSets(liveStock) : []
+    const fs = allFS.find(f => f.flightSetId === form.flightSetId) ?? allFS[0]
+    const sec = (fs?.sectors ?? liveStock?.sectors ?? [])[idx]
+    if (!sec) return
+    setForm(prev => {
+      if (idx >= prev.sectorOverrides.length) return prev
+      const newOverrides = [...prev.sectorOverrides]
+      const ov = { ...newOverrides[idx] }
+      if (field === 'departureTime') ov.departureTime = sec.depTime ?? ''
+      else ov.arrivalTime = sec.arrTime ?? ''
+      ov.isTimeOverride = ov.departureTime !== (sec.depTime ?? '') || ov.arrivalTime !== (sec.arrTime ?? '')
+      newOverrides[idx] = ov
+      return { ...prev, sectorOverrides: newOverrides }
+    })
+  }
+
+  const resetSectorAllTimes = () => {
+    const allFS = liveStock ? getStockFlightSets(liveStock) : []
+    const fs = allFS.find(f => f.flightSetId === form.flightSetId) ?? allFS[0]
+    const fsSectors = fs?.sectors ?? liveStock?.sectors ?? []
+    setForm(prev => ({
+      ...prev,
+      sectorOverrides: prev.sectorOverrides.map((ov, i) => {
+        const sec = fsSectors[i]
+        if (!sec) return ov
+        return { ...ov, departureTime: sec.depTime ?? '', arrivalTime: sec.arrTime ?? '', isTimeOverride: false }
+      }),
+    }))
   }
 
   const openAdd = () => {
@@ -588,17 +622,11 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
     return errs
   }
 
-  const handleSavePNR = () => {
+  const executeSavePNR = (newPnr: DemoPNR, existingPnr: DemoPNR | undefined, applyToPnrIds: string[]) => {
     if (!liveStock) return
-    const errs = validate()
-    if (Object.keys(errs).length) { setErrors(errs); return }
     setSaving(true)
-
-    const isEdit = !!editingPnrId
-    const existingPnr = isEdit ? liveStock.pnrs.find(p => p.pnrId === editingPnrId) : undefined
-    const newPnr = buildPnrFromForm(existingPnr)
     const now = new Date().toISOString()
-
+    const isEdit = !!existingPnr
     const segChangeLog = isEdit && existingPnr ? buildSegmentChangeLog(existingPnr.sectorSchedules ?? [], newPnr.sectorSchedules ?? []) : ''
     const log: DemoLog = {
       logId: newId('LOG'),
@@ -609,24 +637,61 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
       createdAt: now,
       createdBy: 'System',
     }
-
-    const newPnrs = isEdit
-      ? liveStock.pnrs.map(p => p.pnrId === editingPnrId ? newPnr : p)
+    let newPnrs = isEdit
+      ? liveStock.pnrs.map(p => p.pnrId === existingPnr!.pnrId ? newPnr : p)
       : [...liveStock.pnrs, newPnr]
 
-    const updated: DemoStock = {
-      ...liveStock,
-      pnrs: newPnrs,
-      summary: calculateStockSummary(newPnrs),
-      updatedAt: now,
-      logs: [log, ...liveStock.logs],
+    if (applyToPnrIds.length > 0) {
+      newPnrs = newPnrs.map(p => {
+        if (!applyToPnrIds.includes(p.pnrId)) return p
+        const updatedSch = (p.sectorSchedules ?? []).map((sc, i) => {
+          const src = newPnr.sectorSchedules?.[i]
+          if (!src) return sc
+          return { ...sc, departureTime: src.departureTime, arrivalTime: src.arrivalTime, isTimeOverride: src.isTimeOverride, sourceType: src.sourceType }
+        })
+        return { ...p, sectorSchedules: updatedSch }
+      })
+      const applyLog: DemoLog = { logId: newId('LOG'), action: 'นำเวลาบินไปใช้กับ PNR อื่น', message: `อัปเดตเวลาบิน ${applyToPnrIds.length} PNR จาก ${newPnr.pnrDisplay}`, createdAt: now, createdBy: 'System' }
+      log.message += ` [นำไปใช้กับ ${applyToPnrIds.length} PNR]`
+      newPnrs = newPnrs.map(p => p) // already updated above
+      const updated: DemoStock = { ...liveStock, pnrs: newPnrs, summary: calculateStockSummary(newPnrs), updatedAt: now, logs: [applyLog, log, ...liveStock.logs] }
+      saveDemoStock(updated)
+      onUpdate(updated)
+    } else {
+      const updated: DemoStock = { ...liveStock, pnrs: newPnrs, summary: calculateStockSummary(newPnrs), updatedAt: now, logs: [log, ...liveStock.logs] }
+      saveDemoStock(updated)
+      onUpdate(updated)
     }
 
-    saveDemoStock(updated)
-    onUpdate(updated)
     setSaving(false)
+    setShowScopeDialog(false)
+    setPendingSaveData(null)
     closeModal()
     showToast(isEdit ? 'แก้ไข PNR สำเร็จ' : 'เพิ่ม PNR สำเร็จ')
+  }
+
+  const handleSavePNR = () => {
+    if (!liveStock) return
+    const errs = validate()
+    if (Object.keys(errs).length) { setErrors(errs); return }
+
+    const isEdit = !!editingPnrId
+    const existingPnr = isEdit ? liveStock.pnrs.find(p => p.pnrId === editingPnrId) : undefined
+    const newPnr = buildPnrFromForm(existingPnr)
+
+    // Check if time overrides changed and other PNRs share the same FlightSet
+    const hasTimeOverride = newPnr.sectorSchedules?.some(s => s.isTimeOverride) ?? false
+    const sameFSPnrs = isEdit && hasTimeOverride
+      ? liveStock.pnrs.filter(p => p.pnrId !== editingPnrId && p.flightSetId === newPnr.flightSetId)
+      : []
+
+    if (sameFSPnrs.length > 0) {
+      setPendingSaveData({ pnr: newPnr, existingPnr })
+      setShowScopeDialog(true)
+      return
+    }
+
+    executeSavePNR(newPnr, existingPnr, [])
   }
 
   const handleDeletePNR = () => {
@@ -1012,6 +1077,9 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                             {isFirstRow && (
                               <td rowSpan={rowCount} className={`${canEdit ? 'sticky left-8 z-10' : 'sticky left-0 z-10'} bg-inherit min-w-[190px] px-2 py-1.5 align-top border-r border-slate-200 shadow-[2px_0_4px_rgba(0,0,0,0.04)]`}>
                                 <PNRCell code={p.pnr_code} dummy={p.dummy_pnr} type={p.pnr_type} route={p.route} />
+                                {demoPnr?.sectorSchedules?.some(s => s.isTimeOverride || s.isDateOverride) && (
+                                  <span className="inline-flex mt-1 w-fit px-1.5 py-px rounded text-[9px] font-medium bg-amber-50 text-amber-600 border border-amber-200 whitespace-nowrap">ปรับจาก FS</span>
+                                )}
                               </td>
                             )}
 
@@ -1035,16 +1103,32 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                               })() : '—'}
                             </td>
                             {/* Dep Date */}
-                            <td className="px-2 py-1.5 whitespace-nowrap">{sc?.departureDate ? formatDate(sc.departureDate) : '—'}</td>
+                            <td className={`px-2 py-1.5 whitespace-nowrap ${sc?.isDateOverride ? 'text-amber-700 font-medium' : ''}`} title={sc?.isDateOverride ? 'ปรับวันจาก Flight Set' : undefined}>
+                              {sc?.departureDate ? formatDate(sc.departureDate) : '—'}
+                              {sc?.isDateOverride && <span className="ml-0.5 text-[7px] text-amber-500 align-top leading-tight">●</span>}
+                            </td>
                             {/* Dep Time */}
-                            <td className="px-2 py-1.5 whitespace-nowrap text-slate-600">
-                              {sc?.departureTime ? sc.departureTime : <span className="text-slate-300 italic text-[10px]">ยังไม่ระบุ</span>}
+                            <td className={`px-2 py-1.5 whitespace-nowrap ${sc?.isTimeOverride ? 'text-amber-700 font-medium' : 'text-slate-600'}`} title={sc?.isTimeOverride ? 'ปรับเวลาจาก Flight Set' : undefined}>
+                              {sc?.departureTime ? (
+                                <>
+                                  {sc.departureTime}
+                                  {sc.isTimeOverride && <span className="ml-0.5 text-[7px] text-amber-500 align-top leading-tight">●</span>}
+                                </>
+                              ) : <span className="text-slate-300 italic text-[10px]">ยังไม่ระบุ</span>}
                             </td>
                             {/* Arr Date */}
-                            <td className="px-2 py-1.5 whitespace-nowrap">{sc?.arrivalDate ? formatDate(sc.arrivalDate) : '—'}</td>
+                            <td className={`px-2 py-1.5 whitespace-nowrap ${sc?.isDateOverride ? 'text-amber-700 font-medium' : ''}`} title={sc?.isDateOverride ? 'ปรับวันจาก Flight Set' : undefined}>
+                              {sc?.arrivalDate ? formatDate(sc.arrivalDate) : '—'}
+                              {sc?.isDateOverride && <span className="ml-0.5 text-[7px] text-amber-500 align-top leading-tight">●</span>}
+                            </td>
                             {/* Arr Time */}
-                            <td className="px-2 py-1.5 whitespace-nowrap text-slate-600">
-                              {sc?.arrivalTime ? sc.arrivalTime : <span className="text-slate-300 italic text-[10px]">ยังไม่ระบุ</span>}
+                            <td className={`px-2 py-1.5 whitespace-nowrap ${sc?.isTimeOverride ? 'text-amber-700 font-medium' : 'text-slate-600'}`} title={sc?.isTimeOverride ? 'ปรับเวลาจาก Flight Set' : undefined}>
+                              {sc?.arrivalTime ? (
+                                <>
+                                  {sc.arrivalTime}
+                                  {sc.isTimeOverride && <span className="ml-0.5 text-[7px] text-amber-500 align-top leading-tight">●</span>}
+                                </>
+                              ) : <span className="text-slate-300 italic text-[10px]">ยังไม่ระบุ</span>}
                             </td>
                             {/* +Day */}
                             <td className="px-2 py-1.5 text-center whitespace-nowrap">
@@ -1242,6 +1326,12 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                 <div className="bg-slate-50 border-b border-slate-200 px-3 py-2 flex items-center gap-2">
                   <span className="text-xs font-medium text-slate-600">ตารางเที่ยวบิน · {previewFS?.flightSetName}</span>
                   {hasOverride && <span className="text-[10px] bg-amber-50 text-amber-600 border border-amber-200 px-1.5 py-0.5 rounded-full font-medium">มีการแก้ไข</span>}
+                  {hasOverride && (
+                    <button type="button" onClick={resetSectorAllTimes}
+                      className="ml-auto text-[10px] text-slate-400 hover:text-amber-600 font-medium transition-colors">
+                      คืนค่าเวลาทั้งหมด
+                    </button>
+                  )}
                 </div>
                 <div className="p-3 space-y-2">
                   {fsSectors.map((sec, i) => {
@@ -1251,6 +1341,7 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                     const arrDate = ov?.arrivalDate ?? ''
                     const arrTime = ov?.isTimeOverride ? (ov.arrivalTime ?? '') : (sec.arrTime ?? '')
                     const isOv = !!(ov?.isDateOverride || ov?.isTimeOverride)
+                    const isTimeOv = !!ov?.isTimeOverride
                     const computedPd = calculatePlusDay(depDate, arrDate)
                     const pdErr = computedPd !== null && computedPd < 0
                     const pdWarn = computedPd === 0 && depTime && arrTime && arrTime < depTime
@@ -1270,28 +1361,42 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                             <label className="block text-[10px] text-slate-400 mb-0.5">Dep Date</label>
                             <input type="date" value={depDate}
                               onChange={e => updateSectorDate(i, 'departureDate', e.target.value)}
-                              className={`w-full border rounded-md px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30 ${pdErr ? 'border-red-300' : 'border-slate-200'}`}
+                              className={`w-full border rounded-md px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30 ${pdErr ? 'border-red-300' : ov?.isDateOverride ? 'border-amber-300 bg-amber-50/50' : 'border-slate-200'}`}
                             />
                           </div>
                           <div>
-                            <label className="block text-[10px] text-slate-400 mb-0.5">Dep Time</label>
+                            <label className="block text-[10px] text-slate-400 mb-0.5 flex items-center gap-1">
+                              Dep Time
+                              {isTimeOv && (
+                                <button type="button" title="คืนค่าจาก Flight Set"
+                                  onClick={() => resetSectorTime(i, 'departureTime')}
+                                  className="text-[8px] text-amber-500 hover:text-amber-700 transition-colors">↺</button>
+                              )}
+                            </label>
                             <input type="text" placeholder="HH:mm" maxLength={5} value={depTime}
                               onChange={e => updateSectorTime(i, 'departureTime', e.target.value)}
-                              className="w-full border border-slate-200 rounded-md px-2 py-1 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30"
+                              className={`w-full border rounded-md px-2 py-1 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-amber-300/50 ${isTimeOv ? 'border-amber-300 bg-amber-50/60' : 'border-slate-200 focus:ring-[#05a94f]/30'}`}
                             />
                           </div>
                           <div>
                             <label className="block text-[10px] text-slate-400 mb-0.5">Arr Date</label>
                             <input type="date" value={arrDate}
                               onChange={e => updateSectorDate(i, 'arrivalDate', e.target.value)}
-                              className={`w-full border rounded-md px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30 ${pdErr ? 'border-red-300' : 'border-slate-200'}`}
+                              className={`w-full border rounded-md px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30 ${pdErr ? 'border-red-300' : ov?.isDateOverride ? 'border-amber-300 bg-amber-50/50' : 'border-slate-200'}`}
                             />
                           </div>
                           <div>
-                            <label className="block text-[10px] text-slate-400 mb-0.5">Arr Time</label>
+                            <label className="block text-[10px] text-slate-400 mb-0.5 flex items-center gap-1">
+                              Arr Time
+                              {isTimeOv && (
+                                <button type="button" title="คืนค่าจาก Flight Set"
+                                  onClick={() => resetSectorTime(i, 'arrivalTime')}
+                                  className="text-[8px] text-amber-500 hover:text-amber-700 transition-colors">↺</button>
+                              )}
+                            </label>
                             <input type="text" placeholder="HH:mm" maxLength={5} value={arrTime}
                               onChange={e => updateSectorTime(i, 'arrivalTime', e.target.value)}
-                              className="w-full border border-slate-200 rounded-md px-2 py-1 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30"
+                              className={`w-full border rounded-md px-2 py-1 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-amber-300/50 ${isTimeOv ? 'border-amber-300 bg-amber-50/60' : 'border-slate-200 focus:ring-[#05a94f]/30'}`}
                             />
                           </div>
                           <div>
@@ -1607,6 +1712,70 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
           </div>
         </div>
       </Modal>
+
+      {/* Scope Dialog — propagate time overrides to other PNRs */}
+      {pendingSaveData && liveStock && (
+        <Modal
+          open={showScopeDialog}
+          onClose={() => { setShowScopeDialog(false); setPendingSaveData(null) }}
+          title="ตรวจสอบการเปลี่ยนแปลงเวลาบิน"
+          size="sm"
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => { setShowScopeDialog(false); setPendingSaveData(null) }}>ยกเลิก</Button>
+              <Button variant="outline"
+                onClick={() => executeSavePNR(pendingSaveData.pnr, pendingSaveData.existingPnr, [])}>
+                แก้เฉพาะ PNR นี้
+              </Button>
+              <Button
+                onClick={() => {
+                  const others = liveStock.pnrs
+                    .filter(p => p.pnrId !== pendingSaveData.pnr.pnrId && p.flightSetId === pendingSaveData.pnr.flightSetId)
+                    .map(p => p.pnrId)
+                  executeSavePNR(pendingSaveData.pnr, pendingSaveData.existingPnr, others)
+                }}>
+                นำไปใช้กับทุก PNR ใน Flight Set
+              </Button>
+            </>
+          }
+        >
+          <div className="space-y-3">
+            <p className="text-sm text-slate-700">
+              PNR <strong className="font-mono">{pendingSaveData.pnr.pnrDisplay}</strong> มีการปรับเวลาบินจาก Flight Set
+            </p>
+            {(() => {
+              const changes: string[] = []
+              pendingSaveData.pnr.sectorSchedules?.forEach((sc, i) => {
+                if (sc.isTimeOverride) {
+                  changes.push(`Sector ${i + 1}: ${sc.departureTime || '—'} / ${sc.arrivalTime || '—'}`)
+                }
+              })
+              return changes.length > 0 ? (
+                <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 space-y-1">
+                  <p className="text-[10px] font-semibold text-amber-700">เวลาที่ปรับ</p>
+                  {changes.map((c, i) => <p key={i} className="text-[10px] text-amber-600 font-mono">{c}</p>)}
+                </div>
+              ) : null
+            })()}
+            {(() => {
+              const others = liveStock.pnrs.filter(p => p.pnrId !== pendingSaveData.pnr.pnrId && p.flightSetId === pendingSaveData.pnr.flightSetId)
+              return others.length > 0 ? (
+                <div className="space-y-1.5">
+                  <p className="text-[11px] font-medium text-slate-600">PNR อื่นใน Flight Set เดียวกัน ({others.length} รายการ)</p>
+                  <div className="max-h-[120px] overflow-y-auto space-y-1 rounded-lg border border-slate-200 p-2">
+                    {others.map(p => (
+                      <div key={p.pnrId} className="flex items-center gap-2 text-[10px] text-slate-600">
+                        <span className="font-mono font-bold">{p.pnrDisplay}</span>
+                        <span className="text-slate-400">{formatDate(p.travelStart)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null
+            })()}
+          </div>
+        </Modal>
+      )}
 
       {/* Delete Confirm Modal */}
       <Modal
