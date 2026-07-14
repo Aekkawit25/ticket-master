@@ -234,12 +234,24 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
   const [shiftConfirm, setShiftConfirm] = useState<{ pnrIdx: number; origDep: string; newDep: string } | null>(null)
   const [toastMsg, setToastMsg] = useState<string | null>(null)
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [newRowHighlight, setNewRowHighlight] = useState<{ start: number; count: number } | null>(null)
+  const newHighlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingScrollIdx = useRef<number | null>(null)
 
   const showToast = (msg: string) => {
     setToastMsg(msg)
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
     toastTimerRef.current = setTimeout(() => setToastMsg(null), 2500)
   }
+
+  // Scroll to first new PNR after pnrs state updates
+  useEffect(() => {
+    const idx = pendingScrollIdx.current
+    if (idx === null) return
+    pendingScrollIdx.current = null
+    const el = document.querySelector<HTMLElement>(`[data-pnr-idx="${idx}"]`)
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }, [pnrs])
 
   const currencyOptions = useMemo(() => getCurrencyOptions(), [])
   const existingPnrCodes = useMemo(() => {
@@ -507,6 +519,13 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
       pnr.ttl_date = row.ttlDate ?? null; pnr.ttl_time = row.ttlTime ?? null
       return pnr
     })
+    const firstNewIdx = pnrs.length
+    pendingScrollIdx.current = firstNewIdx
+    // Highlight newly added rows with green, fade after 2.5s
+    setNewRowHighlight({ start: firstNewIdx, count: newPNRs.length })
+    if (newHighlightTimerRef.current) clearTimeout(newHighlightTimerRef.current)
+    newHighlightTimerRef.current = setTimeout(() => setNewRowHighlight(null), 2500)
+    showToast(`เพิ่ม PNR ลงในตารางแล้ว ${newPNRs.length} รายการ`)
     onChange([...pnrs, ...newPNRs])
   }
 
@@ -785,8 +804,9 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
               const fsName = schedules.find(s => s.scheduleId === activeScheduleId)?.scheduleName ?? schedules[0]?.scheduleName ?? 'Default'
               const taxDisabled = fmt !== 'FARE'
               const yqDisabled = fmt === 'ALL_IN'
-              const hvBg = isHovered ? '#F0F7FF' : '#FFFFFF'
-              const hvSec = isHovered ? '#EBF4FF' : '#F8FAFC'
+              const isNewlyAdded = newRowHighlight !== null && pnrIdx >= newRowHighlight.start && pnrIdx < newRowHighlight.start + newRowHighlight.count
+              const hvBg = isHovered ? '#F0F7FF' : isNewlyAdded ? '#f0fdf4' : '#FFFFFF'
+              const hvSec = isHovered ? '#EBF4FF' : isNewlyAdded ? '#dcfce7' : '#F8FAFC'
               // PNR group border: thick bottom on last PNR, light on others
               const isLastPnr = pnrIdx === pnrs.length - 1
               const pnrBorderB = isLastPnr ? 'border-b border-b-[#E5EAF0]' : 'border-b-2 border-b-slate-300'
@@ -816,7 +836,9 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
                     const rowBorderB = isLastSector ? pnrBorderB : 'border-b border-b-[#E5EAF0]'
 
                     return (
-                      <tr key={`${pnrIdx}-${sIdx}`} style={{ height: 36, backgroundColor: hvBg }}
+                      <tr key={`${pnrIdx}-${sIdx}`}
+                        data-pnr-idx={isFirstRow ? pnrIdx : undefined}
+                        style={{ height: 36, backgroundColor: hvBg, transition: 'background-color 1.2s ease' }}
                         onMouseEnter={() => setHoveredPnrIdx(pnrIdx)}
                         onMouseLeave={() => setHoveredPnrIdx(null)}>
 

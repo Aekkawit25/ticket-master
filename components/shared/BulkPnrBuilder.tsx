@@ -756,9 +756,11 @@ export function BulkPnrBuilder({
     }))
 
     if (mode === 'create_stock') {
-      onConfirm?.(outRows)
-      setSaving(false)
-      resetAll()
+      // Give React one frame to render the loading/disabled state before committing
+      setTimeout(() => {
+        onConfirm?.(outRows)
+        handleClose()
+      }, 0)
       return
     }
 
