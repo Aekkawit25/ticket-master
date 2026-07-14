@@ -30,9 +30,9 @@ const PNR_COLS = [
   { key: 'sector',      label: 'Sector',       width: 55,  align: 'center' },
   { key: 'day',         label: 'Day',          width: 55,  align: 'center' },
   { key: 'depDate',     label: 'Dep Date',     width: 115, align: 'center' },
-  { key: 'depTime',     label: 'Dep Time',     width: 82,  align: 'center' },
+  { key: 'depTime',     label: 'Dep Time',     width: 78,  align: 'center' },
   { key: 'arrDate',     label: 'Arr Date',     width: 115, align: 'center' },
-  { key: 'arrTime',     label: 'Arr Time',     width: 82,  align: 'center' },
+  { key: 'arrTime',     label: 'Arr Time',     width: 78,  align: 'center' },
   { key: 'plusDay',     label: '+Day',         width: 55,  align: 'center' },
   { key: 'seat',        label: 'Seat',         width: 62,  align: 'center' },
   { key: 'priceType',   label: 'ประเภทราคา',   width: 100, align: 'center' },
@@ -826,7 +826,7 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
                         </td>
 
                         {/* ── Col 7: Dep Time (per-row) ── */}
-                        <td className={cn(TD_SEC_C, 'px-0.5', rowBorderB)} style={{ backgroundColor: hvSec }}>
+                        <td className={cn(TD_SEC_C, 'px-0', rowBorderB)} style={{ backgroundColor: hvSec }}>
                           <TimeInput value={sd.dep_time ?? ''} onChange={v => handleSectorDepTimeChange(pnrIdx, sIdx, v)}
                             compact
                             className={cn('border-0 bg-transparent focus:outline-none text-center w-full min-w-0 h-7 text-[12px]',
@@ -853,7 +853,7 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
                         </td>
 
                         {/* ── Col 9: Arr Time (per-row) ── */}
-                        <td className={cn(TD_SEC_C, 'px-0.5', rowBorderB)} style={{ backgroundColor: hvSec }}>
+                        <td className={cn(TD_SEC_C, 'px-0', rowBorderB)} style={{ backgroundColor: hvSec }}>
                           <TimeInput value={sd.arr_time ?? ''} onChange={v => handleSectorArrTimeChange(pnrIdx, sIdx, v)}
                             compact
                             className={cn('border-0 bg-transparent focus:outline-none text-center w-full min-w-0 h-7 text-[12px]',

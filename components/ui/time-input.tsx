@@ -308,17 +308,17 @@ export function TimeInput({
   }
 
   const inputCls = compact
-    ? 'flex-1 min-w-0 font-mono bg-transparent outline-none text-center text-xs px-1 py-1'
+    ? 'flex-1 min-w-0 font-mono bg-transparent outline-none text-center text-xs px-1 py-0'
     : 'flex-1 min-w-0 font-mono bg-transparent outline-none text-center text-sm px-3 py-2'
 
-  const iconSize = compact ? 11 : 14
+  const iconSize = compact ? 12 : 14
 
   return (
     <>
       <div
         ref={wrapperRef}
         className={cn(
-          'flex items-center transition-colors',
+          'group/time flex items-center transition-colors',
           highlight && 'border-amber-400 bg-amber-50/30',
           className,
         )}
@@ -341,7 +341,10 @@ export function TimeInput({
           tabIndex={-1}
           disabled={disabled}
           onMouseDown={e => { e.preventDefault(); openPopup() }}
-          className="pr-1 shrink-0 text-slate-300 hover:text-slate-500 transition-colors"
+          className={cn(
+            'pr-1 shrink-0 text-slate-300 hover:text-slate-500 transition-all',
+            compact && 'opacity-0 group-hover/time:opacity-100 group-focus-within/time:opacity-100',
+          )}
         >
           <Clock size={iconSize} />
         </button>
