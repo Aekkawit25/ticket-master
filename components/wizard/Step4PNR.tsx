@@ -35,12 +35,9 @@ const PNR_COLS = [
   { key: 'arrTime',     label: 'Arr Time',     width: 78,  align: 'center' },
   { key: 'plusDay',     label: '+Day',         width: 55,  align: 'center' },
   { key: 'seat',        label: 'Seat',         width: 62,  align: 'center' },
-  { key: 'priceType',   label: 'ประเภทราคา',   width: 100, align: 'center' },
-  { key: 'fare',        label: 'Fare',         width: 85,  align: 'right'  },
-  { key: 'tax',         label: 'Tax',          width: 75,  align: 'right'  },
-  { key: 'yq',          label: 'YQ',           width: 75,  align: 'right'  },
-  { key: 'currency',    label: 'สกุลเงิน',     width: 70,  align: 'center' },
-  { key: 'condition',   label: 'Condition',    width: 115, align: 'left'   },
+  { key: 'priceType',   label: 'ประเภทราคา',     width: 100, align: 'center' },
+  { key: 'priceDetail', label: 'รายละเอียดราคา', width: 155, align: 'left'   },
+  { key: 'condition',   label: 'Condition',      width: 115, align: 'left'   },
   { key: 'ttl',         label: 'TTL',          width: 115, align: 'left'   },
   { key: 'confirmation',label: 'การยืนยัน',    width: 105, align: 'center' },
   { key: 'remark',      label: 'Remark',       width: 125, align: 'left'   },
@@ -138,10 +135,10 @@ function autoAdjustArrDate(
 // ─── PriceInput ───────────────────────────────────────────────────────────────
 function PriceInput({
   value, nullable = false, disabled = false, hasError = false, errorTitle,
-  onChange, onBlur, cell = false,
+  onChange, onBlur, cell = false, compact = false,
 }: {
   value: number | null; nullable?: boolean; disabled?: boolean
-  hasError?: boolean; errorTitle?: string; cell?: boolean
+  hasError?: boolean; errorTitle?: string; cell?: boolean; compact?: boolean
   onChange: (v: number | null) => void; onBlur?: () => void
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
@@ -174,14 +171,18 @@ function PriceInput({
       title={hasError && errorTitle ? errorTitle : undefined}
       className={cn(
         'w-full min-w-0 bg-transparent focus:outline-none tabular-nums transition-colors',
-        cell
-          ? cn('text-[12px] h-7 border-0 text-right px-1 py-0',
+        compact
+          ? cn('text-[11px] h-[18px] border-0 text-right px-0.5 py-0',
               hasError ? 'text-red-500' : '',
-              !focused && value == null ? 'placeholder:text-slate-300' : 'text-slate-800 font-medium')
-          : cn('text-xs px-2.5 py-1.5 border rounded-lg',
-              hasError ? 'border-red-300 bg-red-50/40 focus:border-red-400' :
-              focused ? 'border-[#05a94f] bg-emerald-50/20' : 'border-slate-200 focus:border-[#05a94f]',
-              !focused && value == null ? 'placeholder:text-slate-300' : 'text-slate-800 font-semibold'),
+              !focused && value == null ? 'placeholder:text-slate-300 placeholder:italic' : 'text-slate-800 font-medium')
+          : cell
+            ? cn('text-[12px] h-7 border-0 text-right px-1 py-0',
+                hasError ? 'text-red-500' : '',
+                !focused && value == null ? 'placeholder:text-slate-300' : 'text-slate-800 font-medium')
+            : cn('text-xs px-2.5 py-1.5 border rounded-lg',
+                hasError ? 'border-red-300 bg-red-50/40 focus:border-red-400' :
+                focused ? 'border-[#05a94f] bg-emerald-50/20' : 'border-slate-200 focus:border-[#05a94f]',
+                !focused && value == null ? 'placeholder:text-slate-300' : 'text-slate-800 font-semibold'),
       )}
       onFocus={e => { preEditRef.current = value; setFocused(true); setRaw(value == null ? '' : String(value)); requestAnimationFrame(() => e.target.select()) }}
       onBlur={() => { setFocused(false); commit(raw); onBlur?.() }}
@@ -641,12 +642,10 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
   // th: height 34px, overflow:hidden, whitespace:nowrap, box-sizing:border-box
   const TH = 'border-r border-b border-[#E5EAF0] px-1.5 py-0 h-[34px] align-middle text-[11px] font-medium text-slate-600 bg-[#F0F4F8] select-none overflow-hidden whitespace-nowrap box-border'
   const TH_C = cn(TH, 'text-center')
-  const TH_R = cn(TH, 'text-right')
   const TH_L = cn(TH, 'text-left')
   // td: align-middle, overflow:hidden, whitespace:nowrap, box-sizing:border-box
   const TD = 'border-r border-[#E5EAF0] px-1.5 align-middle overflow-hidden whitespace-nowrap box-border'
   const TD_C = cn(TD, 'text-center')
-  const TD_R = cn(TD, 'text-right')
   const TD_L = cn(TD, 'text-left')
   // sector columns: faint background tint
   const TD_SEC = cn(TD, 'bg-[#F8FAFC]')
@@ -761,10 +760,7 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
               <th className={cn(TH_C, 'bg-[#EDF5FF]')}>+Day</th>
               <th className={TH_C}>Seat</th>
               <th className={TH_C}>ประเภทราคา</th>
-              <th className={TH_R}>Fare</th>
-              <th className={TH_R}>Tax</th>
-              <th className={TH_R}>YQ</th>
-              <th className={TH_C}>สกุลเงิน</th>
+              <th className={TH_L}>รายละเอียดราคา</th>
               <th className={TH_L}>Condition</th>
               <th className={TH_L}>TTL</th>
               <th className={TH_C}>การยืนยัน</th>
@@ -987,28 +983,63 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
                               </select>
                             </td>
 
-                            {/* Col 13: Fare */}
-                            <td rowSpan={sectorCount} className={cn(TD_R, pnrBorderB, fareErr ? 'bg-red-50' : '')} style={{ backgroundColor: fareErr ? undefined : hvBg }}>
-                              <PriceInput value={p.fare > 0 ? p.fare : null} cell hasError={fareErr}
-                                onChange={v => handleFareChange(pnrIdx, v)} onBlur={() => markTouched(pnrIdx)} />
-                            </td>
-
-                            {/* Col 14: Tax */}
-                            <td rowSpan={sectorCount} className={cn(TD_R, pnrBorderB, taxDisabled ? 'bg-slate-50' : taxErr ? 'bg-red-50' : '')} style={{ backgroundColor: taxDisabled || taxErr ? undefined : hvBg }}>
-                              <PriceInput value={!taxDisabled ? (p.tax ?? null) : null} cell disabled={taxDisabled} nullable={!taxDisabled} hasError={taxErr}
-                                onChange={v => handleTaxChange(pnrIdx, v)} onBlur={() => markTouched(pnrIdx)} />
-                            </td>
-
-                            {/* Col 15: YQ */}
-                            <td rowSpan={sectorCount} className={cn(TD_R, pnrBorderB, yqDisabled ? 'bg-slate-50' : yqErr ? 'bg-red-50' : '')} style={{ backgroundColor: yqDisabled || yqErr ? undefined : hvBg }}>
-                              <PriceInput value={!yqDisabled ? (p.yq ?? null) : null} cell disabled={yqDisabled} nullable={!yqDisabled} hasError={yqErr}
-                                onChange={v => handleYqChange(pnrIdx, v)} onBlur={() => markTouched(pnrIdx)} />
-                            </td>
-
-                            {/* Col 16: Currency */}
-                            <td rowSpan={sectorCount} className={cn('border-r border-[#E5EAF0] align-middle overflow-hidden p-0', pnrBorderB)} style={{ backgroundColor: hvBg }}>
-                              <CurrencyCombobox variant="inline" value={p.currency || currency} stockDefault={currency}
-                                currencies={currencyOptions} onChange={code => handleCurrencyChange(pnrIdx, code)} />
+                            {/* Col 13: รายละเอียดราคา — Fare + Tax + YQ + Currency combined vertically */}
+                            <td rowSpan={sectorCount}
+                              className={cn('border-r border-[#E5EAF0] align-top overflow-hidden box-border', pnrBorderB)}
+                              style={{ backgroundColor: hvBg, transition: 'background-color 1.2s ease' }}>
+                              <div className="flex flex-col py-1">
+                                {/* Header: price format badge + currency selector */}
+                                <div className="flex items-center justify-between px-1.5 pb-0.5 mb-0.5 border-b border-[#E5EAF0]">
+                                  <span className={cn('text-[9px] font-bold leading-none px-1 py-0.5 rounded',
+                                    fmt === 'FARE_YQ' ? 'bg-amber-100 text-amber-700' :
+                                    fmt === 'ALL_IN'  ? 'bg-blue-100 text-blue-700' :
+                                    'bg-slate-100 text-slate-600')}>
+                                    {fmt === 'FARE' ? 'FARE' : fmt === 'FARE_YQ' ? 'FARE+YQ' : 'ALL IN'}
+                                  </span>
+                                  <CurrencyCombobox variant="inline" value={p.currency || currency} stockDefault={currency}
+                                    currencies={currencyOptions} onChange={code => handleCurrencyChange(pnrIdx, code)}
+                                    className="w-[38px]" />
+                                </div>
+                                {/* Fare / All In row */}
+                                <div className={cn('flex items-center h-[18px] px-1', fareErr ? 'bg-red-50/60 rounded' : '')}>
+                                  <span className="w-[26px] shrink-0 text-[10px] text-slate-500 leading-none">
+                                    {fmt === 'ALL_IN' ? 'AllIn' : 'Fare'}
+                                  </span>
+                                  <div className="flex-1 min-w-0">
+                                    <PriceInput value={p.fare > 0 ? p.fare : null} compact hasError={fareErr}
+                                      onChange={v => handleFareChange(pnrIdx, v)} onBlur={() => markTouched(pnrIdx)} />
+                                  </div>
+                                </div>
+                                {/* Tax row */}
+                                <div className={cn('flex items-center h-[18px] px-1', !taxDisabled && taxErr ? 'bg-red-50/60 rounded' : '')}>
+                                  <span className={cn('w-[26px] shrink-0 text-[10px] leading-none', taxDisabled ? 'text-slate-300' : 'text-slate-500')}>Tax</span>
+                                  <div className="flex-1 min-w-0">
+                                    {taxDisabled
+                                      ? <span className="block w-full text-right text-[10px] text-slate-300 pr-0.5">ไม่ใช้</span>
+                                      : <PriceInput value={p.tax ?? null} compact nullable hasError={taxErr}
+                                          onChange={v => handleTaxChange(pnrIdx, v)} onBlur={() => markTouched(pnrIdx)} />
+                                    }
+                                  </div>
+                                </div>
+                                {/* YQ row */}
+                                <div className={cn('flex items-center h-[18px] px-1', !yqDisabled && yqErr ? 'bg-red-50/60 rounded' : '')}>
+                                  <span className={cn('w-[26px] shrink-0 text-[10px] leading-none', yqDisabled ? 'text-slate-300' : 'text-slate-500')}>YQ</span>
+                                  <div className="flex-1 min-w-0">
+                                    {yqDisabled
+                                      ? <span className="block w-full text-right text-[10px] text-slate-300 pr-0.5">ไม่ใช้</span>
+                                      : <PriceInput value={p.yq ?? null} compact nullable hasError={yqErr}
+                                          onChange={v => handleYqChange(pnrIdx, v)} onBlur={() => markTouched(pnrIdx)} />
+                                    }
+                                  </div>
+                                </div>
+                                {/* Total row */}
+                                <div className="flex items-center gap-1 px-1.5 mt-0.5 pt-0.5 border-t border-[#E5EAF0]">
+                                  <span className="text-[9px] text-slate-400 shrink-0">รวม</span>
+                                  <span className="flex-1 min-w-0 text-right text-[11px] font-semibold text-emerald-700 tabular-nums truncate">
+                                    {(p.total_amount ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </span>
+                                </div>
+                              </div>
                             </td>
 
                             {/* Col 17: Condition */}
