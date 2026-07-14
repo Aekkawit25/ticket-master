@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, Fragment } from 'react'
-import { addDays, format as fnsFormat, parseISO, isValid } from 'date-fns'
+import { addDays, format as fnsFormat, parseISO } from 'date-fns'
 import { Button } from '@/components/ui/button'
 import { TimeInput } from '@/components/ui/time-input'
 import { Badge, PnrConfirmationStatusBadge } from '@/components/ui/badge'
@@ -113,240 +113,25 @@ interface Props {
   onJumpDone: () => void
 }
 
-// ─── Custom Flight Types & Helpers ───────────────────────────────────────────
+// ─── Segment change log helper ───────────────────────────────────────────────
 
-interface CfSector {
-  sectorId: string; seq: number; sectorType: string; airlineCode: string
-  flightNo: string; depAirportCode: string; arrAirportCode: string
-  depTime: string; arrTime: string; arrDayOffset: number; dayOffset: number; remark: string
-}
-
-const CF_SECTOR_TYPES = ['Departure', 'Transit', 'Arrival']
-
-function normalizeSegmentType(value: unknown): string {
-  const v = String(value ?? '').trim().toLowerCase()
-  if (v === 'departure' || v === 'outbound') return 'Departure'
-  if (v === 'arrival'   || v === 'return')   return 'Arrival'
-  if (v === 'transit'   || v === 'domestic') return 'Transit'
-  return String(value ?? '').trim()
-}
-
-function ensureUniqueName(name: string, flightSets: DemoFlightSet[], excludeId?: string): string {
-  const taken = (n: string) => flightSets.some(
-    f => f.flightSetId !== excludeId && f.flightSetName.trim().toLowerCase() === n.trim().toLowerCase()
-  )
-  if (!taken(name)) return name
-  let i = 2
-  while (taken(`${name} (${i})`)) i++
-  return `${name} (${i})`
-}
-
-function autoCustomName(pnr: DemoPNR): string {
-  let depDate = '—'
-  try { const d = parseISO(pnr.travelStart); if (isValid(d)) depDate = fnsFormat(d, 'dd MMM yy') } catch { /* ignore */ }
-  const short = pnr.pnrCode
-    ? pnr.pnrCode.slice(-4)
-    : (pnr.dummyPnr?.match(/-(\d{4})$/) ?? [])[1] ?? pnr.pnrDisplay?.slice(-4) ?? '????'
-  return `Custom - ${depDate} - ${short}`
-}
-
-function cfSectorsEqual(a: CfSector[], b: DemoSector[]): boolean {
-  if (a.length !== b.length) return false
-  return a.every((s, i) => {
-    const t = b[i]
-    return s.sectorType === t.sectorType && s.airlineCode === t.airlineCode &&
-      s.flightNo === t.flightNo && s.depAirportCode === t.depAirportCode &&
-      s.arrAirportCode === t.arrAirportCode && s.depTime === t.depTime &&
-      s.arrTime === t.arrTime && s.arrDayOffset === t.arrDayOffset && s.dayOffset === t.dayOffset
-  })
-}
-
-function findMatchingFS(sectors: CfSector[], flightSets: DemoFlightSet[], excludeId: string): DemoFlightSet | null {
-  return flightSets.find(fs => fs.flightSetId !== excludeId && cfSectorsEqual(sectors, fs.sectors)) ?? null
-}
-
-function validateCfSectors(sectors: CfSector[], minSectors: number): Record<string, string> {
-  const errs: Record<string, string> = {}
-  if (sectors.length < minSectors) errs._count = `ต้องมีอย่างน้อย ${minSectors} Sector`
-  if (sectors.length > 0) {
-    const firstType = normalizeSegmentType(sectors[0].sectorType)
-    if (firstType !== 'Departure') errs._order = 'Sector แรกต้องเป็น Departure'
-  }
-  if (sectors.length > 1) {
-    const lastType = normalizeSegmentType(sectors[sectors.length - 1].sectorType)
-    if (lastType !== 'Arrival' && lastType !== 'Departure') errs._return = 'Sector สุดท้ายต้องเป็น Arrival'
-  }
-  sectors.forEach((s, i) => {
-    if (!String(s.flightNo || '').trim())       errs[`flightNo_${i}`] = 'กรุณาระบุ Flight No.'
-    if (!String(s.depAirportCode || '').trim()) errs[`dep_${i}`]      = 'กรุณาระบุ From'
-    if (!String(s.arrAirportCode || '').trim()) errs[`arr_${i}`]      = 'กรุณาระบุ To'
-    if (!String(s.depTime || '').trim())        errs[`depTime_${i}`]  = 'กรุณาระบุ Dep Time'
-    if (!String(s.arrTime || '').trim())        errs[`arrTime_${i}`]  = 'กรุณาระบุ Arr Time'
-    if (!s.airlineCode || !MASTER_AIRLINE_CODE_SET.has(s.airlineCode))
-      errs[`airline_${i}`] = s.airlineCode ? 'ไม่พบใน Master' : 'กรุณาเลือก Airline'
-  })
-  // Duplicate flight check
-  const flightKeyMap = new Map<string, number[]>()
-  sectors.forEach((s, i) => {
-    if (s.airlineCode && s.flightNo) {
-      const key = `${s.airlineCode}${s.flightNo}`
-      const arr = flightKeyMap.get(key) ?? []
-      arr.push(i)
-      flightKeyMap.set(key, arr)
-    }
-  })
-  flightKeyMap.forEach((indices) => {
-    if (indices.length > 1) {
-      indices.forEach(i => { errs[`flightNo_${i}`] = 'Flight No ซ้ำ' })
-    }
-  })
-  return errs
-}
-
-function buildCfChangeLog(newSectors: CfSector[], oldSectors: DemoSector[]): string {
+function buildSegmentChangeLog(
+  oldSchedules: PnrSectorSchedule[] | undefined,
+  newSchedules: PnrSectorSchedule[],
+): string {
+  if (!oldSchedules?.length) return ''
   const changes: string[] = []
-  if (newSectors.length !== oldSectors.length) {
-    changes.push(`Segments: ${oldSectors.length} → ${newSectors.length}`)
-  } else {
-    newSectors.forEach((s, i) => {
-      const o = oldSectors[i]; const diffs: string[] = []
-      if (s.flightNo !== o.flightNo) diffs.push(`Flight ${o.flightNo}→${s.flightNo}`)
-      if (s.depTime !== o.depTime || s.arrTime !== o.arrTime) diffs.push(`Time ${o.depTime}/${o.arrTime}→${s.depTime}/${s.arrTime}`)
-      if (s.depAirportCode !== o.depAirportCode || s.arrAirportCode !== o.arrAirportCode) diffs.push(`Route ${o.depAirportCode}-${o.arrAirportCode}→${s.depAirportCode}-${s.arrAirportCode}`)
-      if (s.dayOffset !== o.dayOffset) diffs.push(`Travel Day ${o.dayOffset}→${s.dayOffset}`)
-      if (diffs.length) changes.push(`Sec ${i + 1}: ${diffs.join(', ')}`)
-    })
-  }
+  newSchedules.forEach((ns, i) => {
+    const os = oldSchedules[i]
+    if (!os) return
+    const diffs: string[] = []
+    if (ns.departureDate !== os.departureDate) diffs.push(`Dep Date: ${os.departureDate || '—'}→${ns.departureDate || '—'}`)
+    if (ns.departureTime !== os.departureTime) diffs.push(`Dep Time: ${os.departureTime || '—'}→${ns.departureTime || '—'}`)
+    if (ns.arrivalDate !== os.arrivalDate)     diffs.push(`Arr Date: ${os.arrivalDate || '—'}→${ns.arrivalDate || '—'}`)
+    if (ns.arrivalTime !== os.arrivalTime)     diffs.push(`Arr Time: ${os.arrivalTime || '—'}→${ns.arrivalTime || '—'}`)
+    if (diffs.length) changes.push(`Sec ${i + 1}: ${diffs.join(', ')}`)
+  })
   return changes.join('; ')
-}
-
-// ─── CfSectorTable — inline sector edit for Custom Flight modal ───────────────
-
-interface CfSectorTableProps {
-  sectors: CfSector[]
-  errors: Record<string, string>
-  defaultAirlineCode: string
-  onChange: (s: CfSector[]) => void
-}
-
-function CfSectorTable({ sectors, errors, defaultAirlineCode, onChange }: CfSectorTableProps) {
-  const update = (idx: number, rawPatch: Partial<CfSector>) => {
-    const patch: Partial<CfSector> = rawPatch.sectorType !== undefined
-      ? { ...rawPatch, sectorType: normalizeSegmentType(rawPatch.sectorType) }
-      : rawPatch
-    onChange(sectors.map((s, i) => {
-      if (i !== idx) return s
-      const m = { ...s, ...patch }
-      if (('depTime' in patch || 'arrTime' in patch) && !('arrDayOffset' in patch))
-        m.arrDayOffset = m.arrTime < m.depTime ? 1 : 0
-      return m
-    }))
-  }
-
-  const addSec = () => {
-    const maxSeq = sectors.reduce((m, s) => Math.max(m, s.seq), 0)
-    onChange([...sectors, {
-      sectorId: newId('SEC'), seq: maxSeq + 1, sectorType: 'Transit',
-      airlineCode: defaultAirlineCode, flightNo: '', depAirportCode: '', arrAirportCode: '',
-      depTime: '08:00', arrTime: '10:00', arrDayOffset: 0, dayOffset: 1, remark: '',
-    }])
-  }
-
-  const removeSec = (idx: number) =>
-    onChange(sectors.filter((_, i) => i !== idx).map((s, i) => ({ ...s, seq: i + 1 })))
-
-  return (
-    <div className="overflow-x-auto border border-slate-200 rounded-lg">
-      <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 780 }}>
-        <colgroup>
-          <col style={{ width: 26 }} /><col style={{ width: 90 }} /><col style={{ width: 58 }} />
-          <col style={{ width: 80 }} /><col style={{ width: 60 }} /><col style={{ width: 60 }} />
-          <col style={{ width: 76 }} /><col style={{ width: 76 }} /><col style={{ width: 48 }} />
-          <col style={{ width: 68 }} /><col /><col style={{ width: 32 }} />
-        </colgroup>
-        <thead>
-          <tr className="bg-slate-50 border-b border-slate-200">
-            {['#','Type','Airline','Flight No.','From','To','Dep','Arr','+Day','Travel Day','Remark',''].map(h => (
-              <th key={h} className="px-1.5 h-8 text-[10px] font-semibold text-slate-500 text-center whitespace-nowrap">{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {sectors.map((s, i) => (
-            <tr key={s.sectorId} className="border-b border-slate-100 last:border-0 align-middle">
-              <td className="px-1.5 py-1 text-[10px] text-center text-slate-400">{i + 1}</td>
-              <td className="px-1 py-1">
-                <select value={s.sectorType} onChange={e => update(i, { sectorType: e.target.value })}
-                  className="w-full border border-slate-300 rounded px-1 py-0.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-[#05a94f]">
-                  {CF_SECTOR_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                </select>
-              </td>
-              <td className="px-1 py-1">
-                <AirlineCell
-                  value={s.airlineCode}
-                  onChange={v => update(i, { airlineCode: v })}
-                  inputClassName={`border rounded px-1 py-0.5 ${errors[`airline_${i}`] ? 'border-red-400' : 'border-slate-300'}`}
-                />
-              </td>
-              <td className="px-1 py-1">
-                <input value={s.flightNo}
-                  onChange={e => update(i, { flightNo: e.target.value.replace(/\D/g, '') })}
-                  className={`w-full border rounded px-1 py-0.5 text-[11px] font-mono focus:outline-none focus:ring-1 focus:ring-[#05a94f] ${errors[`flightNo_${i}`] ? 'border-red-400' : 'border-slate-300'}`}
-                  placeholder="701" inputMode="numeric" />
-              </td>
-              <td className="px-1 py-1">
-                <input value={s.depAirportCode} maxLength={3}
-                  onChange={e => update(i, { depAirportCode: e.target.value.toUpperCase() })}
-                  className={`w-full border rounded px-1 py-0.5 text-[11px] font-mono uppercase focus:outline-none focus:ring-1 focus:ring-[#05a94f] ${errors[`dep_${i}`] ? 'border-red-400' : 'border-slate-300'}`}
-                  placeholder="BKK" />
-              </td>
-              <td className="px-1 py-1">
-                <input value={s.arrAirportCode} maxLength={3}
-                  onChange={e => update(i, { arrAirportCode: e.target.value.toUpperCase() })}
-                  className={`w-full border rounded px-1 py-0.5 text-[11px] font-mono uppercase focus:outline-none focus:ring-1 focus:ring-[#05a94f] ${errors[`arr_${i}`] ? 'border-red-400' : 'border-slate-300'}`}
-                  placeholder="NRT" />
-              </td>
-              <td className="px-1 py-1">
-                <TimeInput compact value={s.depTime} onChange={v => update(i, { depTime: v })}
-                  className="w-full border border-slate-300 rounded focus-within:ring-1 focus-within:ring-[#05a94f] focus-within:border-[#05a94f]" />
-              </td>
-              <td className="px-1 py-1">
-                <TimeInput compact value={s.arrTime} onChange={v => update(i, { arrTime: v })}
-                  className="w-full border border-slate-300 rounded focus-within:ring-1 focus-within:ring-[#05a94f] focus-within:border-[#05a94f]" />
-              </td>
-              <td className="px-1 py-1">
-                <div className="w-full rounded px-0.5 py-[3px] text-[11px] text-center bg-slate-50 text-slate-600 font-medium border border-slate-200">
-                  {s.arrDayOffset === 0 ? '0' : `+${s.arrDayOffset}`}
-                </div>
-              </td>
-              <td className="px-1 py-1">
-                <input type="number" min="1" value={s.dayOffset}
-                  onChange={e => update(i, { dayOffset: Math.max(1, Number(e.target.value) || 1) })}
-                  className="w-full border border-slate-300 rounded px-1 py-0.5 text-[11px] text-center focus:outline-none focus:ring-1 focus:ring-[#05a94f]" />
-              </td>
-              <td className="px-1 py-1">
-                <input value={s.remark} onChange={e => update(i, { remark: e.target.value })}
-                  className="w-full border border-slate-300 rounded px-1 py-0.5 text-[11px] focus:outline-none focus:ring-1 focus:ring-[#05a94f]"
-                  placeholder="—" />
-              </td>
-              <td className="px-1 py-1 text-center">
-                <button onClick={() => removeSec(i)} disabled={sectors.length <= 1}
-                  className="p-0.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
-                  <Trash2 size={11} />
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <div className="px-3 py-2 border-t border-slate-100">
-        <button onClick={addSec}
-          className="inline-flex items-center gap-1 text-[11px] text-[#05a94f] hover:text-green-700 font-medium">
-          <PlusCircle size={12} /> เพิ่ม Segment
-        </button>
-      </div>
-    </div>
-  )
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -465,24 +250,6 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
   const [showBulkCond, setShowBulkCond]     = useState(false)
   const [bulkCondCode, setBulkCondCode]     = useState('')
   const [detailPnr, setDetailPnr]           = useState<PNRRow | null>(null)
-
-  // Custom Flight state
-  const [showCFModal, setShowCFModal]           = useState(false)
-  const [cfMode, setCfMode]                     = useState<'create' | 'edit'>('create')
-  const [cfEditFsId, setCfEditFsId]             = useState<string | null>(null)   // edit: FS ที่ต้อง update
-  const [cfSourceFsId, setCfSourceFsId]         = useState<string | null>(null)   // FS ต้นทางที่ copy sectors มา
-  const [cfEditAffectsCount, setCfEditAffectsCount] = useState(1)
-  const [cfPnr, setCfPnr]                       = useState<DemoPNR | null>(null)
-  const [cfSectors, setCfSectors]               = useState<CfSector[]>([])
-  const [cfSetName, setCfSetName]               = useState('')
-  const [cfErrors, setCfErrors]                 = useState<Record<string, string>>({})
-  const [cfSaving, setCfSaving]                 = useState(false)
-  const [cfDupFS, setCfDupFS]                  = useState<DemoFlightSet | null>(null)
-  const [showCFDupConfirm, setShowCFDupConfirm] = useState(false)
-  // Case C — custom FS used by multiple PNRs
-  const [showCFMultiConfirm, setShowCFMultiConfirm] = useState(false)
-  const [cfMultiPnr, setCfMultiPnr]             = useState<DemoPNR | null>(null)
-  const [cfMultiFS, setCfMultiFS]               = useState<DemoFlightSet | null>(null)
 
   // PNR operational status modals
   const [closingPnr, setClosingPnr]             = useState<DemoPNR | null>(null)
@@ -832,11 +599,12 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
     const newPnr = buildPnrFromForm(existingPnr)
     const now = new Date().toISOString()
 
+    const segChangeLog = isEdit && existingPnr ? buildSegmentChangeLog(existingPnr.sectorSchedules ?? [], newPnr.sectorSchedules ?? []) : ''
     const log: DemoLog = {
       logId: newId('LOG'),
       action: isEdit ? 'แก้ไข PNR' : 'เพิ่ม PNR',
       message: isEdit
-        ? `แก้ไข PNR ${newPnr.pnrDisplay}: วันเดินทาง ${formatDate(newPnr.travelStart)}`
+        ? `แก้ไข PNR ${newPnr.pnrDisplay}: วันเดินทาง ${formatDate(newPnr.travelStart)}${segChangeLog ? ` — ${segChangeLog}` : ''}`
         : `เพิ่ม PNR ${newPnr.pnrDisplay}: วันเดินทาง ${formatDate(newPnr.travelStart)}, Seat ${newPnr.seatTotal}`,
       createdAt: now,
       createdBy: 'System',
@@ -1022,303 +790,6 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
     setConvertCode('')
     setConvertError('')
     showToast('เปลี่ยนเป็น PNR จริงสำเร็จ')
-  }
-
-  // ─── Custom Flight functions ─────────────────────────────────────────────────
-
-  const openCFModal = (pnr: DemoPNR, fs: DemoFlightSet, mode: 'create' | 'edit', affectsCount = 1) => {
-    const initSectors: CfSector[] = (fs.sectors ?? []).map((s, i) => ({
-      sectorId: s.sectorId ?? newId('SEC'),
-      seq: i + 1,
-      sectorType: normalizeSegmentType(s.sectorType),
-      airlineCode: s.airlineCode,
-      flightNo: s.flightNo,
-      depAirportCode: s.depAirportCode,
-      arrAirportCode: s.arrAirportCode,
-      depTime: s.depTime,
-      arrTime: s.arrTime,
-      arrDayOffset: s.arrDayOffset ?? (s.arrTime < s.depTime ? 1 : 0),
-      dayOffset: s.dayOffset,
-      remark: s.remark ?? '',
-    }))
-    setCfPnr(pnr)
-    setCfMode(mode)
-    // edit: ID ของ FS ที่จะ update in-place
-    // create: null (สร้างใหม่)
-    setCfEditFsId(mode === 'edit' ? fs.flightSetId : null)
-    // sourceFlightSetId: FS ต้นทางที่ copy sectors มา (ใช้สำหรับ no-change detection + duplicate exclude)
-    // ทั้ง create และ edit ใช้ ID เดียวกัน (FS ปัจจุบันที่โหลดมา)
-    setCfSourceFsId(fs.flightSetId)
-    setCfEditAffectsCount(affectsCount)
-    setCfSectors(initSectors)
-    setCfSetName(mode === 'edit' ? fs.flightSetName : autoCustomName(pnr))
-    setCfErrors({})
-    setCfDupFS(null)
-    setCfSaving(false)
-    setShowCFModal(true)
-  }
-
-  const openCustomFlight = (pnr: DemoPNR) => {
-    if (!liveStock) return
-    const flightSets = getStockFlightSets(liveStock)
-    const fs = flightSets.find(f => f.flightSetId === pnr.flightSetId) ?? flightSets[0]
-    const usedCount = liveStock.pnrs.filter(p => p.flightSetId === fs.flightSetId).length
-
-    // Case B: edit mode — custom FS created by this PNR, used only by this PNR
-    if (fs.isCustom && fs.createdFromPnrId === pnr.pnrId && usedCount === 1) {
-      openCFModal(pnr, fs, 'edit', 1)
-      return
-    }
-
-    // Case C: custom FS used by multiple PNRs — ask before proceeding
-    if (fs.isCustom && usedCount > 1) {
-      setCfMultiPnr(pnr)
-      setCfMultiFS(fs)
-      setShowCFMultiConfirm(true)
-      return
-    }
-
-    // Case A: create mode (default FS or single-use custom owned by another PNR)
-    openCFModal(pnr, fs, 'create')
-  }
-
-  const createAndLinkCustomFS = (sectorsToSave: CfSector[], finalName: string) => {
-    if (!liveStock || !cfPnr) return
-    const now = new Date().toISOString()
-    const newFS: DemoFlightSet = {
-      flightSetId: newId('FSET'),
-      flightSetName: finalName,
-      isCustom: true,
-      createdFromPnrId: cfPnr.pnrId,
-      sectors: sectorsToSave.map((s, i) => ({
-        sectorId: s.sectorId,
-        seq: i + 1,
-        sectorType: s.sectorType,
-        airlineCode: s.airlineCode,
-        flightNo: s.flightNo,
-        depAirportCode: s.depAirportCode,
-        arrAirportCode: s.arrAirportCode,
-        depTime: s.depTime,
-        arrTime: s.arrTime,
-        arrDayOffset: s.arrDayOffset,
-        dayOffset: s.dayOffset,
-        remark: s.remark,
-      })),
-    }
-    const flightSets = getStockFlightSets(liveStock)
-    const oldFS = flightSets.find(f => f.flightSetId === cfPnr.flightSetId) ?? flightSets[0]
-
-    const newTravelEnd = calcTravelEndFromSectors(
-      cfPnr.travelStart,
-      newFS.sectors.map(s => ({ sector_type: s.sectorType, day_offset: s.dayOffset }))
-    ) ?? cfPnr.travelEnd
-
-    const newSectorDates = newFS.sectors.map(s => {
-      try { const d = addDays(parseISO(cfPnr.travelStart), s.dayOffset - 1); return { sectorType: s.sectorType, date: fnsFormat(d, 'yyyy-MM-dd') } }
-      catch { return { sectorType: s.sectorType, date: '' } }
-    })
-
-    const changeDesc = buildCfChangeLog(sectorsToSave, oldFS?.sectors ?? liveStock.sectors)
-    const log: DemoLog = {
-      logId: newId('LOG'),
-      action: 'Create Custom Flight',
-      message: `PNR ${cfPnr.pnrDisplay}: สร้าง Custom Flight "${newFS.flightSetName}"${changeDesc ? ` — ${changeDesc}` : ''}`,
-      createdAt: now, createdBy: 'System',
-    }
-
-    const newSectorSchedules = buildSectorSchedules(newFS.sectors, cfPnr.travelStart)
-    const updatedPnr: DemoPNR = { ...cfPnr, flightSetId: newFS.flightSetId, travelEnd: newTravelEnd, sectorDates: newSectorDates, sectorSchedules: newSectorSchedules }
-    const newPnrs = liveStock.pnrs.map(p => p.pnrId === cfPnr.pnrId ? updatedPnr : p)
-    const updated: DemoStock = {
-      ...liveStock,
-      flightSets: [...flightSets, newFS],
-      pnrs: newPnrs,
-      summary: calculateStockSummary(newPnrs),
-      updatedAt: now,
-      logs: [log, ...liveStock.logs],
-    }
-    saveDemoStock(updated)
-    onUpdate(updated)
-    setCfSaving(false)
-    setShowCFModal(false)
-    setCfPnr(null)
-    showToast(`สร้าง Custom Flight "${newFS.flightSetName}" สำเร็จ`)
-  }
-
-  const updateExistingFS = (sectorsToSave: CfSector[], finalName: string) => {
-    if (!liveStock || !cfPnr || !cfEditFsId) return
-    const now = new Date().toISOString()
-    const flightSets = getStockFlightSets(liveStock)
-    const existingFS = flightSets.find(f => f.flightSetId === cfEditFsId)
-    if (!existingFS) return
-
-    const updatedDemoSectors: DemoSector[] = sectorsToSave.map((s, i) => ({
-      sectorId: s.sectorId, seq: i + 1, sectorType: s.sectorType,
-      airlineCode: s.airlineCode, flightNo: s.flightNo,
-      depAirportCode: s.depAirportCode, arrAirportCode: s.arrAirportCode,
-      depTime: s.depTime, arrTime: s.arrTime,
-      arrDayOffset: s.arrDayOffset, dayOffset: s.dayOffset, remark: s.remark,
-    }))
-    const updatedFS: DemoFlightSet = { ...existingFS, flightSetName: finalName, sectors: updatedDemoSectors }
-
-    // Recalculate travelEnd + sectorDates for ALL PNRs using this FS
-    const updatedPnrs = liveStock.pnrs.map(p => {
-      if (p.flightSetId !== cfEditFsId) return p
-      const newTravelEnd = calcTravelEndFromSectors(
-        p.travelStart, updatedDemoSectors.map(s => ({ sector_type: s.sectorType, day_offset: s.dayOffset }))
-      ) ?? p.travelEnd
-      const newSectorDates = updatedDemoSectors.map(s => {
-        try { const d = addDays(parseISO(p.travelStart), s.dayOffset - 1); return { sectorType: s.sectorType, date: fnsFormat(d, 'yyyy-MM-dd') } }
-        catch { return { sectorType: s.sectorType, date: '' } }
-      })
-      return { ...p, travelEnd: newTravelEnd, sectorDates: newSectorDates, sectorSchedules: buildSectorSchedules(updatedDemoSectors, p.travelStart) }
-    })
-
-    const changeDesc = buildCfChangeLog(sectorsToSave, existingFS.sectors)
-    const log: DemoLog = {
-      logId: newId('LOG'), action: 'Edit Custom Flight',
-      message: `แก้ไข Flight Set "${existingFS.flightSetName}"${finalName !== existingFS.flightSetName ? ` → "${finalName}"` : ''}${changeDesc ? ` — ${changeDesc}` : ''} (PNR: ${cfPnr.pnrDisplay})`,
-      createdAt: now, createdBy: 'System',
-    }
-
-    const updatedFlightSets = flightSets.map(f => f.flightSetId === cfEditFsId ? updatedFS : f)
-    const isFirstFS = updatedFlightSets[0]?.flightSetId === cfEditFsId
-    const updated: DemoStock = {
-      ...liveStock,
-      sectors: isFirstFS ? updatedDemoSectors : liveStock.sectors,
-      flightSets: updatedFlightSets,
-      pnrs: updatedPnrs,
-      summary: calculateStockSummary(updatedPnrs),
-      updatedAt: now,
-      logs: [log, ...liveStock.logs],
-    }
-    saveDemoStock(updated)
-    onUpdate(updated)
-    setCfSaving(false)
-    setShowCFModal(false)
-    setCfPnr(null)
-    showToast(`แก้ไข "${finalName}" สำเร็จ${cfEditAffectsCount > 1 ? ` (กระทบ ${cfEditAffectsCount} PNR)` : ''}`)
-  }
-
-  const handleSaveCF = () => {
-    if (!liveStock || !cfPnr) return
-
-    const flightSets = getStockFlightSets(liveStock)
-    const minSectors = liveStock.ticketType === 'FIT' ? 1 : 2
-
-    // ── Normalize sectors (prevent stale value / case mismatch) ──────────────
-    const normalizedSectors = cfSectors.map(s => ({ ...s, sectorType: normalizeSegmentType(s.sectorType) }))
-    setCfSectors(normalizedSectors)
-
-    if (process.env.NODE_ENV !== 'production') {
-      console.log('[CustomFlight] mode:', cfMode,
-        '| editFsId:', cfEditFsId ?? '—',
-        '| sourceFsId:', cfSourceFsId ?? '—',
-        '| pnrId:', cfPnr.pnrId,
-        '\n segments:', normalizedSectors.map(s => ({
-          type: s.sectorType, airline: s.airlineCode, flightNo: s.flightNo,
-          from: s.depAirportCode, to: s.arrAirportCode,
-          depTime: s.depTime, arrTime: s.arrTime, plusDay: s.arrDayOffset, travelDay: s.dayOffset,
-        }))
-      )
-    }
-
-    // ── Name validation ──────────────────────────────────────────────────────
-    const nameErrs: Record<string, string> = {}
-    if (!cfSetName.trim()) {
-      nameErrs.cfName = 'กรุณาระบุชื่อ Flight Set'
-    } else if (cfMode === 'edit' && cfEditFsId) {
-      // Edit: ชื่อเดิมใช้ได้ เช็ก duplicate เฉพาะเมื่อเปลี่ยนชื่อ
-      const editFSOriginalName = flightSets.find(f => f.flightSetId === cfEditFsId)?.flightSetName ?? ''
-      if (cfSetName.trim().toLowerCase() !== editFSOriginalName.trim().toLowerCase()) {
-        const dup = flightSets.find(f => f.flightSetId !== cfEditFsId && f.flightSetName.trim().toLowerCase() === cfSetName.trim().toLowerCase())
-        if (dup) nameErrs.cfName = 'ชื่อซ้ำกับ Flight Set ที่มีอยู่'
-      }
-    }
-
-    // Create: auto-suffix ชื่อซ้ำ ไม่แสดง error (UX ดีกว่า)
-    const finalName = cfMode === 'create'
-      ? ensureUniqueName(cfSetName.trim(), flightSets)
-      : cfSetName.trim()
-
-    const sectorErrs = validateCfSectors(normalizedSectors, minSectors)
-    const allErrs = { ...nameErrs, ...sectorErrs }
-    if (Object.keys(allErrs).length) { setCfErrors(allErrs); return }
-
-    // ── No-change detection (ใช้ cfSourceFsId — ไม่ใช่ cfPnr.flightSetId) ──
-    // sourceFS คือ FS ที่เราโหลด sectors มา ทั้ง create/edit
-    const sourceFS = cfSourceFsId ? flightSets.find(f => f.flightSetId === cfSourceFsId) : null
-    const basesSectors = sourceFS?.sectors ?? liveStock.sectors
-    const sectorsUnchanged = cfSectorsEqual(normalizedSectors, basesSectors)
-    const nameUnchanged    = cfMode === 'edit' && finalName === (sourceFS?.flightSetName ?? '')
-    if (sectorsUnchanged && (cfMode === 'create' || nameUnchanged)) {
-      showToast('ไม่มีการเปลี่ยนแปลงข้อมูล Flight')
-      setShowCFModal(false)
-      setCfPnr(null)
-      return
-    }
-
-    // ── Edit mode: update in-place using cfEditFsId ───────────────────────────
-    if (cfMode === 'edit' && cfEditFsId) {
-      setCfSaving(true)
-      updateExistingFS(normalizedSectors, finalName)
-      return
-    }
-
-    // ── Create mode: check for duplicate segment content ──────────────────────
-    // exclude cfSourceFsId (FS ต้นทาง) จากการ match
-    const matchFS = findMatchingFS(normalizedSectors, flightSets, cfSourceFsId ?? '')
-    if (matchFS) {
-      setCfDupFS(matchFS)
-      setShowCFDupConfirm(true)
-      return
-    }
-
-    setCfSaving(true)
-    createAndLinkCustomFS(normalizedSectors, finalName)
-  }
-
-  const confirmUseDupFS = (useExisting: boolean) => {
-    if (!liveStock || !cfPnr) return
-    setShowCFDupConfirm(false)
-    if (useExisting && cfDupFS) {
-      const now = new Date().toISOString()
-      const newTravelEnd = calcTravelEndFromSectors(
-        cfPnr.travelStart,
-        cfDupFS.sectors.map(s => ({ sector_type: s.sectorType, day_offset: s.dayOffset }))
-      ) ?? cfPnr.travelEnd
-      const newSectorDates = cfDupFS.sectors.map(s => {
-        try { const d = addDays(parseISO(cfPnr.travelStart), s.dayOffset - 1); return { sectorType: s.sectorType, date: fnsFormat(d, 'yyyy-MM-dd') } }
-        catch { return { sectorType: s.sectorType, date: '' } }
-      })
-      const log: DemoLog = {
-        logId: newId('LOG'),
-        action: 'Assign PNR to Existing Flight Set',
-        message: `PNR ${cfPnr.pnrDisplay}: เปลี่ยนไปใช้ Flight Set "${cfDupFS.flightSetName}" (มีอยู่แล้ว)`,
-        createdAt: now, createdBy: 'System',
-      }
-      const newSectorSchedules = buildSectorSchedules(cfDupFS.sectors, cfPnr.travelStart)
-      const updatedPnr: DemoPNR = { ...cfPnr, flightSetId: cfDupFS.flightSetId, travelEnd: newTravelEnd, sectorDates: newSectorDates, sectorSchedules: newSectorSchedules }
-      const newPnrs = liveStock.pnrs.map(p => p.pnrId === cfPnr.pnrId ? updatedPnr : p)
-      const updated: DemoStock = {
-        ...liveStock,
-        pnrs: newPnrs,
-        summary: calculateStockSummary(newPnrs),
-        updatedAt: now,
-        logs: [log, ...liveStock.logs],
-      }
-      saveDemoStock(updated)
-      onUpdate(updated)
-      setShowCFModal(false)
-      setCfPnr(null)
-      showToast(`เปลี่ยนไปใช้ Flight Set "${cfDupFS.flightSetName}"`)
-    } else {
-      const flightSetsNow = liveStock ? getStockFlightSets(liveStock) : []
-      const dedupedName = ensureUniqueName(cfSetName.trim(), flightSetsNow)
-      setCfSaving(true)
-      createAndLinkCustomFS(cfSectors, dedupedName)
-    }
-    setCfDupFS(null)
   }
 
   // Derive PNRRow[] display
@@ -1704,7 +1175,7 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                                             opStatus={opStatus}
                                             isDummy={demoPnr.pnrType === 'dummy'}
                                             canOperate={canOperate}
-                                            onEditFlight={() => openCustomFlight(demoPnr)}
+                                            onEditFlight={() => openEdit(demoPnr)}
                                             onDuplicate={() => handleDuplicate(demoPnr)}
                                             onConvert={() => { setConvertingPnr(demoPnr); setShowConvertModal(true) }}
                                             onResetSchedule={() => handleResetSchedule(demoPnr)}
@@ -2253,126 +1724,6 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
               />
               {convertError && <p className="text-xs text-red-500 mt-1">{convertError}</p>}
             </div>
-          </div>
-        )}
-      </Modal>
-
-      {/* Case C — Multi-PNR Confirm Modal */}
-      {cfMultiPnr && cfMultiFS && (
-        <Modal
-          open={showCFMultiConfirm}
-          onClose={() => { setShowCFMultiConfirm(false); setCfMultiPnr(null); setCfMultiFS(null) }}
-          title="Flight Set นี้ถูกใช้งานโดยหลาย PNR"
-          size="sm"
-          footer={
-            <>
-              <Button variant="ghost" onClick={() => { setShowCFMultiConfirm(false); setCfMultiPnr(null); setCfMultiFS(null) }}>ยกเลิก</Button>
-              <Button variant="outline" onClick={() => {
-                const cnt = liveStock?.pnrs.filter(p => p.flightSetId === cfMultiFS!.flightSetId).length ?? 1
-                setShowCFMultiConfirm(false)
-                openCFModal(cfMultiPnr!, cfMultiFS!, 'edit', cnt)
-                setCfMultiPnr(null); setCfMultiFS(null)
-              }}>แก้ไข Flight Set นี้ (กระทบทุก PNR)</Button>
-              <Button onClick={() => {
-                setShowCFMultiConfirm(false)
-                openCFModal(cfMultiPnr!, cfMultiFS!, 'create')
-                setCfMultiPnr(null); setCfMultiFS(null)
-              }}>สร้าง Custom Flight ใหม่ (เฉพาะ PNR นี้)</Button>
-            </>
-          }
-        >
-          <div className="space-y-2 text-sm">
-            <p>Flight Set <strong>&ldquo;{cfMultiFS.flightSetName}&rdquo;</strong> ถูกใช้งานโดย&nbsp;
-              <span className="font-bold text-orange-600">
-                {liveStock?.pnrs.filter(p => p.flightSetId === cfMultiFS!.flightSetId).length ?? 1} PNR
-              </span>
-            </p>
-            <p className="text-slate-500 text-xs">คุณต้องการแก้ไขแบบใด?</p>
-          </div>
-        </Modal>
-      )}
-
-      {/* Custom Flight Modal */}
-      {cfPnr && (
-        <Modal
-          open={showCFModal}
-          onClose={() => { setShowCFModal(false); setCfPnr(null) }}
-          title={cfMode === 'edit' ? `Edit Custom Flight — ${cfPnr.pnrDisplay}` : `Custom Flight — ${cfPnr.pnrDisplay}`}
-          size="2xl"
-          footer={
-            <>
-              <Button variant="ghost" onClick={() => { setShowCFModal(false); setCfPnr(null) }}>ยกเลิก</Button>
-              <Button onClick={handleSaveCF} disabled={cfSaving}>
-                {cfSaving ? 'กำลังบันทึก...' : cfMode === 'edit' ? 'บันทึกการแก้ไข' : 'บันทึก Custom Flight'}
-              </Button>
-            </>
-          }
-        >
-          <div className="space-y-4">
-            {/* Flight Set Name */}
-            <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
-                ชื่อ Flight Set <span className="text-red-500">*</span>
-              </label>
-              <input
-                value={cfSetName}
-                onChange={e => { setCfSetName(e.target.value); setCfErrors(v => ({ ...v, cfName: '' })) }}
-                className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30 ${cfErrors.cfName ? 'border-red-400' : 'border-slate-300'}`}
-                placeholder="เช่น Custom - 25 Feb 26 - AB12"
-              />
-              {cfErrors.cfName && <p className="text-xs text-red-500 mt-1">{cfErrors.cfName}</p>}
-            </div>
-
-            {/* Error summary */}
-            {(cfErrors._count || cfErrors._order || cfErrors._return) && (
-              <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 space-y-0.5">
-                {cfErrors._count  && <p className="text-xs text-red-600 flex items-center gap-1"><AlertTriangle size={11} />{cfErrors._count}</p>}
-                {cfErrors._order  && <p className="text-xs text-red-600 flex items-center gap-1"><AlertTriangle size={11} />{cfErrors._order}</p>}
-                {cfErrors._return && <p className="text-xs text-red-600 flex items-center gap-1"><AlertTriangle size={11} />{cfErrors._return}</p>}
-              </div>
-            )}
-
-            {/* Sector edit table */}
-            <div>
-              <p className="text-xs font-medium text-slate-700 mb-1.5">แก้ไข Flight Segments</p>
-              <CfSectorTable
-                sectors={cfSectors}
-                errors={cfErrors}
-                defaultAirlineCode={liveStock?.airlineCode ?? ''}
-                onChange={s => { setCfSectors(s); setCfErrors({}) }}
-              />
-            </div>
-
-            <p className="text-[10px] text-slate-400">
-              {cfMode === 'edit'
-                ? cfEditAffectsCount > 1
-                  ? `ระบบจะแก้ไข Flight Set เดิม กระทบ PNR ที่ใช้ชุดนี้ทั้งหมด (${cfEditAffectsCount} PNR)`
-                  : 'ระบบจะแก้ไข Flight Set เดิม ไม่สร้างชุดใหม่'
-                : 'ระบบจะสร้าง Flight Set ใหม่อัตโนมัติและผูกกับ PNR นี้เท่านั้น'
-              }
-            </p>
-          </div>
-        </Modal>
-      )}
-
-      {/* Duplicate Flight Set Confirm Modal */}
-      <Modal
-        open={showCFDupConfirm}
-        onClose={() => setShowCFDupConfirm(false)}
-        title="Flight Segments ซ้ำกับ Flight Set ที่มีอยู่"
-        size="sm"
-        footer={
-          <>
-            <Button variant="ghost" onClick={() => setShowCFDupConfirm(false)}>ยกเลิก</Button>
-            <Button variant="outline" onClick={() => confirmUseDupFS(true)}>ใช้ Flight Set เดิม</Button>
-            <Button onClick={() => confirmUseDupFS(false)}>สร้างใหม่</Button>
-          </>
-        }
-      >
-        {cfDupFS && (
-          <div className="space-y-2 text-sm">
-            <p>Flight Segments ที่แก้ไขตรงกับ <strong>&ldquo;{cfDupFS.flightSetName}&rdquo;</strong> ที่มีอยู่แล้ว</p>
-            <p className="text-slate-500 text-xs">คุณต้องการใช้ Flight Set เดิมหรือสร้างใหม่?</p>
           </div>
         )}
       </Modal>

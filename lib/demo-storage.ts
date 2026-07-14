@@ -976,11 +976,29 @@ export function demoStockToWizardState(stock: DemoStock): WizardState {
       ttl_date: p.ttlDate || '',
       ttl_time: p.ttlTime || '',
       ttl_status: p.ttlDate ? 'SET' as const : 'UNSET' as const,
-      sector_dates: (p.sectorDates ?? []).map(sd => ({
-        sector_type: sd.sectorType,
-        day_offset: stock.sectors.find(s => s.sectorType === sd.sectorType)?.dayOffset ?? 1,
-        travel_date: sd.date,
-      })),
+      // Restore full per-PNR sector data from sectorSchedules (Phase 1+).
+      // Falls back to legacy sectorDates (dep date only) for old records.
+      sector_dates: (p.sectorSchedules && p.sectorSchedules.length > 0)
+        ? p.sectorSchedules.map((sch, i) => ({
+            sector_id: sch.flightSetSectorId,
+            sector_type: sch.sectorType,
+            // Use array index to match sector (avoids wrong match for duplicate sectorTypes)
+            day_offset: stock.sectors[i]?.dayOffset ?? sch.departureDayOffset ?? 1,
+            arr_day_offset: sch.plusDay,
+            travel_date: sch.departureDate,
+            arr_date: sch.arrivalDate,
+            dep_manual: sch.isDateOverride,
+            arr_manual: sch.isDateOverride,
+            dep_time: sch.departureTime,
+            arr_time: sch.arrivalTime,
+            time_override: sch.isTimeOverride,
+          }))
+        : (p.sectorDates ?? []).map((sd, i) => ({
+            sector_type: sd.sectorType,
+            day_offset: stock.sectors[i]?.dayOffset
+              ?? (stock.sectors.find(s => s.sectorType === sd.sectorType)?.dayOffset ?? 1),
+            travel_date: sd.date,
+          })),
     })),
   }
 }
@@ -1149,20 +1167,24 @@ export function wizardStateToDemoStock(state: WizardState): DemoStock {
       }
 
       const isDateOverride = !!(sd?.dep_manual || sd?.arr_manual)
+      // Honour per-PNR time edits made in Step 3/Step 4 of the wizard
+      const isTimeOverride = !!(sd?.time_override)
 
       return {
         flightSetSectorId: sec.sectorId,
         sequence: sec.seq,
         sectorType: sec.sectorType as 'Departure' | 'Transit' | 'Arrival',
         departureDate: depDate,
-        departureTime: sec.depTime ?? '',
+        // Prefer per-PNR dep_time from wizard; fall back to FlightSet template
+        departureTime: sd?.dep_time !== undefined ? sd.dep_time : (sec.depTime ?? ''),
         arrivalDate,
-        arrivalTime: sec.arrTime ?? '',
+        // Prefer per-PNR arr_time from wizard; fall back to FlightSet template
+        arrivalTime: sd?.arr_time !== undefined ? sd.arr_time : (sec.arrTime ?? ''),
         plusDay,
         departureDayOffset: sec.dayOffset ?? 1,
         isDateOverride,
-        isTimeOverride: false,
-        sourceType: isDateOverride ? 'manual' as const : 'calculated' as const,
+        isTimeOverride,
+        sourceType: (isDateOverride || isTimeOverride) ? 'manual' as const : 'calculated' as const,
       }
     })
 
