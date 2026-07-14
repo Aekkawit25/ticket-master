@@ -252,6 +252,12 @@ export interface FlightPNRFormData {
     arr_date?: string
     dep_manual?: boolean
     arr_manual?: boolean
+    /** เวลาออกเดินทาง HH:mm — default จาก Flight Set template, แก้ได้ต่อ PNR */
+    dep_time?: string
+    /** เวลาถึงปลายทาง HH:mm — default จาก Flight Set template, แก้ได้ต่อ PNR */
+    arr_time?: string
+    /** true = ผู้ใช้แก้ไข dep_time หรือ arr_time ต่างจาก template */
+    time_override?: boolean
   }[]
   /** 'UNSET' = ยังไม่ระบุ TTL, 'SET' = ระบุ TTL แล้ว — กรอกโดยผู้ใช้ ไม่ใช่คำนวณจาก Condition */
   ttl_status?: 'UNSET' | 'SET'

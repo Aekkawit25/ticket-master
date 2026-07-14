@@ -442,9 +442,9 @@ export default function Step5Review({ state, excludeStockId }: Step5Props) {
                                           <span className={sec.sector_type === 'Departure' ? 'text-green-600 font-medium' : sec.sector_type === 'Arrival' ? 'text-purple-600 font-medium' : 'text-amber-600 font-medium'}>{sec.sector_type}</span>
                                         </td>
                                         <td className="pr-6 pb-0.5 font-mono text-slate-700">{depDate ? formatDate(depDate) : '—'}</td>
-                                        <td className="pr-6 pb-0.5 text-slate-500">{sec.dep_time || '—'}</td>
+                                        <td className="pr-6 pb-0.5 text-slate-500">{sd?.dep_time || sec.dep_time || '—'}</td>
                                         <td className="pr-6 pb-0.5 font-mono text-slate-700">{arrDate ? formatDate(arrDate) : '—'}</td>
-                                        <td className="pr-6 pb-0.5 text-slate-500">{sec.arr_time || '—'}</td>
+                                        <td className="pr-6 pb-0.5 text-slate-500">{sd?.arr_time || sec.arr_time || '—'}</td>
                                         <td className="pb-0.5">{plusDay > 0 ? <span className="text-amber-600 font-semibold">+{plusDay}</span> : <span className="text-slate-400">—</span>}</td>
                                       </tr>
                                     )

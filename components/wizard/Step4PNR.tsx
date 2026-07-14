@@ -2,7 +2,7 @@
 
 import { Fragment, useRef, useState, useMemo, useEffect } from 'react'
 import { PlusCircle, Trash2, Copy, Info, CalendarDays, FileUp, Download, AlertTriangle, RefreshCw, RotateCcw, Pencil } from 'lucide-react'
-import { cn, formatTravelDate, calcTravelEndFromSectors, calcSectorDate } from '@/lib/utils'
+import { cn, formatTravelDate, calcTravelEndFromSectors, calcSectorDate, calculatePlusDay } from '@/lib/utils'
 import { hasTtl, formatTtlDisplay as formatTtlDisplayUtil } from '@/lib/ttl-utils'
 import { TtlEditor } from '@/components/shared/TtlEditor'
 import { BulkPnrBuilder } from '@/components/shared/BulkPnrBuilder'
@@ -340,14 +340,18 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
         const arr = sd.arr_manual
           ? (sd.arr_date ?? '')
           : (dep ? addDaysToDate(dep, s?.arr_day_offset ?? 0) : '')
-        return { ...sd, day_offset: s?.day_offset ?? sd.day_offset, travel_date: dep, arr_date: arr }
+        // Times: use PNR-stored time if present, fall back to Flight Set template
+        const dep_time = sd.dep_time !== undefined ? sd.dep_time : (s?.dep_time ?? '')
+        const arr_time = sd.arr_time !== undefined ? sd.arr_time : (s?.arr_time ?? '')
+        return { ...sd, day_offset: s?.day_offset ?? sd.day_offset, travel_date: dep, arr_date: arr, dep_time, arr_time }
       })
     }
     // No stored dates or sector count changed → compute everything from scratch
     return sects.map(s => {
       const dep = p.travel_start ? calcSectorDate(p.travel_start, s.day_offset) ?? '' : ''
       const arr = dep ? addDaysToDate(dep, s.arr_day_offset ?? 0) : ''
-      return { sector_type: s.sector_type, day_offset: s.day_offset, travel_date: dep, arr_date: arr, dep_manual: false as const, arr_manual: false as const }
+      return { sector_type: s.sector_type, day_offset: s.day_offset, travel_date: dep, arr_date: arr, dep_manual: false as const, arr_manual: false as const,
+        dep_time: s.dep_time ?? '', arr_time: s.arr_time ?? '', time_override: false as const }
     })
   }
 
@@ -464,16 +468,49 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
     }))
   }
 
+  const handleSectorDepTimeChange = (pnrIdx: number, sIdx: number, newTime: string) => {
+    const p = pnrs[pnrIdx]
+    const sects = getPnrSectors(p)
+    const currentSDs = getSectorDatesForPnr(p, sects)
+    const s = sects[sIdx]
+    const templateDepTime = s?.dep_time ?? ''
+    const newSDs = currentSDs.map((sd, i) => {
+      if (i !== sIdx) return sd
+      const arrTimeOverride = (sd.arr_time ?? '') !== (sects[i]?.arr_time ?? '')
+      return { ...sd, dep_time: newTime, time_override: (newTime !== templateDepTime) || arrTimeOverride }
+    })
+    markTouched(pnrIdx)
+    onChange(pnrs.map((row, i) => i !== pnrIdx ? row : { ...row, sector_dates: newSDs }))
+  }
+
+  const handleSectorArrTimeChange = (pnrIdx: number, sIdx: number, newTime: string) => {
+    const p = pnrs[pnrIdx]
+    const sects = getPnrSectors(p)
+    const currentSDs = getSectorDatesForPnr(p, sects)
+    const s = sects[sIdx]
+    const templateArrTime = s?.arr_time ?? ''
+    const newSDs = currentSDs.map((sd, i) => {
+      if (i !== sIdx) return sd
+      const depTimeOverride = (sd.dep_time ?? '') !== (sects[i]?.dep_time ?? '')
+      return { ...sd, arr_time: newTime, time_override: depTimeOverride || (newTime !== templateArrTime) }
+    })
+    markTouched(pnrIdx)
+    onChange(pnrs.map((row, i) => i !== pnrIdx ? row : { ...row, sector_dates: newSDs }))
+  }
+
   // Recalculate ALL sector dates from new travel_start using day_offset formula (clears all manual flags)
   const confirmRecalcAll = () => {
     if (!shiftConfirm) return
     const { pnrIdx, newDep } = shiftConfirm
     const p = pnrs[pnrIdx]
     const sects = getPnrSectors(p)
-    const newSDs = sects.map(s => {
+    const currentSDs = getSectorDatesForPnr(p, sects)
+    const newSDs = sects.map((s, i) => {
       const dep = calcSectorDate(newDep, s.day_offset) ?? ''
       const arr = dep ? addDaysToDate(dep, s.arr_day_offset ?? 0) : ''
-      return { sector_type: s.sector_type, day_offset: s.day_offset, travel_date: dep, arr_date: arr, dep_manual: false as const, arr_manual: false as const }
+      const sd = currentSDs[i]
+      return { sector_type: s.sector_type, day_offset: s.day_offset, travel_date: dep, arr_date: arr, dep_manual: false as const, arr_manual: false as const,
+        dep_time: sd?.dep_time ?? (s.dep_time ?? ''), arr_time: sd?.arr_time ?? (s.arr_time ?? ''), time_override: sd?.time_override ?? false }
     })
     const lastArr = newSDs[newSDs.length - 1]?.arr_date || ''
     markTouched(pnrIdx)
@@ -497,7 +534,8 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
       }
       const dep = calcSectorDate(newDep, s.day_offset) ?? ''
       const arr = dep ? addDaysToDate(dep, s.arr_day_offset ?? 0) : ''
-      return { sector_type: s.sector_type, day_offset: s.day_offset, travel_date: dep, arr_date: arr, dep_manual: false as const, arr_manual: false as const }
+      return { sector_type: s.sector_type, day_offset: s.day_offset, travel_date: dep, arr_date: arr, dep_manual: false as const, arr_manual: false as const,
+        dep_time: sd?.dep_time ?? (s.dep_time ?? ''), arr_time: sd?.arr_time ?? (s.arr_time ?? ''), time_override: sd?.time_override ?? false }
     })
     const lastArr = newSDs[newSDs.length - 1]?.arr_date || ''
     markTouched(pnrIdx)
@@ -527,7 +565,8 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
     const dep = calcSectorDate(p.travel_start, s.day_offset) ?? ''
     const arr = dep ? addDaysToDate(dep, s.arr_day_offset ?? 0) : ''
     const newSDs = currentSDs.map((sd, i) => i === sIdx
-      ? { ...sd, travel_date: dep, arr_date: arr, dep_manual: false as const, arr_manual: false as const }
+      ? { ...sd, travel_date: dep, arr_date: arr, dep_manual: false as const, arr_manual: false as const,
+          dep_time: s.dep_time ?? '', arr_time: s.arr_time ?? '', time_override: false as const }
       : sd)
     const lastArr = newSDs[newSDs.length - 1]?.arr_date || ''
     markTouched(pnrIdx)
@@ -541,7 +580,8 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
     const newSDs = sects.map(s => {
       const dep = calcSectorDate(p.travel_start!, s.day_offset) ?? ''
       const arr = dep ? addDaysToDate(dep, s.arr_day_offset ?? 0) : ''
-      return { sector_type: s.sector_type, day_offset: s.day_offset, travel_date: dep, arr_date: arr, dep_manual: false as const, arr_manual: false as const }
+      return { sector_type: s.sector_type, day_offset: s.day_offset, travel_date: dep, arr_date: arr, dep_manual: false as const, arr_manual: false as const,
+        dep_time: s.dep_time ?? '', arr_time: s.arr_time ?? '', time_override: false as const }
     })
     const lastArr = newSDs[newSDs.length - 1]?.arr_date || ''
     markTouched(pnrIdx)
@@ -562,7 +602,8 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
       const sector_dates = needsDateRecompute
         ? pnrSectors.map(s => {
             const dep = calcSectorDate(base.travel_start, s.day_offset) || ''
-            return { sector_type: s.sector_type, day_offset: s.day_offset, travel_date: dep, arr_date: dep ? addDaysToDate(dep, s.arr_day_offset ?? 0) : '', dep_manual: false as const, arr_manual: false as const }
+            return { sector_type: s.sector_type, day_offset: s.day_offset, travel_date: dep, arr_date: dep ? addDaysToDate(dep, s.arr_day_offset ?? 0) : '', dep_manual: false as const, arr_manual: false as const,
+              dep_time: s.dep_time ?? '', arr_time: s.arr_time ?? '', time_override: false as const }
           })
         : base.sector_dates
       const dummy_pnr = patch.pnr_code !== undefined && patch.pnr_code.trim() ? '' : base.dummy_pnr
@@ -581,7 +622,8 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
       pnr.travel_end = row.travelEnd || calcTravelEndFromSectors(row.travelStart, sectors) || ''
       pnr.sector_dates = sectors.map(s => {
         const dep = calcSectorDate(row.travelStart, s.day_offset) || ''
-        return { sector_type: s.sector_type, day_offset: s.day_offset, travel_date: dep, arr_date: dep ? addDaysToDate(dep, s.arr_day_offset ?? 0) : '', dep_manual: false as const, arr_manual: false as const }
+        return { sector_type: s.sector_type, day_offset: s.day_offset, travel_date: dep, arr_date: dep ? addDaysToDate(dep, s.arr_day_offset ?? 0) : '', dep_manual: false as const, arr_manual: false as const,
+          dep_time: s.dep_time ?? '', arr_time: s.arr_time ?? '', time_override: false as const }
       })
       pnr.seat_total = row.seatTotal
       pnr.price_format = row.priceFormat as 'FARE' | 'FARE_YQ' | 'ALL_IN'
@@ -611,7 +653,8 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
       pnr.travel_end = row.returnDate || calcTravelEndFromSectors(row.outboundDate, sectors) || ''
       pnr.sector_dates = sectors.map(s => {
         const dep = calcSectorDate(row.outboundDate, s.day_offset) || ''
-        return { sector_type: s.sector_type, day_offset: s.day_offset, travel_date: dep, arr_date: dep ? addDaysToDate(dep, s.arr_day_offset ?? 0) : '', dep_manual: false as const, arr_manual: false as const }
+        return { sector_type: s.sector_type, day_offset: s.day_offset, travel_date: dep, arr_date: dep ? addDaysToDate(dep, s.arr_day_offset ?? 0) : '', dep_manual: false as const, arr_manual: false as const,
+          dep_time: s.dep_time ?? '', arr_time: s.arr_time ?? '', time_override: false as const }
       })
       pnr.seat_total = row.seatCount
       pnr.fare = 0; pnr.tax_type = 'separate'; pnr.tax = null; pnr.total_amount = 0
@@ -688,9 +731,12 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
     onChange(pnrs.map(p => {
       if (p.date_sync_status !== 'OUTDATED' || !p.travel_start) return p
       const pnrSectors = getPnrSectors(p)
-      const newSDs = pnrSectors.map(s => {
+      const currentSDs = getSectorDatesForPnr(p, pnrSectors)
+      const newSDs = pnrSectors.map((s, i) => {
         const dep = calcSectorDate(p.travel_start!, s.day_offset) ?? ''
-        return { sector_type: s.sector_type, day_offset: s.day_offset, travel_date: dep, arr_date: dep ? addDaysToDate(dep, s.arr_day_offset ?? 0) : '', dep_manual: false as const, arr_manual: false as const }
+        const sd = currentSDs[i]
+        return { sector_type: s.sector_type, day_offset: s.day_offset, travel_date: dep, arr_date: dep ? addDaysToDate(dep, s.arr_day_offset ?? 0) : '', dep_manual: false as const, arr_manual: false as const,
+          dep_time: sd?.dep_time ?? (s.dep_time ?? ''), arr_time: sd?.arr_time ?? (s.arr_time ?? ''), time_override: sd?.time_override ?? false }
       })
       return { ...p, travel_end: calcTravelEndFromSectors(p.travel_start, pnrSectors) ?? p.travel_end, travel_end_override: false, sector_dates: newSDs, date_sync_status: 'SYNCED' as const }
     }))
@@ -761,7 +807,7 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
       {/* Table */}
       <div className="border border-slate-300 rounded-xl overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
-          <table className="border-collapse text-xs w-full" style={{ minWidth: 1400 }}>
+          <table className="border-collapse text-xs w-full" style={{ minWidth: 1700 }}>
 
             <thead>
               <tr className="bg-slate-100 select-none h-9">
@@ -771,7 +817,10 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
                 <th className="border border-slate-300 px-2 text-center text-slate-600 font-semibold whitespace-nowrap" style={{ width: 40 }}>Sector</th>
                 <th className="border border-slate-300 px-2 text-center text-slate-600 font-semibold whitespace-nowrap" style={{ width: 42 }}>Day</th>
                 <th className="border border-slate-300 px-2 text-center text-slate-600 font-semibold whitespace-nowrap" style={{ width: 120 }}>Dep Date <span className="text-red-400">*</span></th>
+                <th className="border border-slate-300 px-2 text-center text-slate-600 font-semibold whitespace-nowrap" style={{ width: 85 }}>Dep Time</th>
                 <th className="border border-slate-300 px-2 text-center text-slate-600 font-semibold whitespace-nowrap" style={{ width: 120 }}>Arr Date</th>
+                <th className="border border-slate-300 px-2 text-center text-slate-600 font-semibold whitespace-nowrap" style={{ width: 85 }}>Arr Time</th>
+                <th className="border border-slate-300 px-2 text-center text-slate-600 font-semibold whitespace-nowrap" style={{ width: 48 }} title="+Day = Arr Date − Dep Date">+Day</th>
                 <th className="border border-slate-300 px-2 text-center text-slate-600 font-semibold whitespace-nowrap" style={{ width: 60 }} title="Seat Total">Seat <span className="text-red-400">*</span></th>
                 <th className="border border-slate-300 px-2 text-center text-slate-600 font-semibold whitespace-nowrap" style={{ width: 90 }} title="FARE = Fare + Tax + YQ · FARE+YQ = Fare + YQ · ALL IN = ราคา All In (Fare เท่านั้น)">ประเภทราคา <span className="text-red-400">*</span></th>
                 <th className="border border-slate-300 px-2 text-right text-slate-600 font-semibold whitespace-nowrap" style={{ width: 90 }}>Fare <span className="text-red-400">*</span></th>
@@ -790,7 +839,7 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
               {/* Empty state */}
               {pnrs.length === 0 && (
                 <tr>
-                  <td colSpan={18} className="border border-slate-200 py-12 px-4">
+                  <td colSpan={21} className="border border-slate-200 py-12 px-4">
                     <div className="flex flex-col items-center gap-3">
                       <div className="text-slate-200"><PlusCircle size={36} strokeWidth={1} /></div>
                       <div className="text-center">
@@ -935,6 +984,16 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
                             {sectorErr && <p className="text-[9px] text-red-400 mt-0.5 px-0.5 leading-tight">{sectorErr}</p>}
                           </td>
 
+                          {/* Dep Time */}
+                          <td className="border border-slate-200 px-1 py-1 align-middle">
+                            <TimeInput
+                              value={sd.dep_time ?? ''}
+                              onChange={v => handleSectorDepTimeChange(idx, sIdx, v)}
+                              className={cn('border rounded', sd.time_override ? 'border-orange-300' : 'border-slate-200')}
+                              compact
+                            />
+                          </td>
+
                           {/* Arr Date */}
                           <td className={cn('border border-slate-200 px-1 py-1 align-middle', sectorErr ? 'bg-red-50/20' : '')}>
                             <div className="flex items-center gap-1 group/arr">
@@ -951,6 +1010,27 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
                                 </button>
                               )}
                             </div>
+                          </td>
+
+                          {/* Arr Time */}
+                          <td className="border border-slate-200 px-1 py-1 align-middle">
+                            <TimeInput
+                              value={sd.arr_time ?? ''}
+                              onChange={v => handleSectorArrTimeChange(idx, sIdx, v)}
+                              className={cn('border rounded', sd.time_override ? 'border-orange-300' : 'border-slate-200')}
+                              compact
+                            />
+                          </td>
+
+                          {/* +Day (read-only) */}
+                          <td className="border border-slate-200 px-1 py-1 text-center align-middle select-none">
+                            {(() => {
+                              const pd = calculatePlusDay(sd.travel_date || null, sd.arr_date || null)
+                              if (pd === null) return <span className="text-slate-300 text-[11px]">—</span>
+                              if (pd < 0) return <span className="text-red-500 font-bold text-[11px]">{pd}</span>
+                              if (pd === 0) return <span className="text-slate-400 text-[11px]">0</span>
+                              return <span className="text-amber-600 font-bold text-[11px]">+{pd}</span>
+                            })()}
                           </td>
 
                           {isFirst && (
@@ -1096,7 +1176,7 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
                     {/* S1 shift confirmation row */}
                     {shiftConfirm?.pnrIdx === idx && (
                       <tr>
-                        <td colSpan={18} className="border border-blue-300 bg-blue-50/90 px-3 py-2">
+                        <td colSpan={21} className="border border-blue-300 bg-blue-50/90 px-3 py-2">
                           <div className="flex items-center gap-3 text-xs text-blue-800 flex-wrap">
                             <CalendarDays size={13} className="shrink-0 text-blue-500" />
                             <span className="flex-1 min-w-0">
@@ -1127,7 +1207,7 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
                     {/* Price type confirmation row */}
                     {priceTypeConfirm?.idx === idx && (
                       <tr>
-                        <td colSpan={18} className="border border-amber-300 bg-amber-50/90 px-3 py-2">
+                        <td colSpan={21} className="border border-amber-300 bg-amber-50/90 px-3 py-2">
                           <div className="flex items-center gap-3 text-xs text-amber-800">
                             <span className="shrink-0">⚠</span>
                             <span>
@@ -1157,7 +1237,7 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
                     {/* Currency confirmation row */}
                     {currencyConfirm?.idx === idx && (
                       <tr>
-                        <td colSpan={18} className="border border-amber-300 bg-amber-50/90 px-3 py-2">
+                        <td colSpan={21} className="border border-amber-300 bg-amber-50/90 px-3 py-2">
                           <div className="flex items-center gap-3 text-xs text-amber-800">
                             <span className="shrink-0">⚠</span>
                             <span className="flex-1 min-w-0">
@@ -1185,7 +1265,7 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
               {/* Summary footer */}
               {pnrs.length > 0 && (
                 <tr className="bg-slate-100 border-t-2 border-slate-300 font-semibold select-none">
-                  <td colSpan={7} className="border border-slate-300 px-3 py-1.5 text-xs text-slate-600 text-right">
+                  <td colSpan={10} className="border border-slate-300 px-3 py-1.5 text-xs text-slate-600 text-right">
                     รวม {pnrs.length} PNR
                   </td>
                   <td className="border border-slate-300 px-2 py-1.5 text-xs text-center text-slate-800 font-bold">
