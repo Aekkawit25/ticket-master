@@ -22,6 +22,15 @@ import { Button } from '@/components/ui/button'
 
 const STOCK_TYPE_KEYS: StockType[] = ['SERIES', 'AD_HOC', 'FIT', 'TICKET_ONLY']
 
+function addDaysForNormalize(dateStr: string, days: number): string {
+  if (!dateStr || days === 0) return dateStr
+  try {
+    const d = new Date(dateStr + 'T12:00:00')
+    d.setDate(d.getDate() + days)
+    return d.toISOString().split('T')[0]
+  } catch { return dateStr }
+}
+
 function normalizeForReview(state: WizardState): WizardState {
   const { schedules, stockInfo, pnrs } = state
   const mainSectors = schedules.find(s => s.isMain)?.sectors ?? schedules[0]?.sectors ?? []
@@ -42,11 +51,27 @@ function normalizeForReview(state: WizardState): WizardState {
       ...p,
       travel_end: (p.travel_end_override && p.travel_end) ? p.travel_end : computedEnd,
       sector_dates: p.travel_start
-        ? pnrSectors.map(s => ({
-            sector_type: s.sector_type,
-            day_offset: s.day_offset,
-            travel_date: calcSectorDate(p.travel_start, s.day_offset) || '',
-          }))
+        ? pnrSectors.map((s, sIdx) => {
+            const existing = p.sector_dates?.[sIdx]
+            const dep = existing?.dep_manual
+              ? (existing.travel_date || '')
+              : (calcSectorDate(p.travel_start!, s.day_offset) || '')
+            const arrDayOff = s.arr_day_offset ?? 0
+            const arr = existing?.arr_manual
+              ? (existing.arr_date || '')
+              : (dep ? addDaysForNormalize(dep, arrDayOff) : dep)
+            return {
+              sector_type: s.sector_type,
+              day_offset: s.day_offset,
+              travel_date: dep,
+              arr_date: arr,
+              dep_time: existing?.dep_time ?? s.dep_time ?? '',
+              arr_time: existing?.arr_time ?? s.arr_time ?? '',
+              dep_manual: existing?.dep_manual ?? false,
+              arr_manual: existing?.arr_manual ?? false,
+              time_override: existing?.time_override ?? false,
+            }
+          })
         : p.sector_dates ?? [],
       total_amount: (() => {
         const f = p.fare || 0; const fmt = p.price_format ?? 'FARE'
@@ -492,7 +517,7 @@ function AddStockPageInner() {
             showValidation={pnrValidationShown}
           />
         )}
-        {step === 4 && <Step5Review state={state} />}
+        {step === 4 && <Step5Review state={state} onGoToStep={s => setStep(s)} />}
       </WizardLayout>
 
       {pnrImpact && (

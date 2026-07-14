@@ -126,6 +126,7 @@ export interface PNRSeatsTableProps {
   allSelected?:      boolean
   // highlight newly added
   newHighlight?:     { start: number; count: number } | null
+  readOnly?:         boolean
 }
 
 const TTL_NEAR_DAYS = 7
@@ -153,7 +154,7 @@ export function PNRSeatsTable({
   records, scheduleTemplates, conditions, currency, mode, showValidation = false,
   onChange, onDelete, onDuplicate,
   onToggleSelect, onToggleAll, allSelected,
-  newHighlight,
+  newHighlight, readOnly = false,
 }: PNRSeatsTableProps) {
 
   const [hoveredIdx,        setHoveredIdx]        = useState<number | null>(null)
@@ -387,8 +388,10 @@ export function PNRSeatsTable({
   const TD_SEC_C = cn(TD_SEC, 'text-center')
 
   const isReview = mode === 'review'
+  const showCheckbox = isReview && !readOnly
+  const showAction = !readOnly
   // Total fixed cols width (+ checkbox in review)
-  const checkboxWidth = isReview ? 36 : 0
+  const checkboxWidth = showCheckbox ? 36 : 0
   const totalFixedWidth = PNR_FIXED_WIDTH + checkboxWidth
 
   // ─── Render ─────────────────────────────────────────────────────────────────
@@ -402,7 +405,7 @@ export function PNRSeatsTable({
       )}
 
       {/* Confirmation banners */}
-      {shiftConfirm && (
+      {!readOnly && shiftConfirm && (
         <div className="flex items-center gap-2 px-2.5 py-1.5 bg-blue-50 border border-blue-200 rounded-lg text-[11px] text-blue-800 flex-wrap mb-1">
           <CalendarDays size={12} className="shrink-0 text-blue-500" />
           <span className="flex-1 min-w-0">Travel Start เปลี่ยนเป็น <strong>{formatTravelDate(shiftConfirm.newDep)}</strong> — คำนวณวันที่ Sector อื่นใหม่อย่างไร?</span>
@@ -412,7 +415,7 @@ export function PNRSeatsTable({
           <button type="button" onClick={() => setShiftConfirm(null)} className="text-slate-400 hover:text-slate-600 text-[10px] whitespace-nowrap shrink-0 px-1">ยกเลิก</button>
         </div>
       )}
-      {priceTypeConfirm && (() => {
+      {!readOnly && priceTypeConfirm && (() => {
         const r = records[priceTypeConfirm.idx]
         const oldFmt = r.priceFormat
         const newFmt = priceTypeConfirm.newFmt
@@ -438,7 +441,7 @@ export function PNRSeatsTable({
           </div>
         )
       })()}
-      {currencyConfirm && (
+      {!readOnly && currencyConfirm && (
         <div className="flex items-center gap-2 px-2.5 py-1.5 bg-amber-50 border border-amber-200 rounded-lg text-[11px] text-amber-800 flex-wrap mb-1">
           <span className="shrink-0">⚠</span>
           <span className="flex-1 min-w-0">เปลี่ยนสกุลเงิน PNR #{currencyConfirm.idx + 1} เป็น <strong className="font-mono">{currencyConfirm.newCurrency}</strong> — ราคาไม่ถูกแปลงอัตโนมัติ</span>
@@ -456,14 +459,14 @@ export function PNRSeatsTable({
         <table className="pnrg text-[12px]"
           style={{ width: '100%', minWidth: totalFixedWidth + 60, tableLayout: 'fixed', borderCollapse: 'separate', borderSpacing: 0 }}>
           <colgroup>
-            {isReview && <col style={{ width: 36 }} />}
-            {PNR_COLS.filter(c => c.key !== 'checkbox').map(c =>
+            {showCheckbox && <col style={{ width: 36 }} />}
+            {PNR_COLS.filter(c => c.key !== 'checkbox' && (showAction || c.key !== 'action')).map(c =>
               c.key === 'action' ? <col key={c.key} /> : <col key={c.key} style={{ width: c.width }} />
             )}
           </colgroup>
           <thead>
             <tr>
-              {isReview && (
+              {showCheckbox && (
                 <th className={cn(TH_C, 'w-[36px]')}>
                   <input type="checkbox" checked={!!allSelected} onChange={() => onToggleAll?.()}
                     className="rounded border-slate-300 text-emerald-600" />
@@ -483,13 +486,13 @@ export function PNRSeatsTable({
               <th className={TH_L}>Condition</th>
               <th className={TH_L}>NAME TTL</th>
               <th className={TH_L}>Remark</th>
-              <th className={cn(TH_C, 'border-r-0')}>Action</th>
+              {showAction && <th className={cn(TH_C, 'border-r-0')}>Action</th>}
             </tr>
           </thead>
           <tbody>
             {records.length === 0 && (
               <tr>
-                <td colSpan={isReview ? 16 : 15} className="py-10 text-center border-b border-[#E5EAF0]">
+                <td colSpan={showCheckbox ? 16 : showAction ? 15 : 14} className="py-10 text-center border-b border-[#E5EAF0]">
                   <p className="text-[13px] text-slate-400">ยังไม่มีรายการ PNR</p>
                 </td>
               </tr>
@@ -549,7 +552,7 @@ export function PNRSeatsTable({
                         onMouseLeave={() => setHoveredIdx(null)}>
 
                         {/* Checkbox (review only, PNR-level) */}
-                        {isReview && isFirstRow && (
+                        {showCheckbox && isFirstRow && (
                           <td rowSpan={sectorCount}
                             className={cn('border-r border-[#E5EAF0] text-center align-middle', pnrBorderB)}
                             style={{ backgroundColor: hvBg }}>
@@ -573,21 +576,32 @@ export function PNRSeatsTable({
                             className={cn('border-r border-[#E5EAF0] align-middle text-center overflow-hidden', pnrBorderB, pnrErr ? 'bg-red-50' : '')}
                             style={{ backgroundColor: pnrErr ? undefined : hvBg }}>
                             <div className="px-1">
-                              <input
-                                value={r.pnrCode}
-                                maxLength={7}
-                                onChange={e => update(pnrIdx, { pnrCode: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '') })}
-                                onPaste={e => { e.preventDefault(); const v = e.clipboardData.getData('text').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 7); update(pnrIdx, { pnrCode: v }) }}
-                                onBlur={() => markTouched(pnrIdx)}
-                                placeholder="ว่างได้"
-                                className={cn(
-                                  'w-full min-w-0 h-7 text-[12px] font-mono text-center bg-transparent focus:outline-none',
-                                  'border rounded px-1 py-0 transition-colors placeholder:text-slate-300 placeholder:text-[10px]',
-                                  pnrErr ? 'border-red-300 text-red-600' : 'border-transparent text-slate-800 hover:border-slate-200 focus:border-[#05a94f]'
-                                )}
-                              />
-                              {pnrErr && <p className="text-[9px] text-red-500 leading-none mt-0.5 truncate">PNR ซ้ำ</p>}
-                              {!pnrErr && r.dummyPnr && <div className="text-[9px] text-slate-300 font-mono truncate leading-none mt-0.5">{r.dummyPnr}</div>}
+                              {readOnly ? (
+                                <>
+                                  <span className="text-[12px] font-mono font-bold text-slate-800 block leading-tight">
+                                    {r.pnrCode || r.dummyPnr || <span className="text-slate-300 italic text-[10px] font-sans">ไม่ระบุ</span>}
+                                  </span>
+                                  {r.dummyPnr && !r.pnrCode && <div className="text-[9px] text-amber-500 font-mono truncate leading-none mt-0.5">Dummy</div>}
+                                </>
+                              ) : (
+                                <>
+                                  <input
+                                    value={r.pnrCode}
+                                    maxLength={7}
+                                    onChange={e => update(pnrIdx, { pnrCode: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '') })}
+                                    onPaste={e => { e.preventDefault(); const v = e.clipboardData.getData('text').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 7); update(pnrIdx, { pnrCode: v }) }}
+                                    onBlur={() => markTouched(pnrIdx)}
+                                    placeholder="ว่างได้"
+                                    className={cn(
+                                      'w-full min-w-0 h-7 text-[12px] font-mono text-center bg-transparent focus:outline-none',
+                                      'border rounded px-1 py-0 transition-colors placeholder:text-slate-300 placeholder:text-[10px]',
+                                      pnrErr ? 'border-red-300 text-red-600' : 'border-transparent text-slate-800 hover:border-slate-200 focus:border-[#05a94f]'
+                                    )}
+                                  />
+                                  {pnrErr && <p className="text-[9px] text-red-500 leading-none mt-0.5 truncate">PNR ซ้ำ</p>}
+                                  {!pnrErr && r.dummyPnr && <div className="text-[9px] text-slate-300 font-mono truncate leading-none mt-0.5">{r.dummyPnr}</div>}
+                                </>
+                              )}
                             </div>
                           </td>
                         )}
@@ -597,7 +611,9 @@ export function PNRSeatsTable({
                           <td rowSpan={sectorCount}
                             className={cn('border-r border-[#E5EAF0] px-[5px] align-middle overflow-hidden', pnrBorderB)}
                             style={{ backgroundColor: hvBg }}>
-                            {scheduleTemplates.length > 1 ? (
+                            {readOnly ? (
+                              <span className="text-[12px] text-slate-600 block overflow-hidden text-ellipsis whitespace-nowrap" title={fsName}>{fsName}</span>
+                            ) : scheduleTemplates.length > 1 ? (
                               <select value={r.activeScheduleId ?? sch.scheduleId}
                                 onChange={e => { update(pnrIdx, { activeScheduleId: e.target.value || undefined }); markTouched(pnrIdx) }}
                                 className="w-full min-w-0 h-7 text-[12px] bg-transparent border-0 focus:outline-none cursor-pointer text-slate-700 truncate">
@@ -626,58 +642,82 @@ export function PNRSeatsTable({
                         {/* Dep Date */}
                         <td className={cn(TD_SEC, rowBorderB, sectorErr || (touched && sIdx === 0 && !r.sectors[0]?.depDate) ? 'bg-red-50' : '')}
                           style={{ backgroundColor: (sectorErr || (touched && sIdx === 0 && !r.sectors[0]?.depDate)) ? undefined : hvSec }}>
-                          <div className="flex items-center h-7 group/dep">
-                            <input type="date" value={displayDep}
-                              onChange={e => handleDepChange(pnrIdx, sIdx, e.target.value)}
-                              onBlur={() => markTouched(pnrIdx)}
-                              className={cn('flex-1 min-w-0 h-7 text-[12px] bg-transparent border-0 focus:outline-none tabular-nums',
-                                isDepManual ? 'text-orange-600 font-medium' : 'text-slate-700')}
-                            />
-                            {isDepManual && (
-                              <button type="button" onClick={() => handleResetSector(pnrIdx, sIdx)} title="คืนค่าตาม Flight Set"
-                                className="opacity-0 group-hover/dep:opacity-100 text-orange-400 hover:text-emerald-600 transition-all shrink-0">
-                                <RotateCcw size={11} />
-                              </button>
-                            )}
-                          </div>
+                          {readOnly ? (
+                            <div className={cn('flex items-center h-7 px-1 text-[12px] tabular-nums', isDepManual ? 'text-orange-600 font-medium' : 'text-slate-700')}>
+                              {displayDep ? formatTravelDate(displayDep) : '—'}
+                            </div>
+                          ) : (
+                            <div className="flex items-center h-7 group/dep">
+                              <input type="date" value={displayDep}
+                                onChange={e => handleDepChange(pnrIdx, sIdx, e.target.value)}
+                                onBlur={() => markTouched(pnrIdx)}
+                                className={cn('flex-1 min-w-0 h-7 text-[12px] bg-transparent border-0 focus:outline-none tabular-nums',
+                                  isDepManual ? 'text-orange-600 font-medium' : 'text-slate-700')}
+                              />
+                              {isDepManual && (
+                                <button type="button" onClick={() => handleResetSector(pnrIdx, sIdx)} title="คืนค่าตาม Flight Set"
+                                  className="opacity-0 group-hover/dep:opacity-100 text-orange-400 hover:text-emerald-600 transition-all shrink-0">
+                                  <RotateCcw size={11} />
+                                </button>
+                              )}
+                            </div>
+                          )}
                         </td>
 
                         {/* Dep Time */}
                         <td className={cn(TD_SEC_C, 'px-0', rowBorderB)} style={{ backgroundColor: hvSec, width: 78, minWidth: 78, maxWidth: 78 }}>
-                          <TimeInput value={sd.depTime ?? ''} onChange={v => handleDepTimeChange(pnrIdx, sIdx, v)}
-                            compact
-                            className={cn('border-0 bg-transparent focus:outline-none text-center w-full min-w-0 h-7 text-[12px]',
-                              sd.timeOverride ? 'text-orange-600 font-medium' : 'text-slate-700')}
-                          />
+                          {readOnly ? (
+                            <div className={cn('flex items-center justify-center h-7 text-[12px] tabular-nums', sd.timeOverride ? 'text-orange-600 font-medium' : 'text-slate-700')}>
+                              {sd.depTime || '—'}
+                            </div>
+                          ) : (
+                            <TimeInput value={sd.depTime ?? ''} onChange={v => handleDepTimeChange(pnrIdx, sIdx, v)}
+                              compact
+                              className={cn('border-0 bg-transparent focus:outline-none text-center w-full min-w-0 h-7 text-[12px]',
+                                sd.timeOverride ? 'text-orange-600 font-medium' : 'text-slate-700')}
+                            />
+                          )}
                         </td>
 
                         {/* Arr Date */}
                         <td className={cn(TD_SEC, rowBorderB, sectorErr ? 'bg-red-50' : '')} style={{ backgroundColor: sectorErr ? undefined : hvSec }}>
-                          <div className="flex items-center h-7 group/arr">
-                            <input type="date" value={displayArr}
-                              onChange={e => handleArrChange(pnrIdx, sIdx, e.target.value)}
-                              onBlur={() => markTouched(pnrIdx)}
-                              className={cn('flex-1 min-w-0 h-7 text-[12px] bg-transparent border-0 focus:outline-none tabular-nums',
-                                isArrManual ? 'text-orange-600 font-medium' : 'text-slate-700')}
-                            />
-                            {isArrManual && (
-                              <button type="button" onClick={() => handleResetSector(pnrIdx, sIdx)} title="คืนค่าตาม Flight Set"
-                                className="opacity-0 group-hover/arr:opacity-100 text-orange-400 hover:text-emerald-600 transition-all shrink-0">
-                                <RotateCcw size={11} />
-                              </button>
-                            )}
-                          </div>
+                          {readOnly ? (
+                            <div className={cn('flex items-center h-7 px-1 text-[12px] tabular-nums', isArrManual ? 'text-orange-600 font-medium' : 'text-slate-700')}>
+                              {displayArr ? formatTravelDate(displayArr) : '—'}
+                            </div>
+                          ) : (
+                            <div className="flex items-center h-7 group/arr">
+                              <input type="date" value={displayArr}
+                                onChange={e => handleArrChange(pnrIdx, sIdx, e.target.value)}
+                                onBlur={() => markTouched(pnrIdx)}
+                                className={cn('flex-1 min-w-0 h-7 text-[12px] bg-transparent border-0 focus:outline-none tabular-nums',
+                                  isArrManual ? 'text-orange-600 font-medium' : 'text-slate-700')}
+                              />
+                              {isArrManual && (
+                                <button type="button" onClick={() => handleResetSector(pnrIdx, sIdx)} title="คืนค่าตาม Flight Set"
+                                  className="opacity-0 group-hover/arr:opacity-100 text-orange-400 hover:text-emerald-600 transition-all shrink-0">
+                                  <RotateCcw size={11} />
+                                </button>
+                              )}
+                            </div>
+                          )}
                         </td>
 
                         {/* Arr Time + +Day */}
                         <td className={cn(TD_SEC_C, 'px-0', rowBorderB)} style={{ backgroundColor: hvSec, width: 92, minWidth: 92, maxWidth: 92 }}>
                           <div className="h-7 items-center justify-center"
                             style={{ display: 'grid', gridTemplateColumns: '58px 26px', columnGap: 3 }}>
-                            <TimeInput value={sd.arrTime ?? ''} onChange={v => handleArrTimeChange(pnrIdx, sIdx, v)}
-                              compact
-                              className={cn('border-0 bg-transparent focus:outline-none text-center w-full min-w-0 h-7 text-[12px] tabular-nums',
-                                sd.timeOverride ? 'text-orange-600 font-medium' : 'text-slate-700')}
-                            />
+                            {readOnly ? (
+                              <div className={cn('flex items-center justify-center h-7 text-[12px] tabular-nums', sd.timeOverride ? 'text-orange-600 font-medium' : 'text-slate-700')}>
+                                {sd.arrTime || '—'}
+                              </div>
+                            ) : (
+                              <TimeInput value={sd.arrTime ?? ''} onChange={v => handleArrTimeChange(pnrIdx, sIdx, v)}
+                                compact
+                                className={cn('border-0 bg-transparent focus:outline-none text-center w-full min-w-0 h-7 text-[12px] tabular-nums',
+                                  sd.timeOverride ? 'text-orange-600 font-medium' : 'text-slate-700')}
+                              />
+                            )}
                             <div style={{ width: 26, display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
                               {(() => {
                                 const pd = calculatePlusDay(sd.depDate || null, sd.arrDate || null)
@@ -698,83 +738,144 @@ export function PNRSeatsTable({
                           <>
                             {/* Seat */}
                             <td rowSpan={sectorCount} className={cn(TD_C, pnrBorderB, missingSeat ? 'bg-red-50' : '')} style={{ backgroundColor: missingSeat ? undefined : hvBg }}>
-                              <input type="number" min={1} value={r.seatTotal || ''}
-                                onChange={e => update(pnrIdx, { seatTotal: parseInt(e.target.value) || 0 })}
-                                onBlur={() => markTouched(pnrIdx)}
-                                className={cn('w-full min-w-0 h-7 text-center text-[12px] font-medium bg-transparent border-0 focus:outline-none',
-                                  missingSeat ? 'text-red-500' : 'text-slate-800')}
-                              />
+                              {readOnly ? (
+                                <span className="text-[12px] font-medium text-slate-800 tabular-nums">{r.seatTotal || '—'}</span>
+                              ) : (
+                                <input type="number" min={1} value={r.seatTotal || ''}
+                                  onChange={e => update(pnrIdx, { seatTotal: parseInt(e.target.value) || 0 })}
+                                  onBlur={() => markTouched(pnrIdx)}
+                                  className={cn('w-full min-w-0 h-7 text-center text-[12px] font-medium bg-transparent border-0 focus:outline-none',
+                                    missingSeat ? 'text-red-500' : 'text-slate-800')}
+                                />
+                              )}
                             </td>
 
                             {/* รายละเอียดราคา */}
                             <td rowSpan={sectorCount}
                               className={cn('border-r border-[#E5EAF0] align-top overflow-hidden box-border', pnrBorderB)}
                               style={{ backgroundColor: hvBg, transition: 'background-color 1.2s ease' }}>
-                              <div className="flex flex-col py-1">
-                                <div className="flex items-center justify-between px-1 pb-0.5 mb-0.5 border-b border-[#E5EAF0]">
-                                  <select value={fmt}
-                                    onChange={e => handlePriceTypeChange(pnrIdx, e.target.value as 'FARE' | 'FARE_YQ' | 'ALL_IN')}
-                                    className={cn('h-[22px] text-[11px] font-bold cursor-pointer focus:outline-none border-0 bg-transparent rounded py-0 pl-0 pr-3 min-w-0',
-                                      fmt === 'FARE_YQ' ? 'text-amber-700' : fmt === 'ALL_IN' ? 'text-blue-700' : 'text-slate-600')}>
-                                    <option value="FARE">FARE</option>
-                                    <option value="FARE_YQ">FARE+YQ</option>
-                                    <option value="ALL_IN">ALL IN</option>
-                                  </select>
-                                  <CurrencyCombobox variant="inline" value={r.currency || currency} stockDefault={currency}
-                                    currencies={currencyOptions} onChange={code => handleCurrencyChange(pnrIdx, code)}
-                                    className="w-[38px]" />
-                                </div>
-                                {/* Fare / AllIn */}
-                                <div className={cn('flex items-center h-[18px] px-1', fareErr ? 'bg-red-50/60 rounded' : '')}>
-                                  <span className="w-[26px] shrink-0 text-[10px] text-slate-500 leading-none">{fmt === 'ALL_IN' ? 'AllIn' : 'Fare'}</span>
-                                  <div className="flex-1 min-w-0">
-                                    <PriceInput value={r.fare > 0 ? r.fare : null} compact hasError={fareErr}
-                                      onChange={v => { const f = v ?? 0; update(pnrIdx, { fare: f, totalAmount: calcPnrTotal(fmt, f, r.tax ?? null, r.yq ?? null) }) }}
-                                      onBlur={() => markTouched(pnrIdx)} />
+                              {readOnly ? (
+                                <div className="flex flex-col py-1">
+                                  <div className="flex items-center justify-between px-1 pb-0.5 mb-0.5 border-b border-[#E5EAF0]">
+                                    <span className={cn('text-[11px] font-bold', fmt === 'FARE_YQ' ? 'text-amber-700' : fmt === 'ALL_IN' ? 'text-blue-700' : 'text-slate-600')}>
+                                      {fmt === 'FARE_YQ' ? 'FARE+YQ' : fmt === 'ALL_IN' ? 'ALL IN' : 'FARE'}
+                                    </span>
+                                    <span className="text-[11px] font-mono text-slate-500">{r.currency || currency}</span>
+                                  </div>
+                                  <div className="flex items-center h-[18px] px-1">
+                                    <span className="w-[26px] shrink-0 text-[10px] text-slate-500 leading-none">{fmt === 'ALL_IN' ? 'AllIn' : 'Fare'}</span>
+                                    <span className="flex-1 text-right text-[11px] font-medium text-slate-800 tabular-nums pr-0.5">{r.fare > 0 ? r.fare.toLocaleString() : '—'}</span>
+                                  </div>
+                                  {!taxDisabled && (
+                                    <div className="flex items-center h-[18px] px-1">
+                                      <span className="w-[26px] shrink-0 text-[10px] text-slate-500 leading-none">Tax</span>
+                                      <span className={cn('flex-1 text-right text-[11px] tabular-nums pr-0.5', r.tax == null ? 'text-slate-300 italic text-[10px]' : 'text-slate-700')}>{r.tax != null ? r.tax.toLocaleString() : 'ยังไม่ระบุ'}</span>
+                                    </div>
+                                  )}
+                                  {!yqDisabled && (
+                                    <div className="flex items-center h-[18px] px-1">
+                                      <span className="w-[26px] shrink-0 text-[10px] text-slate-500 leading-none">YQ</span>
+                                      <span className={cn('flex-1 text-right text-[11px] tabular-nums pr-0.5', r.yq == null ? 'text-slate-300 italic text-[10px]' : 'text-slate-700')}>{r.yq != null ? r.yq.toLocaleString() : 'ยังไม่ระบุ'}</span>
+                                    </div>
+                                  )}
+                                  <div className="flex items-center h-[18px] px-1 border-t border-[#E5EAF0] mt-0.5">
+                                    <span className="w-[26px] shrink-0 text-[10px] text-slate-400 leading-none">Total</span>
+                                    <span className="flex-1 text-right text-[11px] font-bold text-[#05a94f] tabular-nums pr-0.5">{r.totalAmount > 0 ? r.totalAmount.toLocaleString() : '—'}</span>
                                   </div>
                                 </div>
-                                {/* Tax */}
-                                <div className={cn('flex items-center h-[18px] px-1', !taxDisabled && taxErr ? 'bg-red-50/60 rounded' : '')}>
-                                  <span className={cn('w-[26px] shrink-0 text-[10px] leading-none', taxDisabled ? 'text-slate-300' : 'text-slate-500')}>Tax</span>
-                                  <div className="flex-1 min-w-0">
-                                    {taxDisabled
-                                      ? <span className="block w-full text-right text-[10px] text-slate-300 pr-0.5">ไม่ใช้</span>
-                                      : <PriceInput value={r.tax ?? null} compact nullable hasError={taxErr}
-                                          onChange={v => update(pnrIdx, { tax: v, totalAmount: calcPnrTotal(fmt, r.fare, v, r.yq ?? null) })}
-                                          onBlur={() => markTouched(pnrIdx)} />
-                                    }
+                              ) : (
+                                <div className="flex flex-col py-1">
+                                  <div className="flex items-center justify-between px-1 pb-0.5 mb-0.5 border-b border-[#E5EAF0]">
+                                    <select value={fmt}
+                                      onChange={e => handlePriceTypeChange(pnrIdx, e.target.value as 'FARE' | 'FARE_YQ' | 'ALL_IN')}
+                                      className={cn('h-[22px] text-[11px] font-bold cursor-pointer focus:outline-none border-0 bg-transparent rounded py-0 pl-0 pr-3 min-w-0',
+                                        fmt === 'FARE_YQ' ? 'text-amber-700' : fmt === 'ALL_IN' ? 'text-blue-700' : 'text-slate-600')}>
+                                      <option value="FARE">FARE</option>
+                                      <option value="FARE_YQ">FARE+YQ</option>
+                                      <option value="ALL_IN">ALL IN</option>
+                                    </select>
+                                    <CurrencyCombobox variant="inline" value={r.currency || currency} stockDefault={currency}
+                                      currencies={currencyOptions} onChange={code => handleCurrencyChange(pnrIdx, code)}
+                                      className="w-[38px]" />
+                                  </div>
+                                  {/* Fare / AllIn */}
+                                  <div className={cn('flex items-center h-[18px] px-1', fareErr ? 'bg-red-50/60 rounded' : '')}>
+                                    <span className="w-[26px] shrink-0 text-[10px] text-slate-500 leading-none">{fmt === 'ALL_IN' ? 'AllIn' : 'Fare'}</span>
+                                    <div className="flex-1 min-w-0">
+                                      <PriceInput value={r.fare > 0 ? r.fare : null} compact hasError={fareErr}
+                                        onChange={v => { const f = v ?? 0; update(pnrIdx, { fare: f, totalAmount: calcPnrTotal(fmt, f, r.tax ?? null, r.yq ?? null) }) }}
+                                        onBlur={() => markTouched(pnrIdx)} />
+                                    </div>
+                                  </div>
+                                  {/* Tax */}
+                                  <div className={cn('flex items-center h-[18px] px-1', !taxDisabled && taxErr ? 'bg-red-50/60 rounded' : '')}>
+                                    <span className={cn('w-[26px] shrink-0 text-[10px] leading-none', taxDisabled ? 'text-slate-300' : 'text-slate-500')}>Tax</span>
+                                    <div className="flex-1 min-w-0">
+                                      {taxDisabled
+                                        ? <span className="block w-full text-right text-[10px] text-slate-300 pr-0.5">ไม่ใช้</span>
+                                        : <PriceInput value={r.tax ?? null} compact nullable hasError={taxErr}
+                                            onChange={v => update(pnrIdx, { tax: v, totalAmount: calcPnrTotal(fmt, r.fare, v, r.yq ?? null) })}
+                                            onBlur={() => markTouched(pnrIdx)} />
+                                      }
+                                    </div>
+                                  </div>
+                                  {/* YQ */}
+                                  <div className={cn('flex items-center h-[18px] px-1', !yqDisabled && yqErr ? 'bg-red-50/60 rounded' : '')}>
+                                    <span className={cn('w-[26px] shrink-0 text-[10px] leading-none', yqDisabled ? 'text-slate-300' : 'text-slate-500')}>YQ</span>
+                                    <div className="flex-1 min-w-0">
+                                      {yqDisabled
+                                        ? <span className="block w-full text-right text-[10px] text-slate-300 pr-0.5">ไม่ใช้</span>
+                                        : <PriceInput value={r.yq ?? null} compact nullable hasError={yqErr}
+                                            onChange={v => update(pnrIdx, { yq: v, totalAmount: calcPnrTotal(fmt, r.fare, r.tax, v) })}
+                                            onBlur={() => markTouched(pnrIdx)} />
+                                      }
+                                    </div>
                                   </div>
                                 </div>
-                                {/* YQ */}
-                                <div className={cn('flex items-center h-[18px] px-1', !yqDisabled && yqErr ? 'bg-red-50/60 rounded' : '')}>
-                                  <span className={cn('w-[26px] shrink-0 text-[10px] leading-none', yqDisabled ? 'text-slate-300' : 'text-slate-500')}>YQ</span>
-                                  <div className="flex-1 min-w-0">
-                                    {yqDisabled
-                                      ? <span className="block w-full text-right text-[10px] text-slate-300 pr-0.5">ไม่ใช้</span>
-                                      : <PriceInput value={r.yq ?? null} compact nullable hasError={yqErr}
-                                          onChange={v => update(pnrIdx, { yq: v, totalAmount: calcPnrTotal(fmt, r.fare, r.tax, v) })}
-                                          onBlur={() => markTouched(pnrIdx)} />
-                                    }
-                                  </div>
-                                </div>
-                              </div>
+                              )}
                             </td>
 
                             {/* Condition */}
                             <td rowSpan={sectorCount} className={cn(TD_L, pnrBorderB)} style={{ backgroundColor: hvBg }}>
-                              <select value={r.conditionId || ''}
-                                onChange={e => update(pnrIdx, { conditionId: e.target.value })}
-                                className="w-full min-w-0 h-7 text-[12px] bg-transparent border-0 focus:outline-none cursor-pointer text-slate-600">
-                                <option value="">ไม่ระบุ</option>
-                                {conditions.map(c => <option key={c.conditionId} value={c.conditionId}>{c.conditionName}</option>)}
-                              </select>
+                              {readOnly ? (
+                                <span className="text-[12px] text-slate-600 px-1 block truncate">
+                                  {r.conditionId ? (conditions.find(c => c.conditionId === r.conditionId)?.conditionName || r.conditionId) : 'ไม่ระบุ'}
+                                </span>
+                              ) : (
+                                <select value={r.conditionId || ''}
+                                  onChange={e => update(pnrIdx, { conditionId: e.target.value })}
+                                  className="w-full min-w-0 h-7 text-[12px] bg-transparent border-0 focus:outline-none cursor-pointer text-slate-600">
+                                  <option value="">ไม่ระบุ</option>
+                                  {conditions.map(c => <option key={c.conditionId} value={c.conditionId}>{c.conditionName}</option>)}
+                                </select>
+                              )}
                             </td>
 
                             {/* NAME TTL */}
                             <td rowSpan={sectorCount}
-                              className={cn(TD_L, pnrBorderB, ttlPopover === pnrIdx ? 'outline outline-1 outline-offset-[-1px] outline-[#05a94f]' : '')}
+                              className={cn(TD_L, pnrBorderB, !readOnly && ttlPopover === pnrIdx ? 'outline outline-1 outline-offset-[-1px] outline-[#05a94f]' : '')}
                               style={{ backgroundColor: hvBg }}>
-                              <Popover.Root open={ttlPopover === pnrIdx} onOpenChange={open => setTtlPopover(open ? pnrIdx : null)}>
+                              {readOnly ? (
+                                <div className="px-2 min-h-[28px] flex flex-col justify-center">
+                                  {hasTtlFn(r) && r.ttlDate ? (
+                                    <>
+                                      <span className={cn('font-medium text-[11px] whitespace-nowrap leading-[16px]',
+                                        ttlSt === 'past' ? 'text-red-600' : ttlSt === 'near' ? 'text-amber-700' : 'text-slate-700')}>
+                                        {formatDateTimeThai(r.ttlDate, r.ttlTime ?? null)}
+                                      </span>
+                                      {r.ttlType === 'DAYS_BEFORE' && r.ttlDaysBefore != null && (
+                                        <span className="text-[9px] text-slate-400 leading-[16px] whitespace-nowrap">ก่อนเดินทาง {r.ttlDaysBefore} วัน</span>
+                                      )}
+                                      {r.ttlType === 'FIXED_DATE' && (
+                                        <span className="text-[9px] text-slate-400 leading-[16px]">วันที่กำหนดเอง</span>
+                                      )}
+                                    </>
+                                  ) : (
+                                    <span className="text-slate-400 text-[10px]">ไม่ระบุ</span>
+                                  )}
+                                </div>
+                              ) : null}
+                              {!readOnly && <Popover.Root open={ttlPopover === pnrIdx} onOpenChange={open => setTtlPopover(open ? pnrIdx : null)}>
                                 <Popover.Trigger asChild>
                                   <button type="button"
                                     title={hasTtlFn(r) && r.ttlDate
@@ -825,11 +926,16 @@ export function PNRSeatsTable({
                                     />
                                   </Popover.Content>
                                 </Popover.Portal>
-                              </Popover.Root>
+                              </Popover.Root>}
                             </td>
 
                             {/* Remark */}
                             <td rowSpan={sectorCount} className={cn(TD_L, pnrBorderB)} style={{ backgroundColor: hvBg }}>
+                              {readOnly ? (
+                                <span className="text-[12px] text-slate-600 px-1.5 block truncate py-1">
+                                  {r.remark || <span className="text-slate-300">—</span>}
+                                </span>
+                              ) : (
                               <Popover.Root open={remarkPopover === pnrIdx} onOpenChange={open => setRemarkPopover(open ? pnrIdx : null)}>
                                 <Popover.Trigger asChild>
                                   <button type="button" title={r.remark || undefined}
@@ -862,10 +968,11 @@ export function PNRSeatsTable({
                                   </Popover.Content>
                                 </Popover.Portal>
                               </Popover.Root>
+                              )}
                             </td>
 
                             {/* Action */}
-                            <td rowSpan={sectorCount} className={cn('border-b', pnrBorderB, 'align-middle p-0')} style={{ backgroundColor: hvBg }}>
+                            {showAction && <td rowSpan={sectorCount} className={cn('border-b', pnrBorderB, 'align-middle p-0')} style={{ backgroundColor: hvBg }}>
                               <div className="w-full h-full flex items-center justify-center" style={{ minHeight: 36 * sectorCount }}>
                                 <DropdownMenu.Root>
                                   <DropdownMenu.Trigger asChild>
@@ -897,7 +1004,7 @@ export function PNRSeatsTable({
                                   </DropdownMenu.Portal>
                                 </DropdownMenu.Root>
                               </div>
-                            </td>
+                            </td>}
                           </>
                         )}
                       </tr>
