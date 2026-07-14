@@ -112,6 +112,29 @@ function addDaysToDate(dateStr: string, days: number): string {
   } catch { return dateStr }
 }
 
+// ─── Overnight arrival recalculation ─────────────────────────────────────────
+// Called whenever dep_time or arr_time changes for a sector.
+// If both times are valid, arr_day_offset=0 (same-day template), and arr_time < dep_time
+// → the flight crosses midnight → bump arr_date to depDate+1 (wasAdjusted=true).
+// If the flight was previously bumped (wasAdjusted history tracked via arr_manual=false)
+// and times no longer cross midnight → revert arr_date to flightSetArr.
+// arr_manual=true (user explicitly typed an Arr Date) → never auto-change, only warn.
+function autoAdjustArrDate(
+  depDate: string,
+  depTime: string,
+  arrTime: string,
+  arrDayOffset: number,
+): { arrDate: string; wasAdjusted: boolean } {
+  if (!depDate) return { arrDate: '', wasAdjusted: false }
+  const flightSetArr = addDaysToDate(depDate, arrDayOffset)
+  // Overnight only applies when flight set expects same-day arrival
+  if (flightSetArr === depDate && depTime && arrTime && arrTime < depTime) {
+    return { arrDate: addDaysToDate(depDate, 1), wasAdjusted: true }
+  }
+  // Not overnight (or flight set already spans multiple days)
+  return { arrDate: flightSetArr, wasAdjusted: false }
+}
+
 // ─── PriceInput ───────────────────────────────────────────────────────────────
 function PriceInput({
   value, nullable = false, disabled = false, hasError = false, errorTitle,
@@ -296,7 +319,14 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
       onChange(pnrs.map((row, i) => i !== pnrIdx ? row : { ...row, travel_start: newDep, travel_end: newSDs[newSDs.length - 1]?.arr_date || '', sector_dates: newSDs }))
       return
     }
-    const newSDs = currentSDs.map((sd, i) => i === sIdx ? { ...sd, travel_date: newDep, dep_manual: !!newDep } : sd)
+    const newSDs = currentSDs.map((sd, i) => {
+      if (i !== sIdx) return sd
+      const s2 = sects[i]
+      const newArrDate = !(sd.arr_manual ?? false) && newDep
+        ? autoAdjustArrDate(newDep, sd.dep_time ?? '', sd.arr_time ?? '', s2?.arr_day_offset ?? 0).arrDate
+        : (sd.arr_date ?? '')
+      return { ...sd, travel_date: newDep, dep_manual: !!newDep, arr_date: newArrDate }
+    })
     markTouched(pnrIdx)
     onChange(pnrs.map((row, i) => i !== pnrIdx ? row : { ...row, travel_start: row.travel_start || newDep, sector_dates: newSDs }))
   }
@@ -310,21 +340,55 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
   const handleSectorDepTimeChange = (pnrIdx: number, sIdx: number, newTime: string) => {
     const p = pnrs[pnrIdx]; const sects = getPnrSectors(p)
     const currentSDs = getSectorDatesForPnr(p, sects)
-    const tmpl = sects[sIdx]?.dep_time ?? ''
-    const newSDs = currentSDs.map((sd, i) => i !== sIdx ? sd : {
-      ...sd, dep_time: newTime,
-      time_override: (newTime !== tmpl) || ((sd.arr_time ?? '') !== (sects[i]?.arr_time ?? ''))
+    const s = sects[sIdx]
+    const tmpl = s?.dep_time ?? ''
+    let pendingToast = ''
+    const newSDs = currentSDs.map((sd, i) => {
+      if (i !== sIdx) return sd
+      const arrManual = sd.arr_manual ?? false
+      const depDate = sd.travel_date || ''
+      const arrTime = sd.arr_time ?? ''
+      const arrDayOffset = s?.arr_day_offset ?? 0
+      const timeOverride = (newTime !== tmpl) || (arrTime !== (s?.arr_time ?? ''))
+      if (!arrManual && depDate) {
+        const { arrDate: newArrDate, wasAdjusted } = autoAdjustArrDate(depDate, newTime, arrTime, arrDayOffset)
+        if (wasAdjusted && newArrDate !== (sd.arr_date ?? '')) pendingToast = 'ปรับวันถึงเป็นวันถัดไป เนื่องจากเวลาถึงน้อยกว่าเวลาออก'
+        return { ...sd, dep_time: newTime, arr_date: newArrDate, time_override: timeOverride }
+      }
+      // arr_manual=true: never overwrite, but toast a warning when overnight on same day
+      if (arrManual && depDate && (sd.arr_date ?? '') === depDate && arrTime && newTime && arrTime < newTime) {
+        pendingToast = 'เวลาถึงน้อยกว่าเวลาออกในวันเดียวกัน กรุณาตรวจสอบ Arr Date'
+      }
+      return { ...sd, dep_time: newTime, time_override: timeOverride }
     })
+    if (pendingToast) showToast(pendingToast)
     markTouched(pnrIdx); onChange(pnrs.map((row, i) => i !== pnrIdx ? row : { ...row, sector_dates: newSDs }))
   }
   const handleSectorArrTimeChange = (pnrIdx: number, sIdx: number, newTime: string) => {
     const p = pnrs[pnrIdx]; const sects = getPnrSectors(p)
     const currentSDs = getSectorDatesForPnr(p, sects)
-    const tmpl = sects[sIdx]?.arr_time ?? ''
-    const newSDs = currentSDs.map((sd, i) => i !== sIdx ? sd : {
-      ...sd, arr_time: newTime,
-      time_override: ((sd.dep_time ?? '') !== (sects[i]?.dep_time ?? '')) || (newTime !== tmpl)
+    const s = sects[sIdx]
+    const tmpl = s?.arr_time ?? ''
+    let pendingToast = ''
+    const newSDs = currentSDs.map((sd, i) => {
+      if (i !== sIdx) return sd
+      const arrManual = sd.arr_manual ?? false
+      const depDate = sd.travel_date || ''
+      const depTime = sd.dep_time ?? ''
+      const arrDayOffset = s?.arr_day_offset ?? 0
+      const timeOverride = (depTime !== (s?.dep_time ?? '')) || (newTime !== tmpl)
+      if (!arrManual && depDate) {
+        const { arrDate: newArrDate, wasAdjusted } = autoAdjustArrDate(depDate, depTime, newTime, arrDayOffset)
+        if (wasAdjusted && newArrDate !== (sd.arr_date ?? '')) pendingToast = 'ปรับวันถึงเป็นวันถัดไป เนื่องจากเวลาถึงน้อยกว่าเวลาออก'
+        return { ...sd, arr_time: newTime, arr_date: newArrDate, time_override: timeOverride }
+      }
+      // arr_manual=true: never overwrite, but toast a warning when overnight on same day
+      if (arrManual && depDate && (sd.arr_date ?? '') === depDate && depTime && newTime && newTime < depTime) {
+        pendingToast = 'เวลาถึงน้อยกว่าเวลาออกในวันเดียวกัน กรุณาตรวจสอบ Arr Date'
+      }
+      return { ...sd, arr_time: newTime, time_override: timeOverride }
     })
+    if (pendingToast) showToast(pendingToast)
     markTouched(pnrIdx); onChange(pnrs.map((row, i) => i !== pnrIdx ? row : { ...row, sector_dates: newSDs }))
   }
 
@@ -334,9 +398,11 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
     const currentSDs = getSectorDatesForPnr(p, sects)
     const newSDs = sects.map((s, i) => {
       const dep = calcSectorDate(newDep, s.day_offset) ?? ''; const sd = currentSDs[i]
+      const dTime = sd?.dep_time ?? (s.dep_time ?? ''); const aTime = sd?.arr_time ?? (s.arr_time ?? '')
+      const arrDate = dep ? autoAdjustArrDate(dep, dTime, aTime, s.arr_day_offset ?? 0).arrDate : ''
       return { sector_type: s.sector_type, day_offset: s.day_offset, travel_date: dep,
-        arr_date: dep ? addDaysToDate(dep, s.arr_day_offset ?? 0) : '', dep_manual: false as const, arr_manual: false as const,
-        dep_time: sd?.dep_time ?? (s.dep_time ?? ''), arr_time: sd?.arr_time ?? (s.arr_time ?? ''), time_override: sd?.time_override ?? false }
+        arr_date: arrDate, dep_manual: false as const, arr_manual: false as const,
+        dep_time: dTime, arr_time: aTime, time_override: sd?.time_override ?? false }
     })
     markTouched(pnrIdx)
     onChange(pnrs.map((row, i) => i !== pnrIdx ? row : { ...row, travel_start: newDep, travel_end: newSDs[newSDs.length - 1]?.arr_date || '', date_sync_status: 'SYNCED' as const, sector_dates: newSDs }))
@@ -728,6 +794,8 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
               const sectorErrors: (string | null)[] = sectorDates.map((sd, i) => {
                 if (sd.travel_date && sd.arr_date && sd.arr_date < sd.travel_date) return 'Arr ก่อน Dep'
                 if (i > 0) { const prev = sectorDates[i - 1]; if (prev.arr_date && sd.travel_date && sd.travel_date < prev.arr_date) return `Dep ก่อน Arr S${i}` }
+                // Same-day with midnight crossing — only shows when user has manually locked arr_date
+                if (sd.travel_date && sd.arr_date === sd.travel_date && sd.dep_time && sd.arr_time && sd.arr_time < sd.dep_time) return 'เวลาถึงก่อนเวลาออก'
                 return null
               })
 
