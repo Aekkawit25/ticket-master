@@ -1,15 +1,18 @@
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, Fragment } from 'react'
 import {
   addDays, addMonths, subMonths, format as fnsFormat, parseISO, isValid as fnsIsValid,
   startOfMonth, endOfMonth, eachDayOfInterval, getDay,
 } from 'date-fns'
-import { ChevronLeft, ChevronRight, X, Trash2, AlertTriangle, Info, CheckCircle2 } from 'lucide-react'
-import { cn, formatDate, formatDateTime, calcTTLDatetime } from '@/lib/utils'
+import { ChevronLeft, ChevronRight, ChevronDown, X, Trash2, AlertTriangle, Info, CheckCircle2, Pencil } from 'lucide-react'
+import { cn, formatDate, formatDateTime, formatDateThai, formatDateTimeThai, calculatePlusDay, calcTTLDatetime } from '@/lib/utils'
 import { TimeInput } from '@/components/ui/time-input'
 import { calculateStockSummary, saveDemoStock, checkPNRDuplicatesInSystem } from '@/lib/demo-storage'
 import type { DemoStock, DemoPNR, DemoLog } from '@/lib/demo-storage'
+import * as Popover from '@radix-ui/react-popover'
+import { TtlEditor } from '@/components/shared/TtlEditor'
+import type { TtlType } from '@/lib/ttl-utils'
 
 // ─── Exported Types ───────────────────────────────────────────────────────────
 
@@ -20,6 +23,9 @@ export interface BulkPnrSector {
   dayOffset: number
   depAirportCode?: string
   arrAirportCode?: string
+  depTime?: string
+  arrTime?: string
+  arrDayOffset?: number
 }
 
 export interface BulkPnrFlightSet {
@@ -122,6 +128,7 @@ interface InternalRow {
   ttlType: 'NONE' | 'DAYS_BEFORE' | 'FIXED_DATE'
   ttlDate: string | null
   ttlTime: string | null
+  ttlDaysBefore: number | null
   errors: string[]; selected: boolean
 }
 
@@ -293,6 +300,7 @@ function buildInternalRows(
         return null
       })(),
       ttlTime: shared.ttlType !== 'NONE' ? (shared.ttlTime || null) : null,
+      ttlDaysBefore: shared.ttlType === 'DAYS_BEFORE' ? (parseInt(shared.ttlDaysBefore, 10) || null) : null,
       errors: [], selected: false,
     }
   })
@@ -444,6 +452,25 @@ function buildFsRoute(sectors: BulkPnrSector[]): string {
   return dep && arr ? `${dep} – ${arr}` : ''
 }
 
+// ─── Day-of-week helper ───────────────────────────────────────────────────────
+
+const DOW_LABELS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'] as const
+function getDayLabel(dateStr: string): string {
+  if (!dateStr) return '—'
+  try {
+    const d = new Date(dateStr + 'T12:00:00')
+    if (isNaN(d.getTime())) return '—'
+    return DOW_LABELS[d.getDay()]
+  } catch { return '—' }
+}
+
+function calcSectorDepDate(travelStart: string, dayOffset: number): string {
+  if (!travelStart) return ''
+  try {
+    return fnsFormat(addDays(parseISO(travelStart), dayOffset - 1), 'yyyy-MM-dd')
+  } catch { return '' }
+}
+
 // ─── Label helper ─────────────────────────────────────────────────────────────
 
 function FL({ label, children, className, required }: { label: string; children: React.ReactNode; className?: string; required?: boolean }) {
@@ -499,6 +526,11 @@ export function BulkPnrBuilder({
   // Bulk toolbar
   const [bSeat, setBSeat]   = useState('')
   const [bCond, setBCond]   = useState('')
+
+  // Preview table UI state
+  const [expandedRowIds,    setExpandedRowIds]    = useState<Set<string>>(new Set())
+  const [ttlPopoverRowId,   setTtlPopoverRowId]   = useState<string | null>(null)
+  const [remarkPopoverRowId, setRemarkPopoverRowId] = useState<string | null>(null)
 
   // Auto-select FS when modal opens
   useEffect(() => {
@@ -658,6 +690,14 @@ export function BulkPnrBuilder({
     }))
   }
 
+  const toggleExpand = (id: string) => setExpandedRowIds(prev => {
+    const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n
+  })
+
+  const updateRowTtl = (id: string, val: { ttlType: TtlType; ttlDaysBefore: number | null; ttlDate: string | null; ttlTime: string | null }) => {
+    updateRow(id, { ttlType: val.ttlType, ttlDaysBefore: val.ttlDaysBefore, ttlDate: val.ttlDate, ttlTime: val.ttlTime })
+  }
+
   // ── Go to preview ─────────────────────────────────────────────────────────
 
   const handlePreview = () => {
@@ -746,7 +786,7 @@ export function BulkPnrBuilder({
       pnrCode:       r.pnrCode,
       dummyPnr:      r.dummyPnr,
       ttlType:       r.ttlType,
-      ttlDaysBefore: shared.ttlType === 'DAYS_BEFORE' ? (parseInt(shared.ttlDaysBefore, 10) || 0) : null,
+      ttlDaysBefore: r.ttlDaysBefore,
       ttlDate:       r.ttlDate,
       ttlTime:       r.ttlTime,
     }))
@@ -839,7 +879,7 @@ export function BulkPnrBuilder({
       <div className="absolute inset-0 bg-black/50 backdrop-blur-[1px]" onClick={handleClose} />
 
       {/* ── Modal container ── */}
-      <div className="relative z-10 flex w-[80vw] max-w-[1200px] max-h-[calc(100vh-48px)] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+      <div className="relative z-10 flex w-[calc(100vw-48px)] max-w-[1400px] max-h-[calc(100vh-48px)] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
 
         {/* ══ HEADER ══════════════════════════════════════════════════════ */}
         <div className="flex min-h-16 shrink-0 items-center justify-between border-b border-slate-200 px-6 py-4">
@@ -1409,139 +1449,283 @@ export function BulkPnrBuilder({
 
               {/* Preview table */}
               <div className="overflow-x-auto rounded-xl border border-slate-200">
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 920 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 960, tableLayout: 'fixed' }}>
+                  <colgroup>
+                    <col style={{ width: 30 }} />{/* expand */}
+                    <col style={{ width: 36 }} />{/* checkbox */}
+                    <col style={{ width: 32 }} />{/* # */}
+                    <col style={{ width: 130 }} />{/* PNR */}
+                    <col style={{ width: 148 }} />{/* ช่วงเดินทาง */}
+                    <col style={{ width: 58 }} />{/* Seat */}
+                    <col style={{ width: 155 }} />{/* รายละเอียดราคา */}
+                    <col style={{ width: 110 }} />{/* Condition */}
+                    <col style={{ width: 145 }} />{/* NAME TTL */}
+                    <col style={{ width: 88 }} />{/* Remark */}
+                    <col />{/* Delete — stretches */}
+                  </colgroup>
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-200 select-none">
-                      <th className="px-3 h-10 w-10">
+                      <th className="w-[30px]" />
+                      <th className="px-2 h-10 w-[36px]">
                         <input type="checkbox" checked={allSelected} onChange={toggleAll}
                           className="rounded border-slate-300 text-emerald-600" />
                       </th>
-                      {['#','PNR / Dummy','Travel Start','Travel End','Seat','ประเภทราคา','Fare','Tax','YQ','ยอดสุทธิ','Condition','Payment Due','TTL',''].map(h => (
+                      {(['#', 'PNR / Dummy', 'ช่วงเดินทาง', 'Seat', 'รายละเอียดราคา', 'Condition', 'NAME TTL', 'Remark', ''] as const).map(h => (
                         <th key={h} className="px-2 h-10 text-xs font-semibold text-slate-500 text-left whitespace-nowrap">{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {rows.length === 0 && (
-                      <tr><td colSpan={14} className="py-12 text-center text-sm text-slate-400">ไม่มีรายการ — ย้อนกลับเพื่อเลือกวัน</td></tr>
+                      <tr><td colSpan={11} className="py-12 text-center text-sm text-slate-400">ไม่มีรายการ — ย้อนกลับเพื่อเลือกวัน</td></tr>
                     )}
                     {rows.map(row => {
                       const hasErr = row.errors.length > 0
+                      const isExpanded = expandedRowIds.has(row.rowId)
+                      const hasSectors = effectiveSectors.length > 0
+                      const fmtLabel = row.priceFormat === 'FARE_YQ' ? 'FARE+YQ' : row.priceFormat === 'ALL_IN' ? 'ALL IN' : 'FARE'
+                      const fmtCls   = row.priceFormat === 'FARE_YQ' ? 'bg-amber-100 text-amber-700' : row.priceFormat === 'ALL_IN' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'
+                      const hasTtlRow = row.ttlType !== 'NONE' && !!row.ttlDate
                       return (
-                        <tr key={row.rowId} className={cn(
-                          'border-b border-slate-100 last:border-0 transition-colors',
-                          hasErr ? 'bg-red-50/70' : row.selected ? 'bg-blue-50/50' : 'hover:bg-slate-50/60'
-                        )}>
-                          <td className="px-3 py-2 text-center w-10">
-                            <input type="checkbox" checked={row.selected} onChange={() => toggleRow(row.rowId)}
-                              className="rounded border-slate-300 text-emerald-600" />
-                          </td>
-                          <td className="px-2 py-2 text-xs text-slate-400 font-medium">{row.seq}</td>
-                          {/* PNR */}
-                          <td className="px-1 py-2">
-                            {row.dummyPnr ? (
-                              <span className="font-mono text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-1.5 py-0.5 whitespace-nowrap">{row.dummyPnr}</span>
-                            ) : mode === 'create_stock' ? (
-                              <span className="text-[10px] text-slate-400 italic whitespace-nowrap">สร้างอัตโนมัติ</span>
-                            ) : (
-                              <input
-                                value={row.pnrCode}
-                                maxLength={7}
-                                onChange={e => updateRow(row.rowId, { pnrCode: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 7) })}
-                                onPaste={e => {
-                                  e.preventDefault()
-                                  const v = e.clipboardData.getData('text').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 7)
-                                  updateRow(row.rowId, { pnrCode: v })
-                                }}
-                                placeholder="PNR Code"
-                                title="กรอกได้เฉพาะภาษาอังกฤษและตัวเลข ไม่เกิน 7 ตัวอักษร"
-                                className={cn('w-28 h-7 border rounded-lg px-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-emerald-500',
-                                  hasErr && !row.pnrCode.trim() ? 'border-red-400 bg-red-50' : 'border-slate-300')} />
-                            )}
-                          </td>
-                          {/* Travel Start */}
-                          <td className="px-1 py-2">
-                            <input type="date" value={row.travelStart}
-                              onChange={e => updateRow(row.rowId, { travelStart: e.target.value })}
-                              className="h-7 border border-slate-300 rounded-lg px-2 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500" />
-                          </td>
-                          {/* Travel End */}
-                          <td className="px-2 py-2 text-xs whitespace-nowrap text-slate-600">{row.travelEnd ? formatDate(row.travelEnd) : '—'}</td>
-                          {/* Seat */}
-                          <td className="px-1 py-2">
-                            <input type="number" min={1} value={row.seatTotal}
-                              onChange={e => updateRow(row.rowId, { seatTotal: Math.max(1, Number(e.target.value)) })}
-                              className="w-14 h-7 border border-slate-300 rounded-lg px-2 text-xs text-center focus:outline-none focus:ring-1 focus:ring-emerald-500" />
-                          </td>
-                          {/* ประเภทราคา */}
-                          <td className="px-2 py-2 text-center">
-                            <span className={cn(
-                              'text-[9px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap',
-                              row.priceFormat === 'FARE_YQ' ? 'bg-amber-100 text-amber-700' :
-                              row.priceFormat === 'ALL_IN'  ? 'bg-blue-100 text-blue-700' :
-                                                              'bg-slate-100 text-slate-600'
-                            )}>
-                              {row.priceFormat === 'FARE_YQ' ? 'FARE+YQ' : row.priceFormat === 'ALL_IN' ? 'ALL IN' : 'FARE'}
-                            </span>
-                          </td>
-                          {/* Fare */}
-                          <td className="px-2 py-2 text-xs text-right font-semibold tabular-nums whitespace-nowrap">
-                            {row.fare > 0 ? row.fare.toLocaleString('en-US') : <span className="italic text-slate-300">—</span>}
-                          </td>
-                          {/* Tax */}
-                          <td className="px-2 py-2 text-xs text-right tabular-nums whitespace-nowrap text-slate-600">
-                            {row.priceFormat === 'ALL_IN'
-                              ? <span className="text-[9px] text-slate-400 italic">รวมแล้ว</span>
-                              : row.tax > 0 ? row.tax.toLocaleString('en-US') : '0'}
-                          </td>
-                          {/* YQ */}
-                          <td className="px-2 py-2 text-xs text-right tabular-nums whitespace-nowrap text-slate-600">
-                            {(row.priceFormat === 'FARE_YQ' || row.priceFormat === 'ALL_IN')
-                              ? <span className="text-[9px] text-slate-400 italic">รวมแล้ว</span>
-                              : row.yq > 0 ? row.yq.toLocaleString('en-US') : '0'}
-                          </td>
-                          {/* ยอดสุทธิ */}
-                          <td className="px-2 py-2 text-xs font-bold text-right tabular-nums text-slate-800 bg-emerald-50/60 whitespace-nowrap">
-                            {row.total > 0 ? row.total.toLocaleString('en-US') : '—'}
-                          </td>
-                          {/* Condition */}
-                          <td className="px-1 py-2">
-                            <select value={row.conditionCode}
-                              onChange={e => updateRow(row.rowId, { conditionCode: e.target.value })}
-                              className="h-7 border border-slate-300 rounded-lg px-2 text-xs focus:outline-none max-w-[100px]">
-                              <option value="">—</option>
-                              {conditions.map(c => <option key={c.code} value={c.code}>{c.code}</option>)}
-                            </select>
-                          </td>
-                          {/* Payment Due */}
-                          <td className="px-2 py-2 text-xs whitespace-nowrap">
-                            {row.paymentDueDate
-                              ? <span className="text-amber-600">{formatDateTime(row.paymentDueDate)}</span>
-                              : <span className="text-slate-300">รอข้อมูล</span>}
-                          </td>
-                          {/* TTL */}
-                          <td className="px-2 py-2 bg-amber-50/20 min-w-[120px]">
-                            {row.ttlType === 'NONE'
-                              ? <span className="text-slate-300 text-xs">ไม่ระบุ</span>
-                              : row.ttlDate
-                                ? <div className="flex flex-col gap-0.5">
-                                    {row.ttlType === 'DAYS_BEFORE' && (
-                                      <span className="text-[10px] text-amber-500">ก่อนเดินทาง {shared.ttlDaysBefore} วัน</span>
+                        <Fragment key={row.rowId}>
+                          {/* ── Main PNR row ── */}
+                          <tr className={cn(
+                            'border-b border-slate-100 transition-colors',
+                            isExpanded ? 'border-b-0' : '',
+                            hasErr ? 'bg-red-50/70' : row.selected ? 'bg-blue-50/50' : 'hover:bg-slate-50/60'
+                          )}>
+                            {/* Expand toggle */}
+                            <td className="py-2 text-center align-middle">
+                              {hasSectors ? (
+                                <button type="button" onClick={() => toggleExpand(row.rowId)}
+                                  className="w-5 h-5 inline-flex items-center justify-center text-slate-400 hover:text-slate-700 transition-colors">
+                                  {isExpanded
+                                    ? <ChevronDown size={12} />
+                                    : <ChevronRight size={12} />}
+                                </button>
+                              ) : null}
+                            </td>
+                            {/* Checkbox */}
+                            <td className="px-2 py-2 text-center align-middle">
+                              <input type="checkbox" checked={row.selected} onChange={() => toggleRow(row.rowId)}
+                                className="rounded border-slate-300 text-emerald-600" />
+                            </td>
+                            {/* # */}
+                            <td className="px-1 py-2 text-xs text-slate-400 font-medium align-middle">{row.seq}</td>
+                            {/* PNR */}
+                            <td className="px-1 py-2 align-middle">
+                              {row.dummyPnr ? (
+                                <span className="font-mono text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-1.5 py-0.5 whitespace-nowrap">{row.dummyPnr}</span>
+                              ) : mode === 'create_stock' ? (
+                                <span className="text-[10px] text-slate-400 italic whitespace-nowrap">สร้างอัตโนมัติ</span>
+                              ) : (
+                                <input
+                                  value={row.pnrCode}
+                                  maxLength={7}
+                                  onChange={e => updateRow(row.rowId, { pnrCode: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 7) })}
+                                  onPaste={e => {
+                                    e.preventDefault()
+                                    const v = e.clipboardData.getData('text').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 7)
+                                    updateRow(row.rowId, { pnrCode: v })
+                                  }}
+                                  placeholder="PNR Code"
+                                  title="กรอกได้เฉพาะภาษาอังกฤษและตัวเลข ไม่เกิน 7 ตัวอักษร"
+                                  className={cn('w-full h-7 border rounded-lg px-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-emerald-500',
+                                    hasErr && !row.pnrCode.trim() ? 'border-red-400 bg-red-50' : 'border-slate-300')} />
+                              )}
+                            </td>
+                            {/* ช่วงเดินทาง */}
+                            <td className="px-1 py-1.5 align-middle">
+                              <div className="flex flex-col gap-0.5">
+                                <input type="date" value={row.travelStart}
+                                  onChange={e => updateRow(row.rowId, { travelStart: e.target.value })}
+                                  className="h-7 border border-slate-200 rounded-lg px-2 text-[11px] focus:outline-none focus:ring-1 focus:ring-emerald-500 w-full" />
+                                {row.travelEnd && row.travelEnd !== row.travelStart && (
+                                  <span className="text-[10px] text-slate-400 tabular-nums pl-1">→ {formatDateThai(row.travelEnd)}</span>
+                                )}
+                              </div>
+                            </td>
+                            {/* Seat */}
+                            <td className="px-1 py-2 align-middle">
+                              <input type="number" min={1} value={row.seatTotal}
+                                onChange={e => updateRow(row.rowId, { seatTotal: Math.max(1, Number(e.target.value)) })}
+                                className="w-full h-7 border border-slate-200 rounded-lg px-1 text-xs text-center focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+                            </td>
+                            {/* รายละเอียดราคา */}
+                            <td className="px-2 py-1.5 align-middle">
+                              <div className="flex flex-col gap-0.5">
+                                <div className="flex items-center gap-1.5">
+                                  <span className={cn('text-[9px] font-bold px-1 py-[2px] rounded-full whitespace-nowrap shrink-0', fmtCls)}>{fmtLabel}</span>
+                                  <span className="text-xs font-bold text-slate-800 tabular-nums">{row.total > 0 ? row.total.toLocaleString('en-US') : '—'}</span>
+                                </div>
+                                <div className="text-[10px] text-slate-400 tabular-nums leading-none flex gap-1 flex-wrap">
+                                  {row.fare > 0 && <span>Fare {row.fare.toLocaleString('en-US')}</span>}
+                                  {row.priceFormat !== 'ALL_IN' && row.tax > 0 && <span>· Tax {row.tax.toLocaleString('en-US')}</span>}
+                                  {row.priceFormat === 'FARE' && row.yq > 0 && <span>· YQ {row.yq.toLocaleString('en-US')}</span>}
+                                </div>
+                              </div>
+                            </td>
+                            {/* Condition */}
+                            <td className="px-1 py-2 align-middle">
+                              <select value={row.conditionCode}
+                                onChange={e => updateRow(row.rowId, { conditionCode: e.target.value })}
+                                className="h-7 w-full border border-slate-200 rounded-lg px-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-white">
+                                <option value="">—</option>
+                                {conditions.map(c => <option key={c.code} value={c.code}>{c.code}</option>)}
+                              </select>
+                            </td>
+                            {/* NAME TTL */}
+                            <td className={cn('px-0 py-0 align-middle', ttlPopoverRowId === row.rowId ? 'outline outline-1 outline-offset-[-1px] outline-[#05a94f]' : '')}>
+                              <Popover.Root open={ttlPopoverRowId === row.rowId} onOpenChange={open => setTtlPopoverRowId(open ? row.rowId : null)}>
+                                <Popover.Trigger asChild>
+                                  <button type="button"
+                                    title={hasTtlRow
+                                      ? `${formatDateTimeThai(row.ttlDate, row.ttlTime)}${row.ttlType === 'DAYS_BEFORE' ? ` · ก่อนเดินทาง ${row.ttlDaysBefore} วัน` : ' · วันที่กำหนดเอง'}`
+                                      : 'ยังไม่ได้กำหนด NAME TTL — คลิกเพื่อตั้งค่า'}
+                                    className={cn(
+                                      'group w-full min-h-[36px] flex flex-col items-start justify-center gap-0 px-2 py-1 text-left transition-colors rounded',
+                                      hasTtlRow ? 'text-slate-700 hover:bg-slate-50' : 'hover:bg-slate-50'
+                                    )}>
+                                    {hasTtlRow ? (
+                                      <>
+                                        <div className="w-full flex items-center justify-between gap-1">
+                                          <span className="font-medium text-[11px] whitespace-nowrap leading-[16px]">
+                                            {formatDateTimeThai(row.ttlDate, row.ttlTime)}
+                                          </span>
+                                          <Pencil size={9} className="text-slate-300 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                        </div>
+                                        <span className="text-[9px] leading-[16px] text-slate-400 whitespace-nowrap">
+                                          {row.ttlType === 'DAYS_BEFORE' ? `ก่อนเดินทาง ${row.ttlDaysBefore ?? '?'} วัน` : 'วันที่กำหนดเอง'}
+                                        </span>
+                                      </>
+                                    ) : (
+                                      <span className="text-slate-400 text-[10px]">ไม่ระบุ</span>
                                     )}
-                                    <span className="text-xs font-semibold text-amber-700">{formatDate(row.ttlDate)}</span>
-                                    {row.ttlTime && <span className="text-[10px] text-slate-400">{row.ttlTime}</span>}
-                                  </div>
-                                : <span className="text-[10px] text-red-400">คำนวณไม่ได้</span>
-                            }
-                          </td>
-                          {/* Delete */}
-                          <td className="px-2 py-2 text-center">
-                            <button onClick={() => deleteRow(row.rowId)}
-                              className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors">
-                              <Trash2 size={12} />
-                            </button>
-                          </td>
-                        </tr>
+                                  </button>
+                                </Popover.Trigger>
+                                <Popover.Portal>
+                                  <Popover.Content side="bottom" align="start" sideOffset={4}
+                                    style={{ zIndex: 9300 }}
+                                    className="w-[280px] outline-none">
+                                    <TtlEditor
+                                      pnrCode={row.pnrCode || row.dummyPnr || `#${row.seq}`}
+                                      travelDate={row.travelStart || null}
+                                      ttlType={row.ttlType as TtlType}
+                                      ttlDaysBefore={row.ttlDaysBefore}
+                                      ttlDate={row.ttlDate}
+                                      ttlTime={row.ttlTime}
+                                      onSave={val => { updateRowTtl(row.rowId, val); setTtlPopoverRowId(null) }}
+                                      onClose={() => setTtlPopoverRowId(null)}
+                                    />
+                                  </Popover.Content>
+                                </Popover.Portal>
+                              </Popover.Root>
+                            </td>
+                            {/* Remark */}
+                            <td className="px-0 py-0 align-middle">
+                              <Popover.Root open={remarkPopoverRowId === row.rowId} onOpenChange={open => setRemarkPopoverRowId(open ? row.rowId : null)}>
+                                <Popover.Trigger asChild>
+                                  <button type="button"
+                                    className="group w-full min-h-[36px] flex items-start justify-start px-2 py-1 text-left hover:bg-slate-50 rounded transition-colors">
+                                    {row.remark
+                                      ? <span className="text-[11px] text-slate-600 line-clamp-2 leading-[1.4]">{row.remark}</span>
+                                      : <span className="text-[10px] text-slate-300 mt-1">—</span>}
+                                  </button>
+                                </Popover.Trigger>
+                                <Popover.Portal>
+                                  <Popover.Content side="bottom" align="start" sideOffset={4}
+                                    style={{ zIndex: 9300 }}
+                                    className="w-[240px] bg-white border border-slate-200 rounded-xl shadow-2xl p-3 outline-none">
+                                    <p className="text-[11px] font-semibold text-slate-700 mb-2">Remark — #{row.seq}</p>
+                                    <textarea
+                                      rows={3}
+                                      value={row.remark}
+                                      onChange={e => updateRow(row.rowId, { remark: e.target.value })}
+                                      placeholder="หมายเหตุ..."
+                                      autoFocus
+                                      className="w-full resize-none rounded-lg border border-slate-200 px-2 py-1.5 text-xs focus:outline-none focus:border-[#05a94f] focus:ring-1 focus:ring-[#05a94f]/20"
+                                    />
+                                    <div className="flex justify-end mt-2">
+                                      <button type="button" onClick={() => setRemarkPopoverRowId(null)}
+                                        className="px-3 py-1 text-xs font-semibold bg-[#05a94f] text-white rounded-lg hover:bg-[#048a40] transition-colors">
+                                        ตกลง
+                                      </button>
+                                    </div>
+                                  </Popover.Content>
+                                </Popover.Portal>
+                              </Popover.Root>
+                            </td>
+                            {/* Delete */}
+                            <td className="py-2 text-center align-middle">
+                              <button onClick={() => deleteRow(row.rowId)}
+                                className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors">
+                                <Trash2 size={12} />
+                              </button>
+                            </td>
+                          </tr>
+
+                          {/* ── Sector sub-rows (expanded) ── */}
+                          {isExpanded && hasSectors && (
+                            <tr>
+                              <td colSpan={11} className="px-0 py-0 bg-slate-50/80 border-b border-slate-200">
+                                <table className="w-full" style={{ borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+                                  <colgroup>
+                                    <col style={{ width: 98 }} />{/* indent: expand+cb+# */}
+                                    <col style={{ width: 52 }} />{/* S-badge */}
+                                    <col style={{ width: 50 }} />{/* Day */}
+                                    <col style={{ width: 120 }} />{/* Dep Date */}
+                                    <col style={{ width: 74 }} />{/* Dep Time */}
+                                    <col style={{ width: 120 }} />{/* Arr Date */}
+                                    <col style={{ width: 92 }} />{/* Arr Time + badge */}
+                                    <col />{/* spacer */}
+                                  </colgroup>
+                                  <tbody>
+                                    {effectiveSectors.map((sec, sIdx) => {
+                                      const depDate = calcSectorDepDate(row.travelStart, sec.dayOffset)
+                                      const arrDayOff = sec.arrDayOffset ?? 0
+                                      const arrDate  = depDate ? (() => {
+                                        try { return fnsFormat(addDays(parseISO(depDate), arrDayOff), 'yyyy-MM-dd') } catch { return depDate }
+                                      })() : depDate
+                                      const plusDay  = arrDate && depDate ? (arrDate > depDate ? arrDayOff : 0) : 0
+                                      return (
+                                        <tr key={sIdx} className={sIdx < effectiveSectors.length - 1 ? 'border-b border-slate-100' : ''}>
+                                          <td className="py-1 pl-6 pr-2">
+                                            {(sec.depAirportCode || sec.arrAirportCode) && (
+                                              <span className="text-[10px] text-slate-400 font-mono">{sec.depAirportCode} → {sec.arrAirportCode}</span>
+                                            )}
+                                          </td>
+                                          <td className="py-1 text-center">
+                                            <span className={cn('text-[10px] font-bold px-1 py-[2px] rounded leading-none inline-block',
+                                              sec.sectorType === 'Departure' ? 'text-emerald-700 bg-emerald-100' :
+                                              sec.sectorType === 'Arrival'   ? 'text-blue-700 bg-blue-100' : 'text-slate-600 bg-slate-100')}>
+                                              S{sIdx + 1}
+                                            </span>
+                                          </td>
+                                          <td className="py-1 text-center text-[11px] text-slate-500 font-medium">{getDayLabel(depDate)}</td>
+                                          <td className="py-1 px-2 text-[11px] text-slate-700 tabular-nums">{depDate ? formatDateThai(depDate) : '—'}</td>
+                                          <td className="py-1 px-2 text-[11px] text-slate-500 font-mono">{sec.depTime || '—'}</td>
+                                          <td className="py-1 px-2 text-[11px] text-slate-700 tabular-nums">{arrDate ? formatDateThai(arrDate) : '—'}</td>
+                                          <td className="py-1 px-0">
+                                            <div style={{ display: 'grid', gridTemplateColumns: '58px 26px', columnGap: 3 }}>
+                                              <span className="text-[11px] text-slate-500 font-mono text-center block">{sec.arrTime || '—'}</span>
+                                              <div style={{ width: 26, display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
+                                                <span style={{ visibility: plusDay > 0 ? 'visible' : 'hidden', minWidth: 22 }}
+                                                  className="text-[10px] font-semibold text-amber-700 bg-amber-100 rounded px-[3px] py-[1px] text-center select-none whitespace-nowrap">
+                                                  +{plusDay}
+                                                </span>
+                                              </div>
+                                            </div>
+                                          </td>
+                                          <td />
+                                        </tr>
+                                      )
+                                    })}
+                                  </tbody>
+                                </table>
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
                       )
                     })}
                   </tbody>

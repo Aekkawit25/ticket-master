@@ -550,7 +550,15 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
     onChange([...pnrs, ...newPNRs])
   }
 
-  const builderSectors: BulkPnrSector[] = sectors.map(s => ({ sectorType: s.sector_type, dayOffset: s.day_offset }))
+  const builderSectors: BulkPnrSector[] = sectors.map(s => ({
+    sectorType: s.sector_type,
+    dayOffset: s.day_offset,
+    depAirportCode: s.dep_airport_code,
+    arrAirportCode: s.arr_airport_code,
+    depTime: s.dep_time || undefined,
+    arrTime: s.arr_time || undefined,
+    arrDayOffset: s.arr_day_offset ?? 0,
+  }))
   const builderConditions: BulkPnrCondition[] = conditions.map(c => ({
     code: c.conditionId, name: c.conditionName,
     stages: c.stages.map(st => ({ paymentBaseDate: st.dueType === 'TRAVEL_MINUS_DAYS' ? 'Travel Start' : 'Created Date', paymentDueDaysBefore: st.dueDays, paymentDueTime: st.dueTime })),
@@ -985,23 +993,29 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
 
                         {/* ── Col 9: Arr Time + +Day badge (per-row) ── */}
                         <td className={cn(TD_SEC_C, 'px-0', rowBorderB)} style={{ backgroundColor: hvSec, width: 92, minWidth: 92, maxWidth: 92 }}>
-                          <div className="flex items-center justify-center gap-[4px] h-7 px-1">
+                          {/* Grid: fixed time slot (58px) + fixed badge slot (26px) keeps time column-aligned */}
+                          <div className="h-7 items-center justify-center"
+                            style={{ display: 'grid', gridTemplateColumns: '58px 26px', columnGap: 3 }}>
                             <TimeInput value={sd.arr_time ?? ''} onChange={v => handleSectorArrTimeChange(pnrIdx, sIdx, v)}
                               compact
-                              className={cn('border-0 bg-transparent focus:outline-none text-center min-w-0 h-7 text-[12px] flex-1',
+                              className={cn('border-0 bg-transparent focus:outline-none text-center w-full min-w-0 h-7 text-[12px]',
+                                'tabular-nums',
                                 sd.time_override ? 'text-orange-600 font-medium' : 'text-slate-700')}
                             />
-                            {(() => {
-                              const pd = calculatePlusDay(sd.travel_date || null, sd.arr_date || null)
-                              if (!pd || pd <= 0) return null
-                              const tip = pd === 1 ? 'ถึงวันถัดไป' : `ถึงอีก ${pd} วัน`
-                              return (
-                                <span title={tip}
-                                  className="shrink-0 text-[10px] font-semibold text-amber-700 bg-amber-100 rounded px-[3px] leading-[16px] select-none">
-                                  +{pd}
-                                </span>
-                              )
-                            })()}
+                            {/* Badge slot: always rendered, badge visibility toggled so time never shifts */}
+                            <div style={{ width: 26, display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
+                              {(() => {
+                                const pd = calculatePlusDay(sd.travel_date || null, sd.arr_date || null)
+                                const tip = pd === 1 ? 'ถึงวันถัดไป' : `ถึงอีก ${pd ?? 0} วัน`
+                                return (
+                                  <span title={pd && pd > 0 ? tip : undefined}
+                                    style={{ visibility: pd && pd > 0 ? 'visible' : 'hidden', minWidth: 22 }}
+                                    className="text-[10px] font-semibold text-amber-700 bg-amber-100 rounded px-[3px] py-[1px] text-center select-none whitespace-nowrap">
+                                    +{pd ?? 0}
+                                  </span>
+                                )
+                              })()}
+                            </div>
                           </div>
                         </td>
 
