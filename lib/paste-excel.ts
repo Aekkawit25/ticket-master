@@ -250,7 +250,7 @@ export function normalizePastedRows(
   return rows.map(row => {
     const get = (i: number) => (row[i] ?? '').trim()
 
-    const pnrCode           = get(0).toUpperCase()
+    const pnrCode           = get(0).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 7)
     const outboundDate      = parseFlexDate(get(2)) ?? get(2)
     const outboundFlightRaw = get(3).toUpperCase()
     const returnDate        = parseFlexDate(get(6)) ?? get(6)

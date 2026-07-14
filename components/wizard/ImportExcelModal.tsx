@@ -69,13 +69,14 @@ function StatusBadge({ status, isDummy = false }: { status: 'READY' | 'WARNING' 
 
 // ─── Editable cell ────────────────────────────────────────────────────────────
 function ECell({
-  value, onChange, type = 'text', uppercase = false,
+  value, onChange, type = 'text', uppercase = false, transform,
   error, warning, id, className = '',
 }: {
   value: string
   onChange: (v: string) => void
   type?: 'text' | 'date' | 'number'
   uppercase?: boolean
+  transform?: (v: string) => string
   error?: string
   warning?: string
   id?: string
@@ -90,7 +91,11 @@ function ECell({
         type={type}
         value={value}
         title={error ?? warning ?? undefined}
-        onChange={e => onChange(uppercase ? e.target.value.toUpperCase() : e.target.value)}
+        onChange={e => {
+          let v = uppercase ? e.target.value.toUpperCase() : e.target.value
+          if (transform) v = transform(v)
+          onChange(v)
+        }}
         className={cn(
           'w-full px-1.5 py-[3px] text-[11px] rounded border outline-none transition-colors',
           hasErr  ? 'border-red-500 bg-red-50 text-red-700 focus:ring-1 focus:ring-red-300'
@@ -545,6 +550,7 @@ export default function ImportExcelModal({
                           <td className="border border-slate-200 p-0.5 align-top">
                             <ECell uppercase value={d.pnrCode} error={fe.pnrCode} warning={fw.pnrCode}
                               id={`import-r${rid}-pnrCode`}
+                              transform={v => v.replace(/[^A-Z0-9]/g, '').slice(0, 7)}
                               onChange={v => updateCell(rid, { pnrCode: v, isDummy: !v })}
                               className="font-mono" />
                           </td>
@@ -670,7 +676,8 @@ export default function ImportExcelModal({
                               <td className="border border-slate-200 p-0.5 align-middle" rowSpan={g.sectors.length}>
                                 <ECell uppercase value={g.pnrCode}
                                   id={`import-ms-${g.groupKey}-0-pnrCode`}
-                                  onChange={v => updateGroupField(g.groupKey, { pnrCode: v.toUpperCase() })}
+                                  transform={v => v.replace(/[^A-Z0-9]/g, '').slice(0, 7)}
+                                  onChange={v => updateGroupField(g.groupKey, { pnrCode: v })}
                                   className="font-mono" />
                               </td>
                             )}

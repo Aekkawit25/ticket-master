@@ -128,6 +128,26 @@ export function formatDate(date: string | null | undefined): string {
 /** Canonical UI date format for travel dates — always DD MMM YY (e.g., 17 Jun 26) */
 export const formatTravelDate = formatDate
 
+const THAI_MONTHS_SHORT = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.']
+
+/** Thai date: D เดือนย่อ YY (พ.ศ. 2 หลัก) e.g. "10 มิ.ย. 69". Safe for date-only ISO strings. */
+export function formatDateThai(date: string | null | undefined): string {
+  if (!date) return '—'
+  try {
+    const d = new Date(date + 'T12:00:00')
+    if (isNaN(d.getTime())) return '—'
+    const year = String((d.getFullYear() + 543) % 100).padStart(2, '0')
+    return `${d.getDate()} ${THAI_MONTHS_SHORT[d.getMonth()]} ${year}`
+  } catch { return '—' }
+}
+
+/** Thai date+time: "10 มิ.ย. 69 · 02:00" or "10 มิ.ย. 69" if no time. */
+export function formatDateTimeThai(date: string | null | undefined, time: string | null | undefined): string {
+  const d = formatDateThai(date)
+  if (d === '—') return '—'
+  return time ? `${d} · ${time}` : d
+}
+
 /**
  * Formats a stock period for display using Dep Date range only.
  * - Single date (start === end or no end): "17 Jun 26"

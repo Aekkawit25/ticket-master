@@ -2,7 +2,7 @@
 
 import { useRef, useState, useMemo, useEffect, Fragment } from 'react'
 import { PlusCircle, Trash2, Copy, Info, CalendarDays, FileUp, Download, AlertTriangle, RefreshCw, RotateCcw, Pencil } from 'lucide-react'
-import { cn, formatTravelDate, calcTravelEndFromSectors, calcSectorDate, calculatePlusDay } from '@/lib/utils'
+import { cn, formatTravelDate, formatDateThai, formatDateTimeThai, calcTravelEndFromSectors, calcSectorDate, calculatePlusDay } from '@/lib/utils'
 import { hasTtl } from '@/lib/ttl-utils'
 import { TtlEditor } from '@/components/shared/TtlEditor'
 import { BulkPnrBuilder } from '@/components/shared/BulkPnrBuilder'
@@ -18,32 +18,31 @@ import { getCurrencyOptions } from '@/lib/currency-storage'
 import { CurrencyCombobox } from '@/components/shared/CurrencyCombobox'
 import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
+import * as Popover from '@radix-ui/react-popover'
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const STATUS_LABELS: Record<string, string> = { Pending: 'รอยืนยัน', Confirmed: 'ยืนยันแล้ว' }
 
 // ─── Column Definitions — single source of truth for colgroup + header + width ─
 const PNR_COLS = [
   { key: 'index',        label: '#',           width: 42,  align: 'center' },
-  { key: 'pnr',         label: 'PNR',         width: 105, align: 'left'   },
-  { key: 'flightSet',   label: 'Flight Set',  width: 140, align: 'left'   },
+  { key: 'pnr',         label: 'PNR',         width: 92,  align: 'left'   },
+  { key: 'flightSet',   label: 'Flight Set',  width: 110, align: 'left'   },
   { key: 'sector',      label: 'Sector',       width: 55,  align: 'center' },
   { key: 'day',         label: 'Day',          width: 55,  align: 'center' },
   { key: 'depDate',     label: 'Dep Date',     width: 115, align: 'center' },
   { key: 'depTime',     label: 'Dep Time',     width: 78,  align: 'center' },
   { key: 'arrDate',     label: 'Arr Date',     width: 115, align: 'center' },
-  { key: 'arrTime',     label: 'Arr Time',     width: 78,  align: 'center' },
-  { key: 'plusDay',     label: '+Day',         width: 55,  align: 'center' },
+  { key: 'arrTime',     label: 'Arr Time',     width: 92,  align: 'center' },
   { key: 'seat',        label: 'Seat',         width: 62,  align: 'center' },
-  { key: 'priceType',   label: 'ประเภทราคา',     width: 100, align: 'center' },
-  { key: 'priceDetail', label: 'รายละเอียดราคา', width: 155, align: 'left'   },
+  { key: 'priceDetail', label: 'รายละเอียดราคา', width: 165, align: 'left'   },
   { key: 'condition',   label: 'Condition',      width: 115, align: 'left'   },
-  { key: 'ttl',         label: 'TTL',          width: 115, align: 'left'   },
-  { key: 'confirmation',label: 'การยืนยัน',    width: 105, align: 'center' },
-  { key: 'remark',      label: 'Remark',       width: 125, align: 'left'   },
-  { key: 'action',      label: 'Action',       width: 75,  align: 'center' },
+  { key: 'ttl',         label: 'NAME TTL',     width: 145, align: 'left'   },
+  { key: 'remark',      label: 'Remark',       width: 90,  align: 'left'   },
+  { key: 'action',      label: 'Action',       width: 46,  align: 'center' },
 ]
-const PNR_TABLE_WIDTH = PNR_COLS.reduce((s, c) => s + c.width, 0)
+// Action column stretches to fill remaining space; all other cols are fixed
+const PNR_FIXED_WIDTH = PNR_COLS.filter(c => c.key !== 'action').reduce((s, c) => s + c.width, 0)
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function emptyPNR(defaultCurrency = 'THB'): FlightPNRFormData {
@@ -75,9 +74,7 @@ function getTtlStatus(ttlDate: string | null, ttlTime: string | null): 'unset' |
 }
 
 function formatTtlDisplay(ttlDate: string | null, ttlTime: string | null): string {
-  if (!ttlDate) return '—'
-  const d = formatTravelDate(ttlDate)
-  return ttlTime ? `${d} ${ttlTime}` : d
+  return formatDateTimeThai(ttlDate, ttlTime)
 }
 
 function subtractDaysFromDate(dateStr: string, days: number): string {
@@ -231,7 +228,8 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
   const [bulkTtlInnerStep, setBulkTtlInnerStep] = useState<'config' | 'overwrite_confirm'>('config')
   const [priceTypeConfirm, setPriceTypeConfirm] = useState<{ idx: number; newFmt: 'FARE' | 'FARE_YQ' | 'ALL_IN' } | null>(null)
   const [currencyConfirm, setCurrencyConfirm] = useState<{ idx: number; newCurrency: string } | null>(null)
-  const [ttlPopover, setTtlPopover] = useState<{ idx: number; pos: { top: number; left: number; width: number } } | null>(null)
+  const [ttlPopover, setTtlPopover] = useState<number | null>(null)
+  const [remarkPopover, setRemarkPopover] = useState<number | null>(null)
   const [shiftConfirm, setShiftConfirm] = useState<{ pnrIdx: number; origDep: string; newDep: string } | null>(null)
   const [toastMsg, setToastMsg] = useState<string | null>(null)
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -290,6 +288,10 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
     const newTax = newFmt === 'FARE' ? p.tax : null
     const newYq = newFmt !== 'ALL_IN' ? p.yq ?? null : null
     update(idx, { price_format: newFmt, fare: p.fare, tax: newTax, yq: newYq, total_amount: calcPnrTotal(newFmt, p.fare, newTax, newYq) })
+  }
+  const commitPriceTypeKeep = (idx: number, newFmt: 'FARE' | 'FARE_YQ' | 'ALL_IN') => {
+    const p = pnrs[idx]
+    update(idx, { price_format: newFmt, total_amount: calcPnrTotal(newFmt, p.fare, p.tax ?? null, p.yq ?? null) })
   }
   const handlePriceTypeChange = (idx: number, newFmt: 'FARE' | 'FARE_YQ' | 'ALL_IN') => {
     const p = pnrs[idx]; const oldFmt = (p.price_format ?? 'FARE') as string
@@ -630,10 +632,8 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
   const summaryStats = useMemo(() => {
     const totalPnr = pnrs.length
     const totalSeats = pnrs.reduce((acc, p) => acc + (p.seat_total || 0), 0)
-    const confirmedCount = pnrs.filter(p => p.status === 'Confirmed').length
-    const pendingCount = totalPnr - confirmedCount
     const noTtlCount = pnrs.filter(p => !hasTtl(p)).length
-    return { totalPnr, totalSeats, confirmedCount, pendingCount, noTtlCount }
+    return { totalPnr, totalSeats, noTtlCount }
   }, [pnrs])
 
   const activeConfirmBanner = shiftConfirm ? 'shift' : priceTypeConfirm ? 'priceType' : currencyConfirm ? 'currency' : null
@@ -688,16 +688,32 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
           <button type="button" onClick={() => setShiftConfirm(null)} className="text-slate-400 hover:text-slate-600 text-[10px] whitespace-nowrap shrink-0 px-1">ยกเลิก</button>
         </div>
       )}
-      {activeConfirmBanner === 'priceType' && priceTypeConfirm && (
-        <div className="flex items-center gap-2 px-2.5 py-1.5 bg-amber-50 border border-amber-200 rounded-lg text-[11px] text-amber-800 flex-wrap">
-          <span className="shrink-0">⚠</span>
-          <span className="flex-1 min-w-0">
-            {(() => { const pp = pnrs[priceTypeConfirm.idx]; const lt = (priceTypeConfirm.newFmt === 'FARE_YQ' || priceTypeConfirm.newFmt === 'ALL_IN') && (pp.tax ?? 0) > 0; const ly = priceTypeConfirm.newFmt === 'ALL_IN' && (pp.yq ?? 0) > 0; return lt && ly ? 'ค่า Tax / YQ จะถูกล้าง' : lt ? 'ค่า Tax จะถูกล้าง' : 'ค่า YQ จะถูกล้าง' })()} — PNR #{priceTypeConfirm.idx + 1}
-          </span>
-          <button type="button" onClick={() => { commitPriceTypeChange(priceTypeConfirm.idx, priceTypeConfirm.newFmt); setPriceTypeConfirm(null) }} className="px-2 py-0.5 bg-amber-600 text-white rounded text-[10px] font-semibold hover:bg-amber-700 whitespace-nowrap shrink-0">ล้างและเปลี่ยน</button>
-          <button type="button" onClick={() => setPriceTypeConfirm(null)} className="px-2 py-0.5 bg-white border border-amber-300 text-amber-700 rounded text-[10px] hover:bg-amber-50 whitespace-nowrap shrink-0">ยกเลิก</button>
-        </div>
-      )}
+      {activeConfirmBanner === 'priceType' && priceTypeConfirm && (() => {
+        const pp = pnrs[priceTypeConfirm.idx]
+        const oldFmt = (pp.price_format ?? 'FARE') as string
+        const newFmt = priceTypeConfirm.newFmt
+        const fmtLabel = (f: string) => f === 'FARE_YQ' ? 'FARE+YQ' : f === 'ALL_IN' ? 'ALL IN' : 'FARE'
+        const losingTax = (newFmt === 'FARE_YQ' || newFmt === 'ALL_IN') && (pp.tax ?? 0) > 0
+        const losingYq = newFmt === 'ALL_IN' && (pp.yq ?? 0) > 0
+        const lossDesc = losingTax && losingYq ? 'Tax และ YQ' : losingTax ? 'Tax' : 'YQ'
+        return (
+          <div className="flex items-start gap-2 px-2.5 py-2 bg-amber-50 border border-amber-200 rounded-lg text-[11px] text-amber-800 flex-wrap">
+            <span className="shrink-0 mt-0.5">⚠</span>
+            <div className="flex-1 min-w-0 space-y-0.5">
+              <p className="font-semibold">เปลี่ยนประเภทราคา — PNR #{priceTypeConfirm.idx + 1}</p>
+              <p className="text-amber-700">
+                <span className={cn('font-bold', oldFmt === 'FARE_YQ' ? 'text-amber-600' : oldFmt === 'ALL_IN' ? 'text-blue-600' : 'text-slate-600')}>{fmtLabel(oldFmt)}</span>
+                {' → '}
+                <span className={cn('font-bold', newFmt === 'FARE_YQ' ? 'text-amber-600' : newFmt === 'ALL_IN' ? 'text-blue-600' : 'text-slate-600')}>{fmtLabel(newFmt)}</span>
+                {' · มีค่า '}<strong>{lossDesc}</strong>{' ที่กรอกไว้แล้ว'}
+              </p>
+            </div>
+            <button type="button" onClick={() => setPriceTypeConfirm(null)} className="px-2 py-0.5 bg-white border border-amber-300 text-amber-700 rounded text-[10px] hover:bg-amber-50 whitespace-nowrap shrink-0">ยกเลิก</button>
+            <button type="button" onClick={() => { commitPriceTypeKeep(priceTypeConfirm.idx, newFmt); setPriceTypeConfirm(null) }} className="px-2 py-0.5 bg-white border border-amber-400 text-amber-800 rounded text-[10px] font-semibold hover:bg-amber-100 whitespace-nowrap shrink-0">เก็บค่าที่กรอกไว้</button>
+            <button type="button" onClick={() => { commitPriceTypeChange(priceTypeConfirm.idx, newFmt); setPriceTypeConfirm(null) }} className="px-2 py-0.5 bg-amber-600 text-white rounded text-[10px] font-semibold hover:bg-amber-700 whitespace-nowrap shrink-0">ล้างค่าที่ไม่เกี่ยวข้อง</button>
+          </div>
+        )
+      })()}
       {activeConfirmBanner === 'currency' && currencyConfirm && (
         <div className="flex items-center gap-2 px-2.5 py-1.5 bg-amber-50 border border-amber-200 rounded-lg text-[11px] text-amber-800 flex-wrap">
           <span className="shrink-0">⚠</span>
@@ -738,11 +754,13 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
         style={{ maxHeight: pnrs.length > 10 ? 'calc(100vh - 260px)' : undefined, overflowY: pnrs.length > 10 ? 'auto' : 'visible' }}>
         <table
           className="s4g text-[12px]"
-          style={{ width: PNR_TABLE_WIDTH, tableLayout: 'fixed', borderCollapse: 'separate', borderSpacing: 0 }}>
+          style={{ width: '100%', minWidth: PNR_FIXED_WIDTH + 60, tableLayout: 'fixed', borderCollapse: 'separate', borderSpacing: 0 }}>
 
-          {/* Single colgroup — widths used by both thead and tbody */}
+          {/* Single colgroup — action col has no fixed width so it takes remaining space */}
           <colgroup>
-            {PNR_COLS.map(c => <col key={c.key} style={{ width: c.width }} />)}
+            {PNR_COLS.map(c => c.key === 'action'
+              ? <col key={c.key} />
+              : <col key={c.key} style={{ width: c.width }} />)}
           </colgroup>
 
           {/* ── Header — 21 th cells matching PNR_COLS order ── */}
@@ -756,14 +774,11 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
               <th className={cn(TH_C, 'bg-[#EDF5FF]')}>Dep Date</th>
               <th className={cn(TH_C, 'bg-[#EDF5FF]')} style={{ width: 78, minWidth: 78, maxWidth: 78, paddingLeft: 0, paddingRight: 0 }}>Dep Time</th>
               <th className={cn(TH_C, 'bg-[#EDF5FF]')}>Arr Date</th>
-              <th className={cn(TH_C, 'bg-[#EDF5FF]')} style={{ width: 78, minWidth: 78, maxWidth: 78, paddingLeft: 0, paddingRight: 0 }}>Arr Time</th>
-              <th className={cn(TH_C, 'bg-[#EDF5FF]')}>+Day</th>
+              <th className={cn(TH_C, 'bg-[#EDF5FF]')} style={{ width: 92, minWidth: 92, maxWidth: 92, paddingLeft: 0, paddingRight: 0 }}>Arr Time</th>
               <th className={TH_C}>Seat</th>
-              <th className={TH_C}>ประเภทราคา</th>
               <th className={TH_L}>รายละเอียดราคา</th>
               <th className={TH_L}>Condition</th>
-              <th className={TH_L}>TTL</th>
-              <th className={TH_C}>การยืนยัน</th>
+              <th className={TH_L}>NAME TTL</th>
               <th className={TH_L}>Remark</th>
               <th className={cn(TH_C, 'border-r-0')}>Action</th>
             </tr>
@@ -773,7 +788,7 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
           <tbody>
             {pnrs.length === 0 && (
               <tr>
-                <td colSpan={21} className="py-10 text-center border-b border-[#E5EAF0]">
+                <td colSpan={19} className="py-10 text-center border-b border-[#E5EAF0]">
                   <div className="flex flex-col items-center gap-2">
                     <PlusCircle size={28} className="text-slate-200" strokeWidth={1} />
                     <p className="text-[13px] text-slate-400">ยังไม่มีรายการ PNR</p>
@@ -790,6 +805,8 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
               const isHovered = hoveredPnrIdx === pnrIdx
               const touched = touchedRows.has(pnrIdx) || showValidation
               const fmt = (p.price_format ?? 'FARE') as 'FARE' | 'FARE_YQ' | 'ALL_IN'
+              const isDupPnr = !!p.pnr_code.trim() && pnrs.some((other, oi) => oi !== pnrIdx && other.pnr_code.trim() === p.pnr_code.trim())
+              const pnrErr = touched && isDupPnr
               const missingSeat = touched && (!p.seat_total || p.seat_total <= 0)
               const fareErr = touched && !(p.fare > 0)
               const taxErr = touched && fmt === 'FARE' && p.tax == null
@@ -850,26 +867,54 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
                         {/* ── Col 2: PNR (PNR-level, rowspan) ── */}
                         {isFirstRow && (
                           <td rowSpan={sectorCount}
-                            className={cn('border-r border-[#E5EAF0] px-1.5 align-top pt-1 overflow-hidden', pnrBorderB)}
-                            style={{ backgroundColor: hvBg }}>
-                            <input value={p.pnr_code}
-                              onChange={e => update(pnrIdx, { pnr_code: e.target.value.toUpperCase() })}
-                              placeholder="ว่างได้"
-                              className="w-full min-w-0 h-7 text-[12px] font-mono uppercase bg-transparent border-0 focus:outline-none text-slate-800 placeholder:text-slate-300"
-                            />
-                            {p.dummy_pnr && <div className="text-[9px] text-slate-300 font-mono truncate leading-none">{p.dummy_pnr}</div>}
+                            className={cn('border-r border-[#E5EAF0] align-middle text-center overflow-hidden', pnrBorderB,
+                              pnrErr ? 'bg-red-50' : '')}
+                            style={{ backgroundColor: pnrErr ? undefined : hvBg }}>
+                            <div className="px-1">
+                              <input
+                                value={p.pnr_code}
+                                maxLength={7}
+                                onChange={e => {
+                                  const filtered = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '')
+                                  update(pnrIdx, { pnr_code: filtered })
+                                }}
+                                onPaste={e => {
+                                  e.preventDefault()
+                                  const pasted = e.clipboardData.getData('text')
+                                  const filtered = pasted.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 7)
+                                  update(pnrIdx, { pnr_code: filtered })
+                                }}
+                                onBlur={() => markTouched(pnrIdx)}
+                                placeholder="ว่างได้"
+                                title="กรอกได้เฉพาะภาษาอังกฤษและตัวเลข ไม่เกิน 7 ตัวอักษร"
+                                className={cn(
+                                  'w-full min-w-0 h-7 text-[12px] font-mono text-center bg-transparent focus:outline-none',
+                                  'border rounded px-1 py-0 transition-colors placeholder:text-slate-300 placeholder:text-[10px] placeholder:not-italic',
+                                  pnrErr
+                                    ? 'border-red-300 text-red-600'
+                                    : 'border-transparent text-slate-800 hover:border-slate-200 focus:border-[#05a94f]'
+                                )}
+                              />
+                              {pnrErr && (
+                                <p className="text-[9px] text-red-500 leading-none mt-0.5 truncate">PNR ซ้ำ</p>
+                              )}
+                              {!pnrErr && p.dummy_pnr && (
+                                <div className="text-[9px] text-slate-300 font-mono truncate leading-none mt-0.5">{p.dummy_pnr}</div>
+                              )}
+                            </div>
                           </td>
                         )}
 
                         {/* ── Col 3: Flight Set (PNR-level, rowspan) ── */}
                         {isFirstRow && (
                           <td rowSpan={sectorCount}
-                            className={cn('border-r border-[#E5EAF0] px-1.5 align-middle overflow-hidden', pnrBorderB)}
+                            className={cn('border-r border-[#E5EAF0] px-[5px] align-middle overflow-hidden', pnrBorderB)}
                             style={{ backgroundColor: hvBg }}>
                             {schedules.length > 1 ? (
                               <select value={activeScheduleId}
                                 onChange={e => update(pnrIdx, { schedule_id: e.target.value || undefined })}
-                                className="w-full min-w-0 h-7 text-[12px] bg-transparent border-0 focus:outline-none cursor-pointer text-slate-700">
+                                title={schedules.find(s => s.scheduleId === activeScheduleId)?.scheduleName}
+                                className="w-full min-w-0 h-7 text-[12px] bg-transparent border-0 focus:outline-none cursor-pointer text-slate-700 truncate">
                                 {schedules.map(sch => <option key={sch.scheduleId} value={sch.scheduleId}>{sch.scheduleName}{sch.isMain ? ' ★' : ''}</option>)}
                               </select>
                             ) : (
@@ -938,24 +983,26 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
                           </div>
                         </td>
 
-                        {/* ── Col 9: Arr Time (per-row) ── */}
-                        <td className={cn(TD_SEC_C, 'px-0', rowBorderB)} style={{ backgroundColor: hvSec, width: 78, minWidth: 78, maxWidth: 78 }}>
-                          <TimeInput value={sd.arr_time ?? ''} onChange={v => handleSectorArrTimeChange(pnrIdx, sIdx, v)}
-                            compact
-                            className={cn('border-0 bg-transparent focus:outline-none text-center w-full min-w-0 h-7 text-[12px]',
-                              sd.time_override ? 'text-orange-600 font-medium' : 'text-slate-700')}
-                          />
-                        </td>
-
-                        {/* ── Col 10: +Day (per-row, read-only) ── */}
-                        <td className={cn(TD_SEC_C, 'select-none text-[12px]', rowBorderB)} style={{ backgroundColor: hvSec }}>
-                          {(() => {
-                            const pd = calculatePlusDay(sd.travel_date || null, sd.arr_date || null)
-                            if (pd === null) return <span className="text-slate-200">—</span>
-                            if (pd < 0) return <span className="text-red-500 font-bold">{pd}</span>
-                            if (pd === 0) return <span className="text-slate-300">0</span>
-                            return <span className="text-amber-600 font-semibold">+{pd}</span>
-                          })()}
+                        {/* ── Col 9: Arr Time + +Day badge (per-row) ── */}
+                        <td className={cn(TD_SEC_C, 'px-0', rowBorderB)} style={{ backgroundColor: hvSec, width: 92, minWidth: 92, maxWidth: 92 }}>
+                          <div className="flex items-center justify-center gap-[4px] h-7 px-1">
+                            <TimeInput value={sd.arr_time ?? ''} onChange={v => handleSectorArrTimeChange(pnrIdx, sIdx, v)}
+                              compact
+                              className={cn('border-0 bg-transparent focus:outline-none text-center min-w-0 h-7 text-[12px] flex-1',
+                                sd.time_override ? 'text-orange-600 font-medium' : 'text-slate-700')}
+                            />
+                            {(() => {
+                              const pd = calculatePlusDay(sd.travel_date || null, sd.arr_date || null)
+                              if (!pd || pd <= 0) return null
+                              const tip = pd === 1 ? 'ถึงวันถัดไป' : `ถึงอีก ${pd} วัน`
+                              return (
+                                <span title={tip}
+                                  className="shrink-0 text-[10px] font-semibold text-amber-700 bg-amber-100 rounded px-[3px] leading-[16px] select-none">
+                                  +{pd}
+                                </span>
+                              )
+                            })()}
+                          </div>
                         </td>
 
                         {/* ── Cols 11-21: PNR-level (rowspan, first row only) ── */}
@@ -971,31 +1018,21 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
                               />
                             </td>
 
-                            {/* Col 12: Price Type */}
-                            <td rowSpan={sectorCount} className={cn(TD_C, pnrBorderB)} style={{ backgroundColor: hvBg }}>
-                              <select value={fmt}
-                                onChange={e => handlePriceTypeChange(pnrIdx, e.target.value as 'FARE' | 'FARE_YQ' | 'ALL_IN')}
-                                className={cn('w-full min-w-0 h-7 text-center text-[12px] bg-transparent border-0 focus:outline-none cursor-pointer font-medium',
-                                  fmt === 'FARE_YQ' ? 'text-amber-700' : fmt === 'ALL_IN' ? 'text-blue-700' : 'text-slate-700')}>
-                                <option value="FARE">FARE</option>
-                                <option value="FARE_YQ">FARE+YQ</option>
-                                <option value="ALL_IN">ALL IN</option>
-                              </select>
-                            </td>
-
-                            {/* Col 13: รายละเอียดราคา — Fare + Tax + YQ + Currency combined vertically */}
+                            {/* Col 12: รายละเอียดราคา — Fare + Tax + YQ + Currency combined vertically */}
                             <td rowSpan={sectorCount}
                               className={cn('border-r border-[#E5EAF0] align-top overflow-hidden box-border', pnrBorderB)}
                               style={{ backgroundColor: hvBg, transition: 'background-color 1.2s ease' }}>
                               <div className="flex flex-col py-1">
-                                {/* Header: price format badge + currency selector */}
-                                <div className="flex items-center justify-between px-1.5 pb-0.5 mb-0.5 border-b border-[#E5EAF0]">
-                                  <span className={cn('text-[9px] font-bold leading-none px-1 py-0.5 rounded',
-                                    fmt === 'FARE_YQ' ? 'bg-amber-100 text-amber-700' :
-                                    fmt === 'ALL_IN'  ? 'bg-blue-100 text-blue-700' :
-                                    'bg-slate-100 text-slate-600')}>
-                                    {fmt === 'FARE' ? 'FARE' : fmt === 'FARE_YQ' ? 'FARE+YQ' : 'ALL IN'}
-                                  </span>
+                                {/* Header: price format dropdown + currency selector */}
+                                <div className="flex items-center justify-between px-1 pb-0.5 mb-0.5 border-b border-[#E5EAF0]">
+                                  <select value={fmt}
+                                    onChange={e => handlePriceTypeChange(pnrIdx, e.target.value as 'FARE' | 'FARE_YQ' | 'ALL_IN')}
+                                    className={cn('h-[22px] text-[11px] font-bold cursor-pointer focus:outline-none border-0 bg-transparent rounded py-0 pl-0 pr-3 min-w-0',
+                                      fmt === 'FARE_YQ' ? 'text-amber-700' : fmt === 'ALL_IN' ? 'text-blue-700' : 'text-slate-600')}>
+                                    <option value="FARE">FARE</option>
+                                    <option value="FARE_YQ">FARE+YQ</option>
+                                    <option value="ALL_IN">ALL IN</option>
+                                  </select>
                                   <CurrencyCombobox variant="inline" value={p.currency || currency} stockDefault={currency}
                                     currencies={currencyOptions} onChange={code => handleCurrencyChange(pnrIdx, code)}
                                     className="w-[38px]" />
@@ -1032,13 +1069,6 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
                                     }
                                   </div>
                                 </div>
-                                {/* Total row */}
-                                <div className="flex items-center gap-1 px-1.5 mt-0.5 pt-0.5 border-t border-[#E5EAF0]">
-                                  <span className="text-[9px] text-slate-400 shrink-0">รวม</span>
-                                  <span className="flex-1 min-w-0 text-right text-[11px] font-semibold text-emerald-700 tabular-nums truncate">
-                                    {(p.total_amount ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                  </span>
-                                </div>
                               </div>
                             </td>
 
@@ -1053,86 +1083,149 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
                             </td>
 
                             {/* Col 18: TTL */}
-                            <td rowSpan={sectorCount} className={cn(TD_L, pnrBorderB)} style={{ backgroundColor: hvBg }}>
-                              <button type="button"
-                                onClick={e => {
-                                  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-                                  const vh = window.innerHeight; const pw = 400; const ph = 340
-                                  const top = rect.bottom + 4 + ph > vh ? Math.max(4, rect.top - ph - 4) : rect.bottom + 4
-                                  const left = Math.max(4, Math.min(rect.left, window.innerWidth - pw - 4))
-                                  setTtlPopover({ idx: pnrIdx, pos: { top, left, width: pw } })
-                                }}
-                                className={cn('w-full h-7 flex items-center justify-between gap-1 px-1 rounded text-left transition-colors text-[11px]',
-                                  ttlSt === 'past' ? 'text-red-600 hover:bg-red-50' :
-                                  ttlSt === 'near' ? 'text-amber-700 hover:bg-amber-50' :
-                                  hasTtl(p) ? 'text-slate-700 hover:bg-slate-50' : 'hover:bg-slate-50')}>
-                                {hasTtl(p) && p.ttl_date ? (
-                                  <>
-                                    <span className="font-medium truncate text-[11px]">
-                                      {p.ttl_type === 'DAYS_BEFORE' ? `−${p.ttl_days_before}d · ${formatTtlDisplay(p.ttl_date, p.ttl_time ?? null)}` : formatTtlDisplay(p.ttl_date, p.ttl_time ?? null)}
-                                    </span>
-                                    <Pencil size={9} className="text-slate-300 shrink-0" />
-                                  </>
-                                ) : (
-                                  <span className="text-slate-300 italic text-[10px]">ตั้ง TTL...</span>
-                                )}
-                              </button>
+                            <td rowSpan={sectorCount}
+                              className={cn(TD_L, pnrBorderB, ttlPopover === pnrIdx ? 'outline outline-1 outline-offset-[-1px] outline-[#05a94f]' : '')}
+                              style={{ backgroundColor: hvBg }}>
+                              <Popover.Root
+                                open={ttlPopover === pnrIdx}
+                                onOpenChange={open => setTtlPopover(open ? pnrIdx : null)}
+                              >
+                                <Popover.Trigger asChild>
+                                  <button type="button"
+                                    title={hasTtl(p) && p.ttl_date
+                                      ? `${formatDateTimeThai(p.ttl_date, p.ttl_time ?? null)}${p.ttl_type === 'DAYS_BEFORE' ? ` · ก่อนเดินทาง ${p.ttl_days_before} วัน` : p.ttl_type === 'FIXED_DATE' ? ' · วันที่กำหนดเอง' : ''}`
+                                      : 'ยังไม่ได้กำหนด NAME TTL — คลิกเพื่อตั้งค่า'}
+                                    className={cn('group w-full h-full min-h-[28px] flex flex-col items-start justify-center gap-0 px-2 py-0.5 rounded text-left transition-colors',
+                                      ttlSt === 'past' ? 'text-red-600 hover:bg-red-50' :
+                                      ttlSt === 'near' ? 'text-amber-700 hover:bg-amber-50' :
+                                      hasTtl(p) ? 'text-slate-700 hover:bg-slate-50' : 'hover:bg-slate-50')}>
+                                    {hasTtl(p) && p.ttl_date ? (
+                                      <>
+                                        <div className="w-full flex items-center justify-between gap-1">
+                                          <span className="font-medium text-[11px] whitespace-nowrap leading-[16px]">
+                                            {formatDateTimeThai(p.ttl_date, p.ttl_time ?? null)}
+                                          </span>
+                                          <Pencil size={9} className="text-slate-300 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                        </div>
+                                        {(p.ttl_type === 'DAYS_BEFORE' || p.ttl_type === 'FIXED_DATE') && (
+                                          <span className="text-[9px] leading-[16px] text-slate-400 whitespace-nowrap">
+                                            {p.ttl_type === 'DAYS_BEFORE' ? `ก่อนเดินทาง ${p.ttl_days_before} วัน` : 'วันที่กำหนดเอง'}
+                                          </span>
+                                        )}
+                                      </>
+                                    ) : (
+                                      <span className="text-slate-400 text-[10px]">ไม่ระบุ</span>
+                                    )}
+                                  </button>
+                                </Popover.Trigger>
+                                <Popover.Portal>
+                                  <Popover.Content
+                                    side="bottom"
+                                    align="end"
+                                    sideOffset={6}
+                                    avoidCollisions
+                                    collisionPadding={8}
+                                    style={{ width: 360, maxWidth: 'calc(100vw - 32px)', zIndex: 9200 }}
+                                  >
+                                    <TtlEditor
+                                      pnrCode={p.pnr_code || p.dummy_pnr || undefined}
+                                      travelDate={p.travel_start ?? null}
+                                      ttlType={p.ttl_type ?? 'NONE'}
+                                      ttlDaysBefore={p.ttl_days_before ?? null}
+                                      ttlDate={p.ttl_date ?? null}
+                                      ttlTime={p.ttl_time ?? null}
+                                      onSave={val => {
+                                        update(pnrIdx, { ttl_type: val.ttlType, ttl_days_before: val.ttlDaysBefore,
+                                          ttl_status: val.ttlType !== 'NONE' ? 'SET' : 'UNSET', ttl_date: val.ttlDate, ttl_time: val.ttlTime })
+                                        setTtlPopover(null)
+                                      }}
+                                      onClose={() => setTtlPopover(null)}
+                                    />
+                                  </Popover.Content>
+                                </Popover.Portal>
+                              </Popover.Root>
                             </td>
 
-                            {/* Col 19: การยืนยัน (Switch) */}
-                            <td rowSpan={sectorCount} className={cn(TD_C, pnrBorderB)} style={{ backgroundColor: hvBg }}>
-                              <div className="flex flex-col items-center gap-0.5">
-                                <button type="button" role="switch" aria-checked={p.status === 'Confirmed'}
-                                  aria-label={`การยืนยัน PNR ${pnrIdx + 1}`}
-                                  onClick={() => {
-                                    const ns: PNRStatus = p.status === 'Confirmed' ? 'Pending' : 'Confirmed'
-                                    update(pnrIdx, { status: ns, confirmation_status: ns === 'Confirmed' ? 'CONFIRMED' : 'PENDING_CONFIRMATION' })
-                                    showToast(`PNR ${pnrIdx + 1}: ${STATUS_LABELS[ns]}`)
-                                  }}
-                                  onKeyDown={e => {
-                                    if (e.key === ' ' || e.key === 'Enter') {
-                                      e.preventDefault()
-                                      const ns: PNRStatus = p.status === 'Confirmed' ? 'Pending' : 'Confirmed'
-                                      update(pnrIdx, { status: ns, confirmation_status: ns === 'Confirmed' ? 'CONFIRMED' : 'PENDING_CONFIRMATION' })
-                                      showToast(`PNR ${pnrIdx + 1}: ${STATUS_LABELS[ns]}`)
-                                    }
-                                  }}
-                                  className={cn('relative inline-flex h-[14px] w-[26px] flex-shrink-0 items-center rounded-full transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#05a94f]/40',
-                                    p.status === 'Confirmed' ? 'bg-[#05a94f]' : 'bg-slate-300')}>
-                                  <span className={cn('inline-block h-[10px] w-[10px] transform rounded-full bg-white shadow-sm transition-transform duration-200',
-                                    p.status === 'Confirmed' ? 'translate-x-[13px]' : 'translate-x-[2px]')} />
-                                </button>
-                                <span className={cn('text-[9px] font-medium whitespace-nowrap leading-tight',
-                                  p.status === 'Confirmed' ? 'text-green-600' : 'text-slate-400')}>
-                                  {STATUS_LABELS[p.status] ?? 'รอยืนยัน'}
-                                </span>
-                              </div>
-                            </td>
-
-                            {/* Col 20: Remark */}
+                            {/* Col 19: Remark */}
                             <td rowSpan={sectorCount} className={cn(TD_L, pnrBorderB)} style={{ backgroundColor: hvBg }}>
-                              <input value={p.remark}
-                                onChange={e => update(pnrIdx, { remark: e.target.value })}
-                                placeholder="หมายเหตุ..."
-                                className="w-full min-w-0 h-7 text-[12px] bg-transparent border-0 focus:outline-none text-slate-600 placeholder:text-slate-300"
-                              />
+                              <Popover.Root
+                                open={remarkPopover === pnrIdx}
+                                onOpenChange={open => setRemarkPopover(open ? pnrIdx : null)}
+                              >
+                                <Popover.Trigger asChild>
+                                  <button type="button"
+                                    title={p.remark || undefined}
+                                    className="w-full h-7 flex items-center px-1.5 text-left rounded hover:bg-slate-50 transition-colors">
+                                    {p.remark
+                                      ? <span className="text-[12px] text-slate-600 truncate">{p.remark}</span>
+                                      : <span className="text-slate-300 text-[12px]">—</span>}
+                                  </button>
+                                </Popover.Trigger>
+                                <Popover.Portal>
+                                  <Popover.Content
+                                    side="bottom" align="end" sideOffset={4}
+                                    avoidCollisions collisionPadding={8}
+                                    style={{ width: 240, zIndex: 9200 }}
+                                  >
+                                    <div className="bg-white border border-slate-200 rounded-xl shadow-2xl p-3 space-y-2">
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-xs font-semibold text-slate-700">หมายเหตุ PNR #{pnrIdx + 1}</span>
+                                        <button type="button" onClick={() => setRemarkPopover(null)} className="text-slate-300 hover:text-slate-500 text-base leading-none">×</button>
+                                      </div>
+                                      <textarea
+                                        value={p.remark}
+                                        onChange={e => update(pnrIdx, { remark: e.target.value })}
+                                        autoFocus
+                                        rows={3}
+                                        placeholder="พิมพ์หมายเหตุ..."
+                                        className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 resize-none focus:outline-none focus:border-[#05a94f] focus:ring-1 focus:ring-[#05a94f]/20 text-slate-700 placeholder:text-slate-300"
+                                      />
+                                      <div className="flex justify-end">
+                                        <button type="button" onClick={() => setRemarkPopover(null)}
+                                          className="px-3 py-1 text-xs font-semibold bg-[#05a94f] text-white rounded-lg hover:bg-[#048f43] transition-colors">
+                                          เสร็จสิ้น
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </Popover.Content>
+                                </Popover.Portal>
+                              </Popover.Root>
                             </td>
 
                             {/* Col 21: Action */}
-                            <td rowSpan={sectorCount} className={cn(TD_C, pnrBorderB, 'border-r-0')} style={{ backgroundColor: hvBg }}>
-                              <div className="flex items-center justify-center gap-0.5">
-                                <button type="button" onClick={() => duplicateRow(pnrIdx)} title="คัดลอก PNR"
-                                  className="p-1 rounded text-slate-400 hover:text-[#05a94f] hover:bg-slate-100 transition-colors">
-                                  <Copy size={13} />
-                                </button>
-                                <button type="button" onClick={() => handleResetAllSectors(pnrIdx)} title="คืนค่า Flight Set"
-                                  className="p-1 rounded text-slate-400 hover:text-blue-500 hover:bg-slate-100 transition-colors">
-                                  <RotateCcw size={13} />
-                                </button>
-                                <button type="button" onClick={() => deleteRow(pnrIdx)} title="ลบ PNR"
-                                  className="p-1 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors">
-                                  <Trash2 size={13} />
-                                </button>
+                            <td rowSpan={sectorCount} className={cn('border-b', pnrBorderB, 'align-middle p-0')} style={{ backgroundColor: hvBg }}>
+                              <div className="w-full h-full flex items-center justify-center" style={{ minHeight: 36 * sectorCount }}>
+                              <DropdownMenu.Root>
+                                <DropdownMenu.Trigger asChild>
+                                  <button type="button" title="จัดการรายการ"
+                                    className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-md transition-colors text-[16px] font-bold leading-none focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-300">
+                                    ⋮
+                                  </button>
+                                </DropdownMenu.Trigger>
+                                <DropdownMenu.Portal>
+                                  <DropdownMenu.Content
+                                    side="bottom" align="end" sideOffset={4}
+                                    style={{ zIndex: 9200 }}
+                                    className="bg-white border border-slate-200 rounded-xl shadow-2xl py-1 min-w-[148px] text-xs outline-none">
+                                    <DropdownMenu.Item
+                                      onSelect={() => duplicateRow(pnrIdx)}
+                                      className="flex items-center gap-2 px-3 py-1.5 text-slate-600 cursor-pointer outline-none select-none data-[highlighted]:bg-slate-50">
+                                      <Copy size={12} className="shrink-0" />คัดลอก PNR
+                                    </DropdownMenu.Item>
+                                    <DropdownMenu.Item
+                                      onSelect={() => handleResetAllSectors(pnrIdx)}
+                                      className="flex items-center gap-2 px-3 py-1.5 text-slate-600 cursor-pointer outline-none select-none data-[highlighted]:bg-slate-50">
+                                      <RotateCcw size={12} className="shrink-0" />คืนค่าตาม Flight Set
+                                    </DropdownMenu.Item>
+                                    <DropdownMenu.Separator className="my-1 h-px bg-slate-100" />
+                                    <DropdownMenu.Item
+                                      onSelect={() => deleteRow(pnrIdx)}
+                                      className="flex items-center gap-2 px-3 py-1.5 text-red-600 cursor-pointer outline-none select-none data-[highlighted]:bg-red-50">
+                                      <Trash2 size={12} className="shrink-0" />ลบ PNR
+                                    </DropdownMenu.Item>
+                                  </DropdownMenu.Content>
+                                </DropdownMenu.Portal>
+                              </DropdownMenu.Root>
                               </div>
                             </td>
                           </>
@@ -1153,8 +1246,6 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
           {[
             { label: 'PNR รวม', value: summaryStats.totalPnr, cls: 'text-slate-700' },
             { label: 'Seat รวม', value: summaryStats.totalSeats.toLocaleString('en-US'), cls: 'text-slate-700' },
-            { label: 'รอยืนยัน', value: summaryStats.pendingCount, cls: 'text-amber-600' },
-            { label: 'ยืนยันแล้ว', value: summaryStats.confirmedCount, cls: 'text-green-600' },
             ...(summaryStats.noTtlCount > 0 ? [{ label: 'ยังไม่มี TTL', value: summaryStats.noTtlCount, cls: 'text-slate-400' }] : []),
           ].map((item, i) => (
             <Fragment key={item.label}>
@@ -1344,25 +1435,6 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
       <ImportExcelModal open={importOpen} onClose={() => setImportOpen(false)} onConfirm={addPastedPNRs} existingPnrCodes={existingPnrCodes} sectors={sectors} />
       <BulkPnrBuilder open={bulkOpen} onClose={() => setBulkOpen(false)} mode="create_stock" sectors={builderSectors} conditions={builderConditions} currency={currency} onConfirm={addBulkPNRs} />
 
-      {ttlPopover !== null && (
-        <>
-          <div className="fixed inset-0 z-[9998]" onClick={() => setTtlPopover(null)} />
-          <TtlEditor
-            pos={ttlPopover.pos}
-            travelDate={pnrs[ttlPopover.idx]?.travel_start ?? null}
-            ttlType={pnrs[ttlPopover.idx]?.ttl_type ?? 'NONE'}
-            ttlDaysBefore={pnrs[ttlPopover.idx]?.ttl_days_before ?? null}
-            ttlDate={pnrs[ttlPopover.idx]?.ttl_date ?? null}
-            ttlTime={pnrs[ttlPopover.idx]?.ttl_time ?? null}
-            onSave={val => {
-              update(ttlPopover.idx, { ttl_type: val.ttlType, ttl_days_before: val.ttlDaysBefore,
-                ttl_status: val.ttlType !== 'NONE' ? 'SET' : 'UNSET', ttl_date: val.ttlDate, ttl_time: val.ttlTime })
-              setTtlPopover(null)
-            }}
-            onClose={() => setTtlPopover(null)}
-          />
-        </>
-      )}
     </div>
   )
 }

@@ -128,8 +128,6 @@ interface InternalRow {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const DAY_ABBR = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'] as const
-const STATUS_OPTS = ['Pending', 'Confirmed']
-const STATUS_LABELS: Record<string, string> = { Pending: 'รอยืนยัน', Confirmed: 'ยืนยันแล้ว' }
 
 const INIT_SHARED: SharedCfg = {
   seatTotal: 0, flightSetId: '',
@@ -501,7 +499,6 @@ export function BulkPnrBuilder({
   // Bulk toolbar
   const [bSeat, setBSeat]   = useState('')
   const [bCond, setBCond]   = useState('')
-  const [bStat, setBStat]   = useState('')
 
   // Auto-select FS when modal opens
   useEffect(() => {
@@ -647,7 +644,7 @@ export function BulkPnrBuilder({
     }))
   }
 
-  const applyBulk = (field: 'seat' | 'cond' | 'status') => {
+  const applyBulk = (field: 'seat' | 'cond') => {
     setRows(prev => prev.map(r => {
       if (!r.selected) return r
       let m = { ...r }
@@ -657,7 +654,6 @@ export function BulkPnrBuilder({
         const cond = conditions.find(c => c.code === bCond)
         m.paymentDueDate = calcPaymentDue(m.travelStart, m.travelEnd, cond)
       }
-      if (field === 'status') { m.status = bStat }
       return m
     }))
   }
@@ -1235,16 +1231,7 @@ export function BulkPnrBuilder({
                       </select>
                     </FL>
 
-                    {/* Row 4: Status — full width */}
-                    <FL label="Status" className="col-span-2">
-                      <select value={shared.status}
-                        onChange={e => setShared(s => ({ ...s, status: e.target.value }))}
-                        className={iCls}>
-                        {STATUS_OPTS.map(o => <option key={o} value={o}>{STATUS_LABELS[o]}</option>)}
-                      </select>
-                    </FL>
-
-                    {/* Row 5: TTL — full width */}
+                    {/* Row 4: TTL — full width */}
                     <div className="col-span-2 rounded-xl border border-slate-200 bg-white p-3.5 space-y-3">
                       {/* Type selector */}
                       <div>
@@ -1413,16 +1400,6 @@ export function BulkPnrBuilder({
                     <button onClick={() => applyBulk('cond')}
                       className="h-7 px-2.5 text-[11px] font-semibold bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">ใช้</button>
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs text-blue-600 font-medium">Status:</span>
-                    <select value={bStat} onChange={e => setBStat(e.target.value)}
-                      className="h-7 border border-blue-300 rounded-lg px-2 text-xs focus:outline-none">
-                      <option value="">—</option>
-                      {STATUS_OPTS.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                    <button onClick={() => applyBulk('status')}
-                      className="h-7 px-2.5 text-[11px] font-semibold bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">ใช้</button>
-                  </div>
                   <button onClick={deleteSelected}
                     className="ml-auto flex items-center gap-1.5 text-xs font-medium text-red-500 hover:text-red-700 transition-colors">
                     <Trash2 size={12} /> ลบที่เลือก ({numSelected})
@@ -1439,14 +1416,14 @@ export function BulkPnrBuilder({
                         <input type="checkbox" checked={allSelected} onChange={toggleAll}
                           className="rounded border-slate-300 text-emerald-600" />
                       </th>
-                      {['#','PNR / Dummy','Travel Start','Travel End','Seat','ประเภทราคา','Fare','Tax','YQ','ยอดสุทธิ','Condition','Payment Due','TTL','Status',''].map(h => (
+                      {['#','PNR / Dummy','Travel Start','Travel End','Seat','ประเภทราคา','Fare','Tax','YQ','ยอดสุทธิ','Condition','Payment Due','TTL',''].map(h => (
                         <th key={h} className="px-2 h-10 text-xs font-semibold text-slate-500 text-left whitespace-nowrap">{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {rows.length === 0 && (
-                      <tr><td colSpan={15} className="py-12 text-center text-sm text-slate-400">ไม่มีรายการ — ย้อนกลับเพื่อเลือกวัน</td></tr>
+                      <tr><td colSpan={14} className="py-12 text-center text-sm text-slate-400">ไม่มีรายการ — ย้อนกลับเพื่อเลือกวัน</td></tr>
                     )}
                     {rows.map(row => {
                       const hasErr = row.errors.length > 0
@@ -1467,8 +1444,17 @@ export function BulkPnrBuilder({
                             ) : mode === 'create_stock' ? (
                               <span className="text-[10px] text-slate-400 italic whitespace-nowrap">สร้างอัตโนมัติ</span>
                             ) : (
-                              <input value={row.pnrCode} onChange={e => updateRow(row.rowId, { pnrCode: e.target.value.toUpperCase() })}
+                              <input
+                                value={row.pnrCode}
+                                maxLength={7}
+                                onChange={e => updateRow(row.rowId, { pnrCode: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 7) })}
+                                onPaste={e => {
+                                  e.preventDefault()
+                                  const v = e.clipboardData.getData('text').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 7)
+                                  updateRow(row.rowId, { pnrCode: v })
+                                }}
                                 placeholder="PNR Code"
+                                title="กรอกได้เฉพาะภาษาอังกฤษและตัวเลข ไม่เกิน 7 ตัวอักษร"
                                 className={cn('w-28 h-7 border rounded-lg px-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-emerald-500',
                                   hasErr && !row.pnrCode.trim() ? 'border-red-400 bg-red-50' : 'border-slate-300')} />
                             )}
@@ -1547,14 +1533,6 @@ export function BulkPnrBuilder({
                                   </div>
                                 : <span className="text-[10px] text-red-400">คำนวณไม่ได้</span>
                             }
-                          </td>
-                          {/* Status */}
-                          <td className="px-1 py-2">
-                            <select value={row.status}
-                              onChange={e => updateRow(row.rowId, { status: e.target.value })}
-                              className="h-7 border border-slate-300 rounded-lg px-1.5 text-xs focus:outline-none">
-                              {STATUS_OPTS.map(s => <option key={s} value={s}>{s}</option>)}
-                            </select>
                           </td>
                           {/* Delete */}
                           <td className="px-2 py-2 text-center">
