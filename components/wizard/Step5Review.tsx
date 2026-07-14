@@ -4,7 +4,7 @@ import { useState, Fragment } from 'react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Badge, TicketTypeBadge, PNRStatusBadge } from '@/components/ui/badge'
 import { Table, TableHead, TableBody, Th, Td, TableRow, EmptyRow } from '@/components/ui/table'
-import { formatDate, formatDateTime, calcTravelEndFromSectors, buildRouteText } from '@/lib/utils'
+import { formatDate, calcTravelEndFromSectors, buildRouteText } from '@/lib/utils'
 import { getStockTypeConfigSafe } from '@/lib/stock-type-config'
 import { calcCondTtlDate } from '@/lib/condition-schema'
 import { resolvePnrFormTtl } from '@/lib/ttl-utils'
@@ -262,7 +262,7 @@ export default function Step5Review({ state, excludeStockId }: Step5Props) {
         </CardHeader>
         <CardContent className="space-y-3">
           {conditions.length === 0 ? (
-            <p className="text-sm text-slate-400">ไม่มี Condition — PNR จะแสดงเป็น "ไม่ระบุ"</p>
+            <p className="text-sm text-slate-400">ไม่มี Condition — PNR จะแสดงเป็น &ldquo;ไม่ระบุ&rdquo;</p>
           ) : (
             conditions.map((c, i) => (
               <div key={i} className="border border-slate-200 rounded-xl p-3">
@@ -352,7 +352,7 @@ export default function Step5Review({ state, excludeStockId }: Step5Props) {
                           <button
                             onClick={() => setExpandedPnrIds(prev => {
                               const s = new Set(prev)
-                              s.has(i) ? s.delete(i) : s.add(i)
+                              if (s.has(i)) { s.delete(i) } else { s.add(i) }
                               return s
                             })}
                             className="p-0.5 mt-0.5 rounded text-slate-300 hover:text-slate-600 transition-colors flex-shrink-0"
@@ -472,6 +472,116 @@ export default function Step5Review({ state, excludeStockId }: Step5Props) {
           <p className="text-xl font-bold text-[#05a94f]">{totalAmount.toLocaleString()}</p>
         </div>
       </div>
+
+      {/* ── ข้อมูลที่ปรับจาก Flight Set ── */}
+      {(() => {
+        // Collect PNRs where any sector_date has time_override = true
+        type OverrideRow = {
+          pnrIdx: number
+          pnrLabel: string
+          sectorIdx: number
+          sectorType: string
+          field: string
+          fsValue: string
+          pnrValue: string
+        }
+        const overrideRows: OverrideRow[] = []
+
+        pnrs.forEach((p, pIdx) => {
+          const pnrSectors = getPnrSectors(p)
+          const pnrLabel = p.pnr_code || p.dummy_pnr || `PNR ${pIdx + 1}`
+          ;(p.sector_dates ?? []).forEach((sd, sIdx) => {
+            if (!sd.time_override) return
+            const templateSector = pnrSectors[sIdx]
+            if (!templateSector) return
+            if (sd.dep_time !== undefined && sd.dep_time !== (templateSector.dep_time ?? '')) {
+              overrideRows.push({ pnrIdx: pIdx, pnrLabel, sectorIdx: sIdx, sectorType: sd.sector_type, field: 'Dep Time', fsValue: templateSector.dep_time ?? '—', pnrValue: sd.dep_time || '—' })
+            }
+            if (sd.arr_time !== undefined && sd.arr_time !== (templateSector.arr_time ?? '')) {
+              overrideRows.push({ pnrIdx: pIdx, pnrLabel, sectorIdx: sIdx, sectorType: sd.sector_type, field: 'Arr Time', fsValue: templateSector.arr_time ?? '—', pnrValue: sd.arr_time || '—' })
+            }
+          })
+        })
+
+        if (overrideRows.length === 0) return null
+
+        const pnrCount    = new Set(overrideRows.map(r => r.pnrIdx)).size
+        const sectorCount = new Set(overrideRows.map(r => `${r.pnrIdx}-${r.sectorIdx}`)).size
+        const pnrNoChange = pnrs.length - pnrCount
+
+        return (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-amber-700">
+                <AlertTriangle size={14} className="text-amber-500" />
+                ข้อมูลที่ปรับจาก Flight Set
+              </CardTitle>
+              <div className="flex items-center gap-3 text-xs flex-wrap">
+                <span className="text-amber-600 font-medium">{pnrCount} PNR ที่ปรับ</span>
+                <span className="text-slate-400">·</span>
+                <span className="text-slate-500">{sectorCount} Sector</span>
+                <span className="text-slate-400">·</span>
+                <span className="text-slate-500">{overrideRows.length} Field</span>
+                {pnrNoChange > 0 && (
+                  <>
+                    <span className="text-slate-400">·</span>
+                    <span className="text-slate-400">{pnrNoChange} PNR ใช้ค่าจาก Flight Set</span>
+                  </>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {/* Confirmation note */}
+              <div className="flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2.5 text-xs text-amber-700">
+                <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+                <span>
+                  ข้อมูลที่แสดงด้านล่างจะแทนค่าจาก Flight Set เฉพาะ PNR ที่ระบุ
+                  โดยไม่สร้าง Flight Set ใหม่
+                </span>
+              </div>
+
+              {/* Group by PNR */}
+              {Array.from(new Set(overrideRows.map(r => r.pnrIdx))).map(pIdx => {
+                const rows = overrideRows.filter(r => r.pnrIdx === pIdx)
+                const label = rows[0].pnrLabel
+                return (
+                  <div key={pIdx} className="rounded-lg border border-amber-200 bg-amber-50/30 overflow-hidden">
+                    <div className="px-3 py-1.5 border-b border-amber-200 bg-amber-50">
+                      <span className="text-xs font-bold font-mono text-amber-800">{label}</span>
+                    </div>
+                    <table className="w-full text-[11px]">
+                      <thead>
+                        <tr className="border-b border-amber-100">
+                          <th className="px-3 py-1 text-left text-slate-400 font-medium">Sector</th>
+                          <th className="px-3 py-1 text-left text-slate-400 font-medium">Field</th>
+                          <th className="px-3 py-1 text-left text-slate-400 font-medium">ค่าจาก Flight Set</th>
+                          <th className="px-3 py-1 text-left text-slate-400 font-medium">ค่าที่จะบันทึก</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rows.map((r, i) => (
+                          <tr key={i} className="border-t border-amber-100/60">
+                            <td className="px-3 py-1.5">
+                              <span className={`font-medium ${
+                                r.sectorType === 'Departure' ? 'text-green-700' :
+                                r.sectorType === 'Arrival'   ? 'text-purple-700' :
+                                                                'text-amber-700'
+                              }`}>S{r.sectorIdx + 1} {r.sectorType}</span>
+                            </td>
+                            <td className="px-3 py-1.5 text-slate-500">{r.field}</td>
+                            <td className="px-3 py-1.5 text-slate-400 font-mono">{r.fsValue}</td>
+                            <td className="px-3 py-1.5 text-amber-600 font-mono font-semibold">{r.pnrValue}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )
+              })}
+            </CardContent>
+          </Card>
+        )
+      })()}
     </div>
   )
 }
