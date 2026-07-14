@@ -12,7 +12,7 @@ import {
 import { PnrActionMenu } from '@/components/tickets/PnrActionMenu'
 import { BulkPnrBuilder } from '@/components/shared/BulkPnrBuilder'
 import type { BulkPnrFlightSet, BulkPnrCondition } from '@/components/shared/BulkPnrBuilder'
-import { formatDate, formatDateTime, formatNumber, calcTravelEndFromSectors, calculatePlusDay } from '@/lib/utils'
+import { formatDate, formatDateTime, formatNumber, calcTravelEndFromSectors, calculatePlusDay, buildRouteText } from '@/lib/utils'
 import { calcTtlDateFromTravel, formatTtlDisplay, condTtlTypeToTtlType, type TtlType } from '@/lib/ttl-utils'
 import {
   saveDemoStock, calculateStockSummary, checkPNRDuplicatesInSystem, getStockFlightSets,
@@ -32,7 +32,7 @@ interface PNRRow {
   pnr_code: string | null
   dummy_pnr: string | null
   pnr_type: string
-  flight_set_name: string
+  route: string | null
   travel_start: string
   travel_end: string
   seat_total: number
@@ -351,24 +351,23 @@ function CfSectorTable({ sectors, errors, defaultAirlineCode, onChange }: CfSect
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function PNRCell({ code, dummy, flightSetName }: { code: string | null; dummy: string | null; type?: string; flightSetName?: string }) {
+function PNRCell({ code, dummy, route }: { code: string | null; dummy: string | null; type?: string; route?: string | null }) {
   const display = code || dummy
+  const routeLabel = route ? `Route: ${route}` : null
   return (
     <div className="flex flex-col items-start" style={{ gap: 3, minWidth: 0 }}>
       {/* บรรทัด 1: PNR Code */}
       <span className="font-mono text-xs font-bold whitespace-nowrap" style={{ wordBreak: 'normal', overflowWrap: 'normal' }}>
         {display || <span className="text-slate-300 italic font-normal text-[10px]">ไม่ระบุ</span>}
       </span>
-      {/* บรรทัด 2: Flight Set */}
-      {flightSetName && (
-        <span
-          className="text-[10px] text-slate-400 font-medium"
-          style={{ maxWidth: 260, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}
-          title={flightSetName}
-        >
-          {flightSetName}
-        </span>
-      )}
+      {/* บรรทัด 2: Route */}
+      <span
+        className="text-[10px] text-slate-400 font-medium"
+        style={{ maxWidth: 260, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}
+        title={routeLabel ?? undefined}
+      >
+        {routeLabel ?? <span className="italic text-slate-300">Route: ยังไม่ระบุ</span>}
+      </span>
       {/* บรรทัด 3: Badge ประเภทรหัส */}
       {code ? (
         <span className="inline-flex w-fit px-1.5 py-px rounded text-[9px] font-medium bg-blue-50 text-blue-600 border border-blue-200 whitespace-nowrap">มี PNR แล้ว</span>
@@ -1324,13 +1323,30 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
 
   // Derive PNRRow[] display
   const liveFlightSets = liveStock ? getStockFlightSets(liveStock) : []
+
+  // Build route text from flight set sectors → stock sectors → stock routeText
+  const buildPnrRoute = (pnr: DemoPNR): string | null => {
+    const fs = liveFlightSets.find(f => f.flightSetId === pnr.flightSetId) ?? liveFlightSets[0]
+    const fsSectors = fs?.sectors
+    if (fsSectors && fsSectors.length > 0) {
+      const sorted = [...fsSectors].sort((a, b) => a.seq - b.seq)
+      const route = buildRouteText(sorted.map(s => ({ dep_airport_code: s.depAirportCode, arr_airport_code: s.arrAirportCode })))
+      if (route) return route
+    }
+    if (liveStock?.sectors && liveStock.sectors.length > 0) {
+      const route = buildRouteText(liveStock.sectors.map(s => ({ dep_airport_code: s.depAirportCode, arr_airport_code: s.arrAirportCode })))
+      if (route) return route
+    }
+    return liveStock?.routeText || null
+  }
+
   const pnrRows: PNRRow[] = liveStock
     ? liveStock.pnrs.map(p => ({
         id: p.pnrId,
         pnr_code: p.pnrCode || null,
         dummy_pnr: p.dummyPnr || null,
         pnr_type: p.pnrType,
-        flight_set_name: liveFlightSets.find(f => f.flightSetId === p.flightSetId)?.flightSetName ?? liveFlightSets[0]?.flightSetName ?? 'Default',
+        route: buildPnrRoute(p),
         travel_start: p.travelStart,
         travel_end: p.travelEnd,
         seat_total: p.seatTotal,
@@ -1534,7 +1550,7 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                             {/* PNR cell (PNR-level, rowspan) */}
                             {isFirstRow && (
                               <td rowSpan={rowCount} className={`${canEdit ? 'sticky left-8 z-10' : 'sticky left-0 z-10'} bg-inherit min-w-[190px] px-2 py-1.5 align-top border-r border-slate-200 shadow-[2px_0_4px_rgba(0,0,0,0.04)]`}>
-                                <PNRCell code={p.pnr_code} dummy={p.dummy_pnr} type={p.pnr_type} flightSetName={p.flight_set_name} />
+                                <PNRCell code={p.pnr_code} dummy={p.dummy_pnr} type={p.pnr_type} route={p.route} />
                               </td>
                             )}
 
