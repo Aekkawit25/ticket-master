@@ -662,18 +662,23 @@ export default function PasteExcelModal({
                             <td className="border border-slate-200 p-0.5 align-top">
                               <ECell value={s.depTime} error={fe.depTime}
                                 id={`paste-ms-${g.groupKey}-${si}-depTime`}
-                                onChange={v => updateGroupSectorCell(g.groupKey, si, { depTime: v })} />
+                                onChange={v => updateGroupSectorCell(g.groupKey, si, {
+                                  depTime: v,
+                                  plusDay: s.arrTime && v ? (s.arrTime < v ? 1 : 0) : s.plusDay,
+                                })} />
                             </td>
                             <td className="border border-slate-200 p-0.5 align-top">
                               <ECell value={s.arrTime} error={fe.arrTime}
                                 id={`paste-ms-${g.groupKey}-${si}-arrTime`}
-                                onChange={v => updateGroupSectorCell(g.groupKey, si, { arrTime: v })} />
+                                onChange={v => updateGroupSectorCell(g.groupKey, si, {
+                                  arrTime: v,
+                                  plusDay: v && s.depTime ? (v < s.depTime ? 1 : 0) : s.plusDay,
+                                })} />
                             </td>
-                            <td className="border border-slate-200 p-0.5 align-top">
-                              <ECell type="number" value={String(s.plusDay)} error={fe.plusDay}
-                                id={`paste-ms-${g.groupKey}-${si}-plusDay`}
-                                onChange={v => updateGroupSectorCell(g.groupKey, si, { plusDay: parseInt(v, 10) || 0 })}
-                                className="text-center" />
+                            <td className="border border-slate-200 p-0.5 align-top text-center">
+                              <div className="px-1.5 py-[3px] text-[11px] font-medium text-slate-600">
+                                {s.arrTime && s.depTime ? (s.arrTime < s.depTime ? '+1' : '0') : String(s.plusDay)}
+                              </div>
                             </td>
                             {first && (
                               <td className="border border-slate-200 px-2 py-1 align-top" rowSpan={g.sectors.length}>

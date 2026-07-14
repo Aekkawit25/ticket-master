@@ -157,10 +157,9 @@ function SectorEditTable({ sectors, minSectors, errors, defaultAirlineCode, onCh
                   className="w-full border border-slate-300 rounded-md focus-within:ring-1 focus-within:ring-[#05a94f] focus-within:border-[#05a94f]" />
               </td>
               <td className="px-1 py-1.5 text-center">
-                <select value={s.arrDayOffset} onChange={e => update(i, { arrDayOffset: Number(e.target.value) })}
-                  className="w-full border border-slate-300 rounded-md px-1 py-1 text-xs text-center focus:outline-none focus:ring-1 focus:ring-[#05a94f]">
-                  {[0,1,2,3].map(d => <option key={d} value={d}>{d === 0 ? '0' : `+${d}`}</option>)}
-                </select>
+                <div className="w-full rounded-md px-1 py-1 text-xs text-center bg-slate-50 text-slate-600 font-medium border border-slate-200">
+                  {s.arrDayOffset === 0 ? '0' : `+${s.arrDayOffset}`}
+                </div>
               </td>
               <td className="px-1 py-1.5">
                 <input type="number" min="1" value={s.dayOffset}

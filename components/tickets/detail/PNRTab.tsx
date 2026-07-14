@@ -12,7 +12,7 @@ import {
 import { PnrActionMenu } from '@/components/tickets/PnrActionMenu'
 import { BulkPnrBuilder } from '@/components/shared/BulkPnrBuilder'
 import type { BulkPnrFlightSet, BulkPnrCondition } from '@/components/shared/BulkPnrBuilder'
-import { formatDate, formatDateTime, formatNumber, calcTravelEndFromSectors } from '@/lib/utils'
+import { formatDate, formatDateTime, formatNumber, calcTravelEndFromSectors, calculatePlusDay } from '@/lib/utils'
 import { calcTtlDateFromTravel, formatTtlDisplay, condTtlTypeToTtlType, type TtlType } from '@/lib/ttl-utils'
 import {
   saveDemoStock, calculateStockSummary, checkPNRDuplicatesInSystem, getStockFlightSets,
@@ -315,10 +315,9 @@ function CfSectorTable({ sectors, errors, defaultAirlineCode, onChange }: CfSect
                   className="w-full border border-slate-300 rounded focus-within:ring-1 focus-within:ring-[#05a94f] focus-within:border-[#05a94f]" />
               </td>
               <td className="px-1 py-1">
-                <select value={s.arrDayOffset} onChange={e => update(i, { arrDayOffset: Number(e.target.value) })}
-                  className="w-full border border-slate-300 rounded px-0.5 py-0.5 text-[11px] text-center focus:outline-none focus:ring-1 focus:ring-[#05a94f]">
-                  {[0,1,2,3].map(d => <option key={d} value={d}>{d === 0 ? '0' : `+${d}`}</option>)}
-                </select>
+                <div className="w-full rounded px-0.5 py-[3px] text-[11px] text-center bg-slate-50 text-slate-600 font-medium border border-slate-200">
+                  {s.arrDayOffset === 0 ? '0' : `+${s.arrDayOffset}`}
+                </div>
               </td>
               <td className="px-1 py-1">
                 <input type="number" min="1" value={s.dayOffset}
@@ -530,25 +529,14 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
       if (field === 'departureDate') {
         ov.departureDate = value
         ov.isDateOverride = true
-        if (value && ov.plusDay > 0) {
-          const [y, m, d] = value.split('-').map(Number)
-          const local = new Date(y, m - 1, d)
-          local.setDate(local.getDate() + ov.plusDay)
-          ov.arrivalDate = `${local.getFullYear()}-${String(local.getMonth() + 1).padStart(2, '0')}-${String(local.getDate()).padStart(2, '0')}`
-        } else if (value && ov.plusDay === 0) {
-          ov.arrivalDate = value
-        }
+        // Keep arrivalDate fixed; recalculate plusDay from both dates
+        const pd = calculatePlusDay(value, ov.arrivalDate)
+        ov.plusDay = pd !== null ? pd : 0
       } else {
         ov.arrivalDate = value
         ov.isDateOverride = true
-        if (value && ov.departureDate) {
-          try {
-            const [dy, dm, dd] = ov.departureDate.split('-').map(Number)
-            const [ay, am, ad] = value.split('-').map(Number)
-            const diff = Math.round((new Date(ay, am - 1, ad).getTime() - new Date(dy, dm - 1, dd).getTime()) / 86400000)
-            ov.plusDay = Math.max(0, diff)
-          } catch { /* empty */ }
-        }
+        const pd = calculatePlusDay(ov.departureDate, value)
+        ov.plusDay = pd !== null ? pd : 0
       }
       base[idx] = ov
       return { ...prev, sectorOverrides: base }
@@ -560,22 +548,6 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
       if (idx >= prev.sectorOverrides.length) return prev
       const newOverrides = [...prev.sectorOverrides]
       newOverrides[idx] = { ...newOverrides[idx], [field]: value, isTimeOverride: true }
-      return { ...prev, sectorOverrides: newOverrides }
-    })
-  }
-
-  const updateSectorPlusDay = (idx: number, plusDay: number) => {
-    setForm(prev => {
-      if (idx >= prev.sectorOverrides.length) return prev
-      const newOverrides = [...prev.sectorOverrides]
-      const ov = { ...newOverrides[idx], plusDay, isDateOverride: true }
-      if (ov.departureDate) {
-        const [y, m, d] = ov.departureDate.split('-').map(Number)
-        const local = new Date(y, m - 1, d)
-        local.setDate(local.getDate() + plusDay)
-        ov.arrivalDate = `${local.getFullYear()}-${String(local.getMonth() + 1).padStart(2, '0')}-${String(local.getDate()).padStart(2, '0')}`
-      }
-      newOverrides[idx] = ov
       return { ...prev, sectorOverrides: newOverrides }
     })
   }
@@ -703,20 +675,23 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
     const fsSectors  = selectedFS?.sectors ?? stock.sectors
 
     const sectorSchedules: PnrSectorSchedule[] = form.sectorOverrides.length > 0
-      ? form.sectorOverrides.map(ov => ({
-          flightSetSectorId: ov.sectorId,
-          sequence: ov.seq,
-          sectorType: ov.sectorType as PnrSectorSchedule['sectorType'],
-          departureDate: ov.departureDate,
-          departureTime: ov.departureTime,
-          arrivalDate: ov.arrivalDate,
-          arrivalTime: ov.arrivalTime,
-          plusDay: ov.plusDay,
-          departureDayOffset: fsSectors.find(s => s.sectorId === ov.sectorId)?.dayOffset ?? 1,
-          isDateOverride: ov.isDateOverride,
-          isTimeOverride: ov.isTimeOverride,
-          sourceType: (ov.isDateOverride || ov.isTimeOverride) ? 'manual' as const : 'calculated' as const,
-        }))
+      ? form.sectorOverrides.map(ov => {
+          const pd = calculatePlusDay(ov.departureDate, ov.arrivalDate)
+          return {
+            flightSetSectorId: ov.sectorId,
+            sequence: ov.seq,
+            sectorType: ov.sectorType as PnrSectorSchedule['sectorType'],
+            departureDate: ov.departureDate,
+            departureTime: ov.departureTime,
+            arrivalDate: ov.arrivalDate,
+            arrivalTime: ov.arrivalTime,
+            plusDay: pd !== null && pd >= 0 ? pd : Math.max(0, ov.plusDay),
+            departureDayOffset: fsSectors.find(s => s.sectorId === ov.sectorId)?.dayOffset ?? 1,
+            isDateOverride: ov.isDateOverride,
+            isTimeOverride: ov.isTimeOverride,
+            sourceType: (ov.isDateOverride || ov.isTimeOverride) ? 'manual' as const : 'calculated' as const,
+          }
+        })
       : buildSectorSchedules(fsSectors, travelStart)
 
     const arrivalSchedules = sectorSchedules.filter(s => s.sectorType === 'Arrival')
@@ -823,6 +798,15 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
     } else if (form.ttlType === 'FIXED_DATE') {
       if (!form.ttlDate) errs.ttl = 'กรุณาเลือกวันที่กำหนดส่ง NAME'
     }
+    // Sector date validation — arr must not be before dep
+    form.sectorOverrides.forEach((ov, i) => {
+      if (ov.isDateOverride && ov.departureDate && ov.arrivalDate) {
+        const pd = calculatePlusDay(ov.departureDate, ov.arrivalDate)
+        if (pd !== null && pd < 0) {
+          errs[`sectorDate_${i}`] = `Sector ${ov.seq}: Arr Date ต้องไม่ก่อน Dep Date`
+        }
+      }
+    })
     if (form.pnrCode.trim()) {
       const dup = checkPNRDuplicatesInSystem([{ pnr_code: form.pnrCode.trim() }])
       if (dup.hasConflicts) {
@@ -1790,8 +1774,10 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                     const depTime = ov?.isTimeOverride ? (ov.departureTime ?? '') : (sec.depTime ?? '')
                     const arrDate = ov?.arrivalDate ?? ''
                     const arrTime = ov?.isTimeOverride ? (ov.arrivalTime ?? '') : (sec.arrTime ?? '')
-                    const plusDay = ov?.plusDay ?? (sec.arrDayOffset ?? 0)
                     const isOv = !!(ov?.isDateOverride || ov?.isTimeOverride)
+                    const computedPd = calculatePlusDay(depDate, arrDate)
+                    const pdErr = computedPd !== null && computedPd < 0
+                    const pdWarn = computedPd === 0 && depTime && arrTime && arrTime < depTime
                     return (
                       <div key={sec.sectorId} className={`rounded-lg border p-2.5 ${isOv ? 'border-amber-200 bg-amber-50/30' : 'border-slate-200 bg-white'}`}>
                         <div className="flex items-center gap-1.5 mb-2">
@@ -1808,7 +1794,7 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                             <label className="block text-[10px] text-slate-400 mb-0.5">Dep Date</label>
                             <input type="date" value={depDate}
                               onChange={e => updateSectorDate(i, 'departureDate', e.target.value)}
-                              className="w-full border border-slate-200 rounded-md px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30"
+                              className={`w-full border rounded-md px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30 ${pdErr ? 'border-red-300' : 'border-slate-200'}`}
                             />
                           </div>
                           <div>
@@ -1822,7 +1808,7 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                             <label className="block text-[10px] text-slate-400 mb-0.5">Arr Date</label>
                             <input type="date" value={arrDate}
                               onChange={e => updateSectorDate(i, 'arrivalDate', e.target.value)}
-                              className="w-full border border-slate-200 rounded-md px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30"
+                              className={`w-full border rounded-md px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30 ${pdErr ? 'border-red-300' : 'border-slate-200'}`}
                             />
                           </div>
                           <div>
@@ -1834,12 +1820,19 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                           </div>
                           <div>
                             <label className="block text-[10px] text-slate-400 mb-0.5">+Day</label>
-                            <input type="number" min="0" max="5" value={plusDay}
-                              onChange={e => updateSectorPlusDay(i, Math.max(0, Number(e.target.value)))}
-                              className="w-full border border-slate-200 rounded-md px-2 py-1 text-xs text-center focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30"
-                            />
+                            <div className={`w-full rounded-md px-2 py-1 text-xs text-center font-medium border ${
+                              pdErr ? 'border-red-300 bg-red-50 text-red-600' :
+                              pdWarn ? 'border-amber-300 bg-amber-50 text-amber-700' :
+                              'border-slate-200 bg-slate-50 text-slate-600'
+                            }`}>
+                              {computedPd === null ? '—' : computedPd < 0 ? '—' : computedPd === 0 ? '0' : `+${computedPd}`}
+                            </div>
+                            {pdWarn && <p className="text-[9px] text-amber-600 mt-0.5">⚠ เที่ยวบินข้ามวัน?</p>}
                           </div>
                         </div>
+                        {errors[`sectorDate_${i}`] && (
+                          <p className="text-[10px] text-red-500 mt-1.5">{errors[`sectorDate_${i}`]}</p>
+                        )}
                       </div>
                     )
                   })}

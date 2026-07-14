@@ -257,6 +257,23 @@ export function buildSectorDateRows(
   })
 }
 
+/**
+ * +Day = calendar day difference between dep and arr using local date math (no UTC shift).
+ * Returns null if either date is missing/unparseable; can return negative (use for validation).
+ */
+export function calculatePlusDay(
+  departureDate: string | null | undefined,
+  arrivalDate: string | null | undefined,
+): number | null {
+  if (!departureDate || !arrivalDate) return null
+  const [dy, dm, dd] = departureDate.split('-').map(Number)
+  const [ay, am, ad] = arrivalDate.split('-').map(Number)
+  if (!dy || !dm || !dd || !ay || !am || !ad) return null
+  return Math.round(
+    (new Date(ay, am - 1, ad).getTime() - new Date(dy, dm - 1, dd).getTime()) / 86400000,
+  )
+}
+
 /** Difference in days between two ISO date strings (b − a). Returns 0 if either is null/invalid. */
 export function daysBetween(a: string | null, b: string | null): number {
   if (!a || !b) return 0
