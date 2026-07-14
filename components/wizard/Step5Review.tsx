@@ -1,5 +1,6 @@
 'use client'
 
+import { useState, Fragment } from 'react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Badge, StockStatusBadge, TicketTypeBadge, PNRStatusBadge } from '@/components/ui/badge'
 import { Table, TableHead, TableBody, Th, Td, TableRow, EmptyRow } from '@/components/ui/table'
@@ -8,7 +9,7 @@ import { getStockTypeConfigSafe } from '@/lib/stock-type-config'
 import { calcCondTtlDate } from '@/lib/condition-schema'
 import { resolvePnrFormTtl } from '@/lib/ttl-utils'
 import { checkPNRDuplicatesInSystem, type PNRConflictDetail } from '@/lib/demo-storage'
-import { CheckCircle2, Plane, Users, FileText, CreditCard, ArrowRight, AlertTriangle } from 'lucide-react'
+import { CheckCircle2, Plane, Users, FileText, CreditCard, ArrowRight, AlertTriangle, ChevronDown } from 'lucide-react'
 import type { WizardState, FlightPNRFormData } from '@/types'
 
 interface Step5Props {
@@ -17,6 +18,7 @@ interface Step5Props {
 }
 
 export default function Step5Review({ state, excludeStockId }: Step5Props) {
+  const [expandedPnrIds, setExpandedPnrIds] = useState<Set<number>>(new Set())
   const { stockInfo, schedules, conditions, pnrs } = state
   const stockTypeCfg = getStockTypeConfigSafe(stockInfo.ticket_type, stockInfo.group_type)
 
@@ -347,26 +349,40 @@ export default function Step5Review({ state, excludeStockId }: Step5Props) {
                   const resolvedTtl = resolvePnrFormTtl(p, condTtl)
                   const isDup = dupResult.duplicateIndices.has(i)
                   return (
-                    <TableRow key={i} className={isDup ? 'bg-red-50' : ''}>
+                    <Fragment key={i}>
+                    <TableRow className={isDup ? 'bg-red-50' : ''}>
                       <Td>
-                        <div className="flex flex-col gap-0.5">
-                          <span className="font-mono text-xs font-bold">
-                            {p.pnr_code || p.dummy_pnr || <span className="text-slate-300 italic font-normal">ไม่ระบุ</span>}
-                          </span>
-                          {p.pnr_code ? (
-                            <span className="inline-flex w-fit px-1.5 py-px rounded text-[10px] font-medium bg-blue-50 text-blue-600 border border-blue-200 whitespace-nowrap">
-                              PNR จริง
+                        <div className="flex items-start gap-1">
+                          <button
+                            onClick={() => setExpandedPnrIds(prev => {
+                              const s = new Set(prev)
+                              s.has(i) ? s.delete(i) : s.add(i)
+                              return s
+                            })}
+                            className="p-0.5 mt-0.5 rounded text-slate-300 hover:text-slate-600 transition-colors flex-shrink-0"
+                            title="แสดง/ซ่อน Sector Schedule"
+                          >
+                            <ChevronDown size={12} className={expandedPnrIds.has(i) ? 'rotate-180 transition-transform' : 'transition-transform'} />
+                          </button>
+                          <div className="flex flex-col gap-0.5">
+                            <span className="font-mono text-xs font-bold">
+                              {p.pnr_code || p.dummy_pnr || <span className="text-slate-300 italic font-normal">ไม่ระบุ</span>}
                             </span>
-                          ) : p.dummy_pnr ? (
-                            <span className="inline-flex w-fit px-1.5 py-px rounded text-[10px] font-medium bg-amber-50 text-amber-600 border border-amber-200 whitespace-nowrap">
-                              Dummy
-                            </span>
-                          ) : null}
-                          {isDup && p.pnr_code && (
-                            <span className="inline-flex w-fit px-1.5 py-px rounded text-[10px] font-medium bg-red-100 text-red-600 border border-red-300 whitespace-nowrap">
-                              PNR ซ้ำ
-                            </span>
-                          )}
+                            {p.pnr_code ? (
+                              <span className="inline-flex w-fit px-1.5 py-px rounded text-[10px] font-medium bg-blue-50 text-blue-600 border border-blue-200 whitespace-nowrap">
+                                PNR จริง
+                              </span>
+                            ) : p.dummy_pnr ? (
+                              <span className="inline-flex w-fit px-1.5 py-px rounded text-[10px] font-medium bg-amber-50 text-amber-600 border border-amber-200 whitespace-nowrap">
+                                Dummy
+                              </span>
+                            ) : null}
+                            {isDup && p.pnr_code && (
+                              <span className="inline-flex w-fit px-1.5 py-px rounded text-[10px] font-medium bg-red-100 text-red-600 border border-red-300 whitespace-nowrap">
+                                PNR ซ้ำ
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </Td>
                       <Td className="text-xs">{p.travel_start ? formatDate(p.travel_start) : '—'}</Td>
@@ -393,6 +409,54 @@ export default function Step5Review({ state, excludeStockId }: Step5Props) {
                       </Td>
                       <Td><PNRStatusBadge status={p.status} /></Td>
                     </TableRow>
+                    {expandedPnrIds.has(i) && (() => {
+                      const sectors = getPnrSectors(p)
+                      return (
+                        <TableRow className="bg-slate-50/70">
+                          <Td colSpan={11} className="py-2 px-4">
+                            <div className="overflow-x-auto">
+                              <table className="text-xs border-collapse">
+                                <thead>
+                                  <tr>
+                                    {['Sector', 'Dep Date', 'Dep Time', 'Arr Date', 'Arr Time', '+Day'].map(h => (
+                                      <th key={h} className="text-left text-slate-400 font-medium pb-1 pr-6 whitespace-nowrap">{h}</th>
+                                    ))}
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {sectors.map((sec, si) => {
+                                    const sd = p.sector_dates?.[si]
+                                    const depDate = sd?.travel_date || ''
+                                    const plusDay = sec.arr_day_offset ?? 0
+                                    const arrDate = sd?.arr_date || (depDate && plusDay > 0 ? (() => {
+                                      try {
+                                        const [y, m, d] = depDate.split('-').map(Number)
+                                        const local = new Date(y, m - 1, d)
+                                        local.setDate(local.getDate() + plusDay)
+                                        return `${local.getFullYear()}-${String(local.getMonth() + 1).padStart(2, '0')}-${String(local.getDate()).padStart(2, '0')}`
+                                      } catch { return depDate }
+                                    })() : depDate)
+                                    return (
+                                      <tr key={si}>
+                                        <td className="pr-6 pb-0.5">
+                                          <span className={sec.sector_type === 'Departure' ? 'text-green-600 font-medium' : sec.sector_type === 'Arrival' ? 'text-purple-600 font-medium' : 'text-amber-600 font-medium'}>{sec.sector_type}</span>
+                                        </td>
+                                        <td className="pr-6 pb-0.5 font-mono text-slate-700">{depDate ? formatDate(depDate) : '—'}</td>
+                                        <td className="pr-6 pb-0.5 text-slate-500">{sec.dep_time || '—'}</td>
+                                        <td className="pr-6 pb-0.5 font-mono text-slate-700">{arrDate ? formatDate(arrDate) : '—'}</td>
+                                        <td className="pr-6 pb-0.5 text-slate-500">{sec.arr_time || '—'}</td>
+                                        <td className="pb-0.5">{plusDay > 0 ? <span className="text-amber-600 font-semibold">+{plusDay}</span> : <span className="text-slate-400">—</span>}</td>
+                                      </tr>
+                                    )
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          </Td>
+                        </TableRow>
+                      )
+                    })()}
+                    </Fragment>
                   )
                 })
               )}

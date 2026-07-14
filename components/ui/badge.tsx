@@ -56,7 +56,7 @@ export function PnrOperationalStatusBadge({ status, label }: { status: string; l
 /** สถานะการยืนยัน PNR (Confirmation) */
 export function PnrConfirmationStatusBadge({ status }: { status: string }) {
   const confirmed = status === 'CONFIRMED' || status === 'Confirmed'
-  return <Badge variant={confirmed ? 'green' : 'orange'}>{confirmed ? 'ยืนยันแล้ว' : 'รอยืนยัน'}</Badge>
+  return <Badge variant={confirmed ? 'green' : 'orange'} className="whitespace-nowrap">{confirmed ? 'ยืนยันแล้ว' : 'รอยืนยัน'}</Badge>
 }
 
 export function TicketTypeBadge({ type, groupType }: { type: string; groupType?: string }) {

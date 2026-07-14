@@ -64,6 +64,43 @@ export interface DemoFlightSet {
   createdFromPnrId?: string
 }
 
+// ─── Standardized per-PNR sector schedule (Phase 1: Data Foundation) ────────
+// Canonical field names used across ALL layers — resolver functions write and
+// read this type; UI components consume it in Phase 2+.
+// Old DemoSector fields (depTime, arrTime, dayOffset, arrDayOffset) remain
+// on the template level; this type is PNR-level and override-aware.
+
+export interface PnrSectorSchedule {
+  /** Matches DemoSector.sectorId in the assigned FlightSet */
+  flightSetSectorId: string
+  /** Display order within the FlightSet (1-based) */
+  sequence: number
+  sectorType: 'Departure' | 'Transit' | 'Arrival'
+
+  /** Departure date — yyyy-MM-dd (local, never UTC-shifted) */
+  departureDate: string
+  /** Departure time — HH:mm from FlightSet template (Phase 1); override in Phase 2 */
+  departureTime: string
+
+  /** Arrival date — yyyy-MM-dd = departureDate + plusDay (or manual override) */
+  arrivalDate: string
+  /** Arrival time — HH:mm from FlightSet template (Phase 1); override in Phase 2 */
+  arrivalTime: string
+
+  /** +Day: how many extra calendar days from dep to arr (= DemoSector.arrDayOffset) */
+  plusDay: number
+  /** Which travel-day this sector departs on (1 = travelStart; 2 = +1 day; etc.) */
+  departureDayOffset: number
+
+  /** True when dep or arr date was manually entered by user (not formula-calculated) */
+  isDateOverride: boolean
+  /** True when dep or arr time was manually entered (Phase 2 feature; always false in Phase 1) */
+  isTimeOverride: boolean
+
+  /** Data origin — used for display and audit */
+  sourceType: 'calculated' | 'manual' | 'imported'
+}
+
 export interface DemoScheduleInfo {
   scheduleId: string
   scheduleName: string
@@ -324,7 +361,10 @@ export interface DemoPNR {
   travelEnd: string
   flightSetId?: string
   scheduleId?: string
+  /** Legacy: dep date per sector (kept for backward compat — do not delete in Phase 1) */
   sectorDates: { sectorType: string; date: string }[]
+  /** Full per-sector schedule (Phase 1+). Undefined for PNRs created before Phase 1. */
+  sectorSchedules?: PnrSectorSchedule[]
   seatTotal: number
   seatUsed: number
   seatBalance: number
@@ -1103,11 +1143,56 @@ export function wizardStateToDemoStock(state: WizardState): DemoStock {
     else if (p.tax_type === 'pending') taxStatus = 'pending'
     else taxStatus = 'completed'
 
-    // sector dates
+    // Legacy sectorDates (dep date only — kept for backward compat)
     const sectorDates = (p.sector_dates ?? []).map(sd => ({
       sectorType: sd.sector_type,
       date: sd.travel_date,
     }))
+
+    // Full per-sector schedule (Phase 1: Data Foundation)
+    // Uses demoSectors (main FlightSet) as the authoritative reference so that
+    // sectorSchedules[i].flightSetSectorId matches the stored FlightSet after read.
+    const sectorSchedules: PnrSectorSchedule[] = demoSectors.map((sec, i) => {
+      const sd = (p.sector_dates ?? [])[i]
+      const depDate = sd?.travel_date ?? ''
+
+      // +Day: prefer explicit arr_day_offset from form, fall back to FlightSet template
+      const plusDay = sd?.arr_day_offset !== undefined ? sd.arr_day_offset : (sec.arrDayOffset ?? 0)
+
+      // arrivalDate: use form's arr_date if provided, else compute from depDate + plusDay
+      let arrivalDate = sd?.arr_date ?? ''
+      if (!arrivalDate && depDate) {
+        if (plusDay > 0) {
+          try {
+            const [y, m, d] = depDate.split('-').map(Number)
+            const local = new Date(y, m - 1, d)
+            local.setDate(local.getDate() + plusDay)
+            arrivalDate = `${local.getFullYear()}-${String(local.getMonth() + 1).padStart(2, '0')}-${String(local.getDate()).padStart(2, '0')}`
+          } catch {
+            arrivalDate = depDate
+          }
+        } else {
+          arrivalDate = depDate
+        }
+      }
+
+      const isDateOverride = !!(sd?.dep_manual || sd?.arr_manual)
+
+      return {
+        flightSetSectorId: sec.sectorId,
+        sequence: sec.seq,
+        sectorType: sec.sectorType as 'Departure' | 'Transit' | 'Arrival',
+        departureDate: depDate,
+        departureTime: sec.depTime ?? '',
+        arrivalDate,
+        arrivalTime: sec.arrTime ?? '',
+        plusDay,
+        departureDayOffset: sec.dayOffset ?? 1,
+        isDateOverride,
+        isTimeOverride: false,
+        sourceType: isDateOverride ? 'manual' as const : 'calculated' as const,
+      }
+    })
 
     const seatBalance = Math.max(0, p.seat_total - 0) // new stocks: seat_used = 0
 
@@ -1121,6 +1206,7 @@ export function wizardStateToDemoStock(state: WizardState): DemoStock {
       travelEnd: p.travel_end ?? '',
       scheduleId: p.schedule_id,
       sectorDates,
+      sectorSchedules,
       seatTotal: p.seat_total,
       seatUsed: 0,
       seatBalance: p.seat_total,

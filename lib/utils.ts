@@ -216,9 +216,10 @@ export function calcSectorDate(travelStart: string | null, dayOffset: number | n
   }
 }
 
-type SectorDateInput = { sector_type: string; day_offset: number }
+type SectorDateInput = { sector_type: string; day_offset: number; arr_day_offset?: number }
 
 // Travel End = วันที่ของ Sector Type = Arrival ตัวสุดท้าย, ถ้าไม่มี Arrival ใช้ Sector สุดท้าย
+// Respects arr_day_offset so overnight arrivals (+1, +2, ...) yield the correct return date.
 export function calcTravelEndFromSectors(
   travelStart: string | null,
   sectors: SectorDateInput[]
@@ -226,7 +227,19 @@ export function calcTravelEndFromSectors(
   if (!travelStart || !sectors?.length) return null
   const returns = sectors.filter(s => s.sector_type === 'Arrival')
   const target = returns.length ? returns[returns.length - 1] : sectors[sectors.length - 1]
-  return calcSectorDate(travelStart, target.day_offset)
+  const depDate = calcSectorDate(travelStart, target.day_offset)
+  const arrOffset = target.arr_day_offset ?? 0
+  if (arrOffset > 0 && depDate) {
+    try {
+      const [y, m, d] = depDate.split('-').map(Number)
+      const local = new Date(y, m - 1, d)
+      local.setDate(local.getDate() + arrOffset)
+      return `${local.getFullYear()}-${String(local.getMonth() + 1).padStart(2, '0')}-${String(local.getDate()).padStart(2, '0')}`
+    } catch {
+      return depDate
+    }
+  }
+  return depDate
 }
 
 // แถวของ Sector Dates (mini-table): Sector Type | Travel Date — เติมเลขเมื่อมีชนิดซ้ำ (Transit 1, Transit 2)

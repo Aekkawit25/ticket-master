@@ -241,7 +241,18 @@ export interface FlightPNRFormData {
   remark: string
   schedule_id?: string
   /** วันที่ของแต่ละ Sector คำนวณจาก travel_start + day_offset — ส่งต่อไป Step 5 */
-  sector_dates?: { sector_type: string; day_offset: number; travel_date: string; arr_date?: string; dep_manual?: boolean; arr_manual?: boolean }[]
+  sector_dates?: {
+    /** wizard-level sector form id — ใช้ link กับ FlightSet sector เมื่อ save */
+    sector_id?: string
+    sector_type: string
+    day_offset: number
+    /** +Day ของ Arrival (= FlightSectorFormData.arr_day_offset) — ใช้คำนวณ arr_date */
+    arr_day_offset?: number
+    travel_date: string
+    arr_date?: string
+    dep_manual?: boolean
+    arr_manual?: boolean
+  }[]
   /** 'UNSET' = ยังไม่ระบุ TTL, 'SET' = ระบุ TTL แล้ว — กรอกโดยผู้ใช้ ไม่ใช่คำนวณจาก Condition */
   ttl_status?: 'UNSET' | 'SET'
   ttl_date?: string | null
