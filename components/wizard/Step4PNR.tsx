@@ -807,7 +807,7 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
       {/* Table */}
       <div className="border border-slate-300 rounded-xl overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
-          <table className="border-collapse text-xs w-full" style={{ minWidth: 1700 }}>
+          <table className="border-collapse text-xs w-full" style={{ minWidth: 1660 }}>
 
             <thead>
               <tr className="bg-slate-100 select-none h-9">
@@ -817,9 +817,9 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
                 <th className="border border-slate-300 px-2 text-center text-slate-600 font-semibold whitespace-nowrap" style={{ width: 40 }}>Sector</th>
                 <th className="border border-slate-300 px-2 text-center text-slate-600 font-semibold whitespace-nowrap" style={{ width: 42 }}>Day</th>
                 <th className="border border-slate-300 px-2 text-center text-slate-600 font-semibold whitespace-nowrap" style={{ width: 120 }}>Dep Date <span className="text-red-400">*</span></th>
-                <th className="border border-slate-300 px-2 text-center text-slate-600 font-semibold whitespace-nowrap" style={{ width: 85 }}>Dep Time</th>
+                <th className="border border-slate-300 px-2 text-center text-slate-600 font-semibold whitespace-nowrap" style={{ width: 110, maxWidth: 110 }}>Dep Time</th>
                 <th className="border border-slate-300 px-2 text-center text-slate-600 font-semibold whitespace-nowrap" style={{ width: 120 }}>Arr Date</th>
-                <th className="border border-slate-300 px-2 text-center text-slate-600 font-semibold whitespace-nowrap" style={{ width: 85 }}>Arr Time</th>
+                <th className="border border-slate-300 px-2 text-center text-slate-600 font-semibold whitespace-nowrap" style={{ width: 110, maxWidth: 110 }}>Arr Time</th>
                 <th className="border border-slate-300 px-2 text-center text-slate-600 font-semibold whitespace-nowrap" style={{ width: 48 }} title="+Day = Arr Date − Dep Date">+Day</th>
                 <th className="border border-slate-300 px-2 text-center text-slate-600 font-semibold whitespace-nowrap" style={{ width: 60 }} title="Seat Total">Seat <span className="text-red-400">*</span></th>
                 <th className="border border-slate-300 px-2 text-center text-slate-600 font-semibold whitespace-nowrap" style={{ width: 90 }} title="FARE = Fare + Tax + YQ · FARE+YQ = Fare + YQ · ALL IN = ราคา All In (Fare เท่านั้น)">ประเภทราคา <span className="text-red-400">*</span></th>
@@ -985,13 +985,15 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
                           </td>
 
                           {/* Dep Time */}
-                          <td className="border border-slate-200 px-1 py-1 align-middle">
-                            <TimeInput
-                              value={sd.dep_time ?? ''}
-                              onChange={v => handleSectorDepTimeChange(idx, sIdx, v)}
-                              className={cn('border rounded', sd.time_override ? 'border-orange-300' : 'border-slate-200')}
-                              compact
-                            />
+                          <td className="border border-slate-200 px-1 py-1 align-middle text-center">
+                            <div style={{ width: 93, minWidth: 93, maxWidth: 93 }} className="mx-auto">
+                              <TimeInput
+                                value={sd.dep_time ?? ''}
+                                onChange={v => handleSectorDepTimeChange(idx, sIdx, v)}
+                                className={cn('border rounded w-full', sd.time_override ? 'border-orange-300' : 'border-slate-200')}
+                                compact
+                              />
+                            </div>
                           </td>
 
                           {/* Arr Date */}
@@ -1013,13 +1015,15 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
                           </td>
 
                           {/* Arr Time */}
-                          <td className="border border-slate-200 px-1 py-1 align-middle">
-                            <TimeInput
-                              value={sd.arr_time ?? ''}
-                              onChange={v => handleSectorArrTimeChange(idx, sIdx, v)}
-                              className={cn('border rounded', sd.time_override ? 'border-orange-300' : 'border-slate-200')}
-                              compact
-                            />
+                          <td className="border border-slate-200 px-1 py-1 align-middle text-center">
+                            <div style={{ width: 93, minWidth: 93, maxWidth: 93 }} className="mx-auto">
+                              <TimeInput
+                                value={sd.arr_time ?? ''}
+                                onChange={v => handleSectorArrTimeChange(idx, sIdx, v)}
+                                className={cn('border rounded w-full', sd.time_override ? 'border-orange-300' : 'border-slate-200')}
+                                compact
+                              />
+                            </div>
                           </td>
 
                           {/* +Day (read-only) */}
