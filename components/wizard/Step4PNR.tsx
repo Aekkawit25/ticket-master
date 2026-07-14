@@ -155,10 +155,10 @@ interface Step4Props {
   showValidation?: boolean
 }
 
-// ─── Frozen column offsets (compact widths: # 42 | PNR 105 | FS 135) ─────────
+// ─── Frozen column offsets: # 42 | PNR 110 | FS 145 ────────────────────────────
 const L0 = 0    // #
 const L1 = 42   // PNR
-const L2 = 147  // FlightSet  (42+105)
+const L2 = 152  // FlightSet  (42+110)
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function Step4PNR({ pnrs, schedules, conditions, currency, onChange, showValidation = false }: Step4Props) {
@@ -621,11 +621,11 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
       {/* ── Excel Grid ── */}
       <div className="overflow-auto border border-slate-200 rounded-xl bg-white shadow-sm"
         style={{ maxHeight: pnrs.length > 10 ? 'calc(100vh - 260px)' : undefined }}>
-        <table className="s4grid border-collapse text-[12px]" style={{ minWidth: 1754 }}>
+        <table className="s4grid text-[12px]" style={{ minWidth: 1769, tableLayout: 'fixed', borderCollapse: 'separate', borderSpacing: 0 }}>
           <colgroup>
             <col style={{ width: 42 }} />
-            <col style={{ width: 105 }} />
-            <col style={{ width: 135 }} />
+            <col style={{ width: 110 }} />
+            <col style={{ width: 145 }} />
             <col style={{ width: 54 }} />
             <col style={{ width: 55 }} />
             <col style={{ width: 112 }} />
@@ -649,18 +649,18 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
           {/* ── Header ── */}
           <thead className="sticky top-0 z-30">
             <tr>
-              {/* Frozen */}
+              {/* Frozen — z-40 so they sit above scrolling body AND above non-frozen header cells */}
               <th className={cn(GH_C, 'sticky z-40')} style={{ left: L0 }}>#</th>
               <th className={cn(GH, 'sticky z-40 text-left')} style={{ left: L1 }}>PNR</th>
-              <th className={cn(GH, 'sticky z-40 text-left border-r-[2px] border-r-slate-300')} style={{ left: L2, boxShadow: '4px 0 8px -4px rgba(0,0,0,0.10)' }}>Flight Set</th>
-              {/* Sector columns (light blue tint in header) */}
-              <th className={cn(GH_C, 'bg-blue-50/60')}>Sector</th>
-              <th className={cn(GH_C, 'bg-blue-50/60')}>Day</th>
-              <th className={cn(GH_C, 'bg-blue-50/60')}>Dep Date</th>
-              <th className={cn(GH_C, 'bg-blue-50/60')}>Dep Time</th>
-              <th className={cn(GH_C, 'bg-blue-50/60')}>Arr Date</th>
-              <th className={cn(GH_C, 'bg-blue-50/60')}>Arr Time</th>
-              <th className={cn(GH_C, 'bg-blue-50/60')}>+Day</th>
+              <th className={cn(GH, 'sticky z-40 text-left border-r-[2px] border-r-slate-300')} style={{ left: L2, boxShadow: '4px 0 6px -6px rgba(15,23,42,0.35)' }}>Flight Set</th>
+              {/* Sector columns — solid bg so scrolled content doesn't bleed through */}
+              <th className={cn(GH_C, 'bg-[#EDF5FF]')}>Sector</th>
+              <th className={cn(GH_C, 'bg-[#EDF5FF]')}>Day</th>
+              <th className={cn(GH_C, 'bg-[#EDF5FF]')}>Dep Date</th>
+              <th className={cn(GH_C, 'bg-[#EDF5FF]')}>Dep Time</th>
+              <th className={cn(GH_C, 'bg-[#EDF5FF]')}>Arr Date</th>
+              <th className={cn(GH_C, 'bg-[#EDF5FF]')}>Arr Time</th>
+              <th className={cn(GH_C, 'bg-[#EDF5FF]')}>+Day</th>
               {/* PNR columns */}
               <th className={GH_C}>Seat</th>
               <th className={GH_C}>ประเภทราคา</th>
@@ -705,12 +705,20 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
               const ttlSt = getTtlStatus(p.ttl_date ?? null, p.ttl_time ?? null)
               const activeScheduleId = p.schedule_id ?? schedules.find(s => s.isMain)?.scheduleId ?? schedules[0]?.scheduleId ?? ''
               const fsName = schedules.find(s => s.scheduleId === activeScheduleId)?.scheduleName ?? schedules[0]?.scheduleName ?? 'Default'
-              const hv = isHovered ? '#EFF6FF' : '#FFFFFF'  // opaque for frozen cols
-              const hvClass = isHovered ? 'bg-blue-50/25' : ''
-              const G = 'border-r border-b border-[#E5EAF0] px-1.5 align-middle'  // base cell
+              const hv = isHovered ? '#EFF6FF' : '#FFFFFF'  // always opaque for frozen sticky cols
+              const hvRow = isHovered ? 'bg-[#F0F7FF]' : ''  // solid hover for non-frozen cells
+              // With border-separate: use border-b only (no border-t to avoid double lines).
+              // Rowspan cells' border-b lands at the PNR group boundary — make it thicker.
+              const isLastPnr = pnrIdx === pnrs.length - 1
+              const groupBorderB = isLastPnr ? 'border-b border-b-[#E5EAF0]' : 'border-b-2 border-b-slate-300'
+              const G = 'border-r border-[#E5EAF0] overflow-hidden px-1.5 align-middle'  // base cell
               const GC = cn(G, 'text-center')
               const GR = cn(G, 'text-right')
-              const groupTop = pnrIdx > 0 ? 'border-t-2 border-t-slate-200' : 'border-t border-t-[#E5EAF0]'
+              // Rowspan cells span the entire PNR group — border-b lands after the last sector.
+              // Use groupBorderB (PNR-level separator) instead of per-sector rowBorderB.
+              const GRowSpan  = cn(G, groupBorderB, hvRow)
+              const GCRowSpan = cn(GC, groupBorderB, hvRow)
+              const GRRowSpan = cn(GR, groupBorderB, hvRow)
               const taxDisabled = fmt !== 'FARE'
               const yqDisabled = fmt === 'ALL_IN'
 
@@ -732,47 +740,46 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
                     const isArrManual = sd.arr_manual != null ? !!sd.arr_manual : !!(sd.arr_date && expectedArr && sd.arr_date !== expectedArr)
                     const displayDep = shiftConfirm?.pnrIdx === pnrIdx && sIdx === 0 ? shiftConfirm.newDep : (sd.travel_date || '')
                     const displayArr = sd.arr_date || ''
-                    const rowTop = isFirstRow ? groupTop : 'border-t border-t-[#E5EAF0]'
-                    // cell with row top border
-                    const GRow = cn(G, rowTop, hvClass)
-                    const GCRow = cn(GC, rowTop, hvClass)
-                    const GRRow = cn(GR, rowTop, hvClass)
-                    const GSec = cn(G, 'bg-slate-50/50', rowTop, hvClass) // sector col tint
+                    // sector row: last sector row of a PNR group gets the thick border-b separator
+                    const isLastSector = sIdx === sectorDates.length - 1
+                    const rowBorderB = isLastSector ? groupBorderB : 'border-b border-b-[#E5EAF0]'
+                    const GCRow = cn(GC, rowBorderB, hvRow)
+                    const GSec = cn(G, 'bg-[#F8FAFC]', rowBorderB, hvRow) // sector col solid tint
 
                     return (
                       <tr key={`${pnrIdx}-${sIdx}`} style={{ height: 36 }}
                         onMouseEnter={() => setHoveredPnrIdx(pnrIdx)}
                         onMouseLeave={() => setHoveredPnrIdx(null)}>
 
-                        {/* ── FROZEN LEFT (rowspan) ── */}
+                        {/* ── FROZEN LEFT (rowspan) — opaque bg hides content scrolling behind ── */}
                         {isFirstRow && (
                           <>
                             <td rowSpan={sectorCount}
-                              className={cn('sticky z-20 border-r border-b border-[#E5EAF0] text-center align-middle', groupTop)}
+                              className={cn('sticky z-20 border-r border-[#E5EAF0] text-center align-middle overflow-hidden', groupBorderB)}
                               style={{ left: L0, backgroundColor: hv }}>
                               <span className="text-[11px] text-slate-400">{pnrIdx + 1}</span>
                             </td>
                             <td rowSpan={sectorCount}
-                              className={cn('sticky z-20 border-r border-b border-[#E5EAF0] px-1.5 align-top pt-1', groupTop)}
+                              className={cn('sticky z-20 border-r border-[#E5EAF0] px-1.5 align-top pt-1 overflow-hidden', groupBorderB)}
                               style={{ left: L1, backgroundColor: hv }}>
                               <input value={p.pnr_code}
                                 onChange={e => update(pnrIdx, { pnr_code: e.target.value.toUpperCase() })}
                                 placeholder="ว่างได้"
-                                className="w-full h-7 text-[12px] font-mono uppercase bg-transparent border-0 focus:outline-none text-slate-800 placeholder:text-slate-300"
+                                className="w-full min-w-0 h-7 text-[12px] font-mono uppercase bg-transparent border-0 focus:outline-none text-slate-800 placeholder:text-slate-300"
                               />
                               {p.dummy_pnr && <div className="text-[9px] text-slate-300 font-mono truncate leading-none">{p.dummy_pnr}</div>}
                             </td>
                             <td rowSpan={sectorCount}
-                              className={cn('sticky z-20 border-r-[2px] border-r-slate-300 border-b border-[#E5EAF0] px-1.5 align-middle', groupTop)}
-                              style={{ left: L2, backgroundColor: hv, boxShadow: '4px 0 8px -4px rgba(0,0,0,0.10)' }}>
+                              className={cn('sticky z-20 border-r-[2px] border-r-slate-300 border-[#E5EAF0] px-1.5 align-middle overflow-hidden', groupBorderB)}
+                              style={{ left: L2, backgroundColor: hv, boxShadow: '4px 0 6px -6px rgba(15,23,42,0.35)' }}>
                               {schedules.length > 1 ? (
                                 <select value={activeScheduleId}
                                   onChange={e => update(pnrIdx, { schedule_id: e.target.value || undefined })}
-                                  className="w-full h-7 text-[12px] bg-transparent border-0 focus:outline-none cursor-pointer text-slate-700 truncate">
+                                  className="w-full min-w-0 h-7 text-[12px] bg-transparent border-0 focus:outline-none cursor-pointer text-slate-700">
                                   {schedules.map(sch => <option key={sch.scheduleId} value={sch.scheduleId}>{sch.scheduleName}{sch.isMain ? ' ★' : ''}</option>)}
                                 </select>
                               ) : (
-                                <span className="text-[12px] text-slate-600 truncate block">{fsName}</span>
+                                <span className="text-[12px] text-slate-600 block overflow-hidden text-ellipsis whitespace-nowrap" title={fsName}>{fsName}</span>
                               )}
                             </td>
                           </>
@@ -848,7 +855,7 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
                         </td>
 
                         {/* +Day (read-only) */}
-                        <td className={cn(GCRow, 'bg-slate-50/50 select-none text-[12px]')}>
+                        <td className={cn(GCRow, 'bg-[#F8FAFC] select-none text-[12px]')}>
                           {(() => {
                             const pd = calculatePlusDay(sd.travel_date || null, sd.arr_date || null)
                             if (pd === null) return <span className="text-slate-200">—</span>
@@ -858,24 +865,24 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
                           })()}
                         </td>
 
-                        {/* ── PNR-LEVEL columns (rowspan) ── */}
+                        {/* ── PNR-LEVEL columns (rowspan) — border-b lands at end of last sector ── */}
                         {isFirstRow && (
                           <>
                             {/* Seat */}
-                            <td rowSpan={sectorCount} className={cn(GCRow, missingSeat ? 'bg-red-50/30' : '')}>
+                            <td rowSpan={sectorCount} className={cn(GCRowSpan, missingSeat ? 'bg-red-50' : '')}>
                               <input type="number" min={1} value={p.seat_total || ''}
                                 onChange={e => update(pnrIdx, { seat_total: parseInt(e.target.value) || 0 })}
                                 onBlur={() => markTouched(pnrIdx)}
-                                className={cn('w-full h-7 text-center text-[12px] font-medium bg-transparent border-0 focus:outline-none',
+                                className={cn('w-full min-w-0 h-7 text-center text-[12px] font-medium bg-transparent border-0 focus:outline-none',
                                   missingSeat ? 'text-red-500' : 'text-slate-800')}
                               />
                             </td>
 
                             {/* Price Type */}
-                            <td rowSpan={sectorCount} className={GCRow}>
+                            <td rowSpan={sectorCount} className={GCRowSpan}>
                               <select value={fmt}
                                 onChange={e => handlePriceTypeChange(pnrIdx, e.target.value as 'FARE' | 'FARE_YQ' | 'ALL_IN')}
-                                className={cn('w-full h-7 text-center text-[12px] bg-transparent border-0 focus:outline-none cursor-pointer font-medium',
+                                className={cn('w-full min-w-0 h-7 text-center text-[12px] bg-transparent border-0 focus:outline-none cursor-pointer font-medium',
                                   fmt === 'FARE_YQ' ? 'text-amber-700' : fmt === 'ALL_IN' ? 'text-blue-700' : 'text-slate-700')}>
                                 <option value="FARE">FARE</option>
                                 <option value="FARE_YQ">FARE+YQ</option>
@@ -884,41 +891,41 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
                             </td>
 
                             {/* Fare */}
-                            <td rowSpan={sectorCount} className={cn(GRRow, fareErr ? 'bg-red-50/30' : '')}>
+                            <td rowSpan={sectorCount} className={cn(GRRowSpan, fareErr ? 'bg-red-50' : '')}>
                               <PriceInput value={p.fare > 0 ? p.fare : null} cell hasError={fareErr}
                                 onChange={v => handleFareChange(pnrIdx, v)} onBlur={() => markTouched(pnrIdx)} />
                             </td>
 
                             {/* Tax */}
-                            <td rowSpan={sectorCount} className={cn(GRRow, taxDisabled ? 'bg-slate-50/70' : taxErr ? 'bg-red-50/30' : '')}>
+                            <td rowSpan={sectorCount} className={cn(GRRowSpan, taxDisabled ? 'bg-slate-50' : taxErr ? 'bg-red-50' : '')}>
                               <PriceInput value={!taxDisabled ? (p.tax ?? null) : null} cell disabled={taxDisabled} nullable={!taxDisabled} hasError={taxErr}
                                 onChange={v => handleTaxChange(pnrIdx, v)} onBlur={() => markTouched(pnrIdx)} />
                             </td>
 
                             {/* YQ */}
-                            <td rowSpan={sectorCount} className={cn(GRRow, yqDisabled ? 'bg-slate-50/70' : yqErr ? 'bg-red-50/30' : '')}>
+                            <td rowSpan={sectorCount} className={cn(GRRowSpan, yqDisabled ? 'bg-slate-50' : yqErr ? 'bg-red-50' : '')}>
                               <PriceInput value={!yqDisabled ? (p.yq ?? null) : null} cell disabled={yqDisabled} nullable={!yqDisabled} hasError={yqErr}
                                 onChange={v => handleYqChange(pnrIdx, v)} onBlur={() => markTouched(pnrIdx)} />
                             </td>
 
                             {/* Currency */}
-                            <td rowSpan={sectorCount} className={cn('border-r border-b border-[#E5EAF0] align-middle overflow-hidden p-0', groupTop, hvClass)}>
+                            <td rowSpan={sectorCount} className={cn('border-r border-[#E5EAF0] align-middle overflow-hidden p-0', groupBorderB, hvRow)}>
                               <CurrencyCombobox variant="inline" value={p.currency || currency} stockDefault={currency}
                                 currencies={currencyOptions} onChange={code => handleCurrencyChange(pnrIdx, code)} />
                             </td>
 
                             {/* Condition */}
-                            <td rowSpan={sectorCount} className={GRow}>
+                            <td rowSpan={sectorCount} className={GRowSpan}>
                               <select value={p.condition_id || ''}
                                 onChange={e => update(pnrIdx, { condition_id: e.target.value })}
-                                className="w-full h-7 text-[12px] bg-transparent border-0 focus:outline-none cursor-pointer text-slate-600">
+                                className="w-full min-w-0 h-7 text-[12px] bg-transparent border-0 focus:outline-none cursor-pointer text-slate-600">
                                 <option value="">ไม่ระบุ</option>
                                 {conditions.map(c => <option key={c.conditionId} value={c.conditionId}>{c.conditionName}</option>)}
                               </select>
                             </td>
 
                             {/* TTL */}
-                            <td rowSpan={sectorCount} className={GRow}>
+                            <td rowSpan={sectorCount} className={GRowSpan}>
                               <button type="button"
                                 onClick={e => {
                                   const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
@@ -945,7 +952,7 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
                             </td>
 
                             {/* การยืนยัน (Switch) */}
-                            <td rowSpan={sectorCount} className={GCRow}>
+                            <td rowSpan={sectorCount} className={GCRowSpan}>
                               <div className="flex flex-col items-center gap-0.5">
                                 <button type="button" role="switch" aria-checked={p.status === 'Confirmed'}
                                   aria-label={`การยืนยัน PNR ${pnrIdx + 1}`}
@@ -975,16 +982,16 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
                             </td>
 
                             {/* Remark */}
-                            <td rowSpan={sectorCount} className={GRow}>
+                            <td rowSpan={sectorCount} className={GRowSpan}>
                               <input value={p.remark}
                                 onChange={e => update(pnrIdx, { remark: e.target.value })}
                                 placeholder="หมายเหตุ..."
-                                className="w-full h-7 text-[12px] bg-transparent border-0 focus:outline-none text-slate-600 placeholder:text-slate-300"
+                                className="w-full min-w-0 h-7 text-[12px] bg-transparent border-0 focus:outline-none text-slate-600 placeholder:text-slate-300"
                               />
                             </td>
 
                             {/* Action */}
-                            <td rowSpan={sectorCount} className={cn(GCRow, 'border-r-0')}>
+                            <td rowSpan={sectorCount} className={cn(GCRowSpan, 'border-r-0')}>
                               <div className="flex items-center justify-center gap-0.5">
                                 <button type="button" onClick={() => duplicateRow(pnrIdx)} title="คัดลอก PNR"
                                   className="p-1 rounded text-slate-400 hover:text-[#05a94f] hover:bg-slate-100 transition-colors">
