@@ -1,10 +1,9 @@
 'use client'
 
 import { useRef, useState, useMemo, useEffect, Fragment } from 'react'
-import { PlusCircle, Trash2, Copy, Info, CalendarDays, FileUp, Download, AlertTriangle, RefreshCw, RotateCcw, Pencil } from 'lucide-react'
-import { cn, formatTravelDate, formatDateThai, formatDateTimeThai, calcTravelEndFromSectors, calcSectorDate, calculatePlusDay } from '@/lib/utils'
+import { PlusCircle, Info, CalendarDays, FileUp, Download, AlertTriangle, RefreshCw } from 'lucide-react'
+import { cn, formatTravelDate, formatDateThai, formatDateTimeThai, calcTravelEndFromSectors, calcSectorDate } from '@/lib/utils'
 import { hasTtl } from '@/lib/ttl-utils'
-import { TtlEditor } from '@/components/shared/TtlEditor'
 import { BulkPnrBuilder } from '@/components/shared/BulkPnrBuilder'
 import type { BulkPnrRow, BulkPnrSector, BulkPnrCondition } from '@/components/shared/BulkPnrBuilder'
 import type { FlightPNRFormData, FlightSectorFormData, FlightScheduleFormData, PNRStatus, TaxType } from '@/types'
@@ -14,35 +13,10 @@ import ImportExcelModal from '@/components/wizard/ImportExcelModal'
 import type { PastedExcelRow } from '@/lib/paste-excel'
 import { downloadPnrTemplate } from '@/lib/excel-template'
 import { getDemoStocks } from '@/lib/demo-storage'
-import { getCurrencyOptions } from '@/lib/currency-storage'
-import { CurrencyCombobox } from '@/components/shared/CurrencyCombobox'
 import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
-import * as Popover from '@radix-ui/react-popover'
-import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
-
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-// ─── Column Definitions — single source of truth for colgroup + header + width ─
-const PNR_COLS = [
-  { key: 'index',        label: '#',           width: 42,  align: 'center' },
-  { key: 'pnr',         label: 'PNR',         width: 92,  align: 'left'   },
-  { key: 'flightSet',   label: 'Flight Set',  width: 110, align: 'left'   },
-  { key: 'sector',      label: 'Sector',       width: 55,  align: 'center' },
-  { key: 'day',         label: 'Day',          width: 55,  align: 'center' },
-  { key: 'depDate',     label: 'Dep Date',     width: 115, align: 'center' },
-  { key: 'depTime',     label: 'Dep Time',     width: 78,  align: 'center' },
-  { key: 'arrDate',     label: 'Arr Date',     width: 115, align: 'center' },
-  { key: 'arrTime',     label: 'Arr Time',     width: 92,  align: 'center' },
-  { key: 'seat',        label: 'Seat',         width: 62,  align: 'center' },
-  { key: 'priceDetail', label: 'รายละเอียดราคา', width: 165, align: 'left'   },
-  { key: 'condition',   label: 'Condition',      width: 115, align: 'left'   },
-  { key: 'ttl',         label: 'NAME TTL',     width: 145, align: 'left'   },
-  { key: 'remark',      label: 'Remark',       width: 90,  align: 'left'   },
-  { key: 'action',      label: 'Action',       width: 46,  align: 'center' },
-]
-// Action column stretches to fill remaining space; all other cols are fixed
-const PNR_FIXED_WIDTH = PNR_COLS.filter(c => c.key !== 'action').reduce((s, c) => s + c.width, 0)
+import { PNRSeatsTable } from '@/components/shared/PNRSeatsTable'
+import type { PNRRecord, ScheduleTemplate } from '@/lib/pnr-record'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function emptyPNR(defaultCurrency = 'THB'): FlightPNRFormData {
@@ -86,110 +60,13 @@ function subtractDaysFromDate(dateStr: string, days: number): string {
   } catch { return '' }
 }
 
-const DOW_LABELS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'] as const
-function getDayLabel(dateStr: string): string {
-  if (!dateStr) return '—'
-  try {
-    const d = new Date(dateStr + 'T12:00:00')
-    if (isNaN(d.getTime())) return '—'
-    return DOW_LABELS[d.getDay()]
-  } catch { return '—' }
-}
-
 function addDaysToDate(dateStr: string, days: number): string {
-  if (!dateStr) return ''
-  if (days === 0) return dateStr
+  if (!dateStr || days === 0) return dateStr
   try {
     const d = new Date(dateStr + 'T12:00:00')
     d.setDate(d.getDate() + days)
     return d.toISOString().split('T')[0]
   } catch { return dateStr }
-}
-
-// ─── Overnight arrival recalculation ─────────────────────────────────────────
-// Called whenever dep_time or arr_time changes for a sector.
-// If both times are valid, arr_day_offset=0 (same-day template), and arr_time < dep_time
-// → the flight crosses midnight → bump arr_date to depDate+1 (wasAdjusted=true).
-// If the flight was previously bumped (wasAdjusted history tracked via arr_manual=false)
-// and times no longer cross midnight → revert arr_date to flightSetArr.
-// arr_manual=true (user explicitly typed an Arr Date) → never auto-change, only warn.
-function autoAdjustArrDate(
-  depDate: string,
-  depTime: string,
-  arrTime: string,
-  arrDayOffset: number,
-): { arrDate: string; wasAdjusted: boolean } {
-  if (!depDate) return { arrDate: '', wasAdjusted: false }
-  const flightSetArr = addDaysToDate(depDate, arrDayOffset)
-  // Overnight only applies when flight set expects same-day arrival
-  if (flightSetArr === depDate && depTime && arrTime && arrTime < depTime) {
-    return { arrDate: addDaysToDate(depDate, 1), wasAdjusted: true }
-  }
-  // Not overnight (or flight set already spans multiple days)
-  return { arrDate: flightSetArr, wasAdjusted: false }
-}
-
-// ─── PriceInput ───────────────────────────────────────────────────────────────
-function PriceInput({
-  value, nullable = false, disabled = false, hasError = false, errorTitle,
-  onChange, onBlur, cell = false, compact = false,
-}: {
-  value: number | null; nullable?: boolean; disabled?: boolean
-  hasError?: boolean; errorTitle?: string; cell?: boolean; compact?: boolean
-  onChange: (v: number | null) => void; onBlur?: () => void
-}) {
-  const inputRef = useRef<HTMLInputElement>(null)
-  const [focused, setFocused] = useState(false)
-  const [raw, setRaw] = useState(() => (value == null ? '' : String(value)))
-  const preEditRef = useRef<number | null>(null)
-
-  useEffect(() => {
-    if (inputRef.current !== document.activeElement) setRaw(value == null ? '' : String(value))
-  }, [value])
-
-  const fmtDisplay = (v: number | null) =>
-    v == null ? '' : v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-  const parse = (s: string): number | null => {
-    const t = s.trim()
-    if (t === '') return null
-    const n = Number(t)
-    return (isNaN(n) || n < 0) ? null : Math.round(n * 100) / 100
-  }
-  const commit = (rawStr: string) => { const v = parse(rawStr); onChange(v); setRaw(v == null ? '' : String(v)) }
-
-  if (disabled) {
-    return <span className="text-slate-300 select-none text-[12px] block text-right pr-1">—</span>
-  }
-
-  return (
-    <input ref={inputRef} type="text" inputMode="decimal"
-      value={focused ? raw : fmtDisplay(value)}
-      placeholder={focused ? (nullable ? '—' : '0.00') : (value == null ? 'ยังไม่ระบุ' : '')}
-      title={hasError && errorTitle ? errorTitle : undefined}
-      className={cn(
-        'w-full min-w-0 bg-transparent focus:outline-none tabular-nums transition-colors',
-        compact
-          ? cn('text-[11px] h-[18px] border-0 text-right px-0.5 py-0',
-              hasError ? 'text-red-500' : '',
-              !focused && value == null ? 'placeholder:text-slate-300 placeholder:italic' : 'text-slate-800 font-medium')
-          : cell
-            ? cn('text-[12px] h-7 border-0 text-right px-1 py-0',
-                hasError ? 'text-red-500' : '',
-                !focused && value == null ? 'placeholder:text-slate-300' : 'text-slate-800 font-medium')
-            : cn('text-xs px-2.5 py-1.5 border rounded-lg',
-                hasError ? 'border-red-300 bg-red-50/40 focus:border-red-400' :
-                focused ? 'border-[#05a94f] bg-emerald-50/20' : 'border-slate-200 focus:border-[#05a94f]',
-                !focused && value == null ? 'placeholder:text-slate-300' : 'text-slate-800 font-semibold'),
-      )}
-      onFocus={e => { preEditRef.current = value; setFocused(true); setRaw(value == null ? '' : String(value)); requestAnimationFrame(() => e.target.select()) }}
-      onBlur={() => { setFocused(false); commit(raw); onBlur?.() }}
-      onChange={e => setRaw(e.target.value)}
-      onKeyDown={e => {
-        if (e.key === 'Escape') { e.preventDefault(); const p = preEditRef.current; onChange(p); setRaw(p == null ? '' : String(p)); setFocused(false); inputRef.current?.blur() }
-        else if (e.key === 'Enter') { e.preventDefault(); commit(raw); setFocused(false); inputRef.current?.blur() }
-      }}
-    />
-  )
 }
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -205,62 +82,32 @@ interface Step4Props {
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function Step4PNR({ pnrs, schedules, conditions, currency, onChange, showValidation = false }: Step4Props) {
   const mainSectors = schedules.find(s => s.isMain)?.sectors ?? schedules[0]?.sectors ?? []
+
   const getPnrSectors = (pnr: FlightPNRFormData): FlightSectorFormData[] => {
     if (!pnr.schedule_id) return mainSectors
     return schedules.find(s => s.scheduleId === pnr.schedule_id)?.sectors ?? mainSectors
   }
   const sectors = mainSectors
 
-  const [touchedRows, setTouchedRows] = useState<Set<number>>(new Set())
-  const markTouched = (idx: number) => setTouchedRows(prev => { if (prev.has(idx)) return prev; const n = new Set(prev); n.add(idx); return n })
+  // ─── ScheduleTemplates for PNRSeatsTable ──────────────────────────────────
+  const scheduleTemplates = useMemo((): ScheduleTemplate[] =>
+    schedules.map(sch => ({
+      scheduleId:   sch.scheduleId,
+      scheduleName: sch.scheduleName,
+      isMain:       sch.isMain,
+      sectors:      sch.sectors.map(s => ({
+        sectorType:     s.sector_type,
+        dayOffset:      s.day_offset,
+        arrDayOffset:   s.arr_day_offset ?? 0,
+        depAirportCode: s.dep_airport_code ?? '',
+        arrAirportCode: s.arr_airport_code ?? '',
+        depTime:        s.dep_time ?? '',
+        arrTime:        s.arr_time ?? '',
+      })),
+    }))
+  , [schedules])
 
-  const [hoveredPnrIdx, setHoveredPnrIdx] = useState<number | null>(null)
-  const [bulkOpen, setBulkOpen] = useState(false)
-  const [importOpen, setImportOpen] = useState(false)
-  const [deleteConfirmIdx, setDeleteConfirmIdx] = useState<number | null>(null)
-  const [bulkTtlOpen, setBulkTtlOpen] = useState(false)
-  const [bulkTtlMode, setBulkTtlMode] = useState<'days_before' | 'fixed_date'>('days_before')
-  const [bulkTtlDays, setBulkTtlDays] = useState('14')
-  const [bulkTtlFixedDate, setBulkTtlFixedDate] = useState('')
-  const [bulkTtlTime, setBulkTtlTime] = useState('17:00')
-  const [bulkTtlScope, setBulkTtlScope] = useState<'no_ttl' | 'all' | 'selected'>('no_ttl')
-  const [bulkTtlSelectedPnrs, setBulkTtlSelectedPnrs] = useState<Set<number>>(new Set())
-  const [bulkTtlInnerStep, setBulkTtlInnerStep] = useState<'config' | 'overwrite_confirm'>('config')
-  const [priceTypeConfirm, setPriceTypeConfirm] = useState<{ idx: number; newFmt: 'FARE' | 'FARE_YQ' | 'ALL_IN' } | null>(null)
-  const [currencyConfirm, setCurrencyConfirm] = useState<{ idx: number; newCurrency: string } | null>(null)
-  const [ttlPopover, setTtlPopover] = useState<number | null>(null)
-  const [remarkPopover, setRemarkPopover] = useState<number | null>(null)
-  const [shiftConfirm, setShiftConfirm] = useState<{ pnrIdx: number; origDep: string; newDep: string } | null>(null)
-  const [toastMsg, setToastMsg] = useState<string | null>(null)
-  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [newRowHighlight, setNewRowHighlight] = useState<{ start: number; count: number } | null>(null)
-  const newHighlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const pendingScrollIdx = useRef<number | null>(null)
-
-  const showToast = (msg: string) => {
-    setToastMsg(msg)
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
-    toastTimerRef.current = setTimeout(() => setToastMsg(null), 2500)
-  }
-
-  // Scroll to first new PNR after pnrs state updates
-  useEffect(() => {
-    const idx = pendingScrollIdx.current
-    if (idx === null) return
-    pendingScrollIdx.current = null
-    const el = document.querySelector<HTMLElement>(`[data-pnr-idx="${idx}"]`)
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-  }, [pnrs])
-
-  const currencyOptions = useMemo(() => getCurrencyOptions(), [])
-  const existingPnrCodes = useMemo(() => {
-    const draftCodes = pnrs.map(p => p.pnr_code).filter(Boolean)
-    try {
-      const sysCodes = getDemoStocks().flatMap(s => s.pnrs.flatMap(p => [p.pnrCode, p.dummyPnr].filter(Boolean) as string[]))
-      return [...new Set([...draftCodes, ...sysCodes])]
-    } catch { return draftCodes }
-  }, [pnrs])
-
+  // ─── Adapters ─────────────────────────────────────────────────────────────
   const getSectorDatesForPnr = (p: FlightPNRFormData, sects: FlightSectorFormData[]) => {
     if (p.sector_dates && p.sector_dates.length === sects.length) {
       return p.sector_dates.map((sd, i) => {
@@ -283,220 +130,140 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
     })
   }
 
-  const commitPriceTypeChange = (idx: number, newFmt: 'FARE' | 'FARE_YQ' | 'ALL_IN') => {
-    const p = pnrs[idx]
-    const newTax = newFmt === 'FARE' ? p.tax : null
-    const newYq = newFmt !== 'ALL_IN' ? p.yq ?? null : null
-    update(idx, { price_format: newFmt, fare: p.fare, tax: newTax, yq: newYq, total_amount: calcPnrTotal(newFmt, p.fare, newTax, newYq) })
-  }
-  const commitPriceTypeKeep = (idx: number, newFmt: 'FARE' | 'FARE_YQ' | 'ALL_IN') => {
-    const p = pnrs[idx]
-    update(idx, { price_format: newFmt, total_amount: calcPnrTotal(newFmt, p.fare, p.tax ?? null, p.yq ?? null) })
-  }
-  const handlePriceTypeChange = (idx: number, newFmt: 'FARE' | 'FARE_YQ' | 'ALL_IN') => {
-    const p = pnrs[idx]; const oldFmt = (p.price_format ?? 'FARE') as string
-    if (newFmt === oldFmt) return
-    const losingTax = (newFmt === 'FARE_YQ' || newFmt === 'ALL_IN') && (p.tax ?? 0) > 0
-    const losingYq = newFmt === 'ALL_IN' && (p.yq ?? 0) > 0
-    if (losingTax || losingYq) { setPriceTypeConfirm({ idx, newFmt }); return }
-    commitPriceTypeChange(idx, newFmt)
-  }
-  const handleFareChange = (idx: number, v: number | null) => {
-    const p = pnrs[idx]; const fmt = p.price_format ?? 'FARE'; const fareVal = v ?? 0
-    update(idx, { fare: fareVal, total_amount: calcPnrTotal(fmt, fareVal, p.tax ?? null, p.yq ?? null) })
-  }
-  const handleTaxChange = (idx: number, v: number | null) => {
-    const p = pnrs[idx]; const fmt = p.price_format ?? 'FARE'
-    update(idx, { tax: v, total_amount: calcPnrTotal(fmt, p.fare, v, p.yq ?? null) })
-  }
-  const handleYqChange = (idx: number, v: number | null) => {
-    const p = pnrs[idx]; const fmt = p.price_format ?? 'FARE'
-    update(idx, { yq: v, total_amount: calcPnrTotal(fmt, p.fare, p.tax, v) })
-  }
-  const handleCurrencyChange = (idx: number, newCode: string) => {
-    const p = pnrs[idx]
-    if ((p.fare > 0) || ((p.yq ?? 0) > 0)) { setCurrencyConfirm({ idx, newCurrency: newCode }); return }
-    update(idx, { currency: newCode })
-  }
-
-  const handleSectorDepChange = (pnrIdx: number, sIdx: number, newDep: string) => {
-    const p = pnrs[pnrIdx]; const sects = getPnrSectors(p)
-    const currentSDs = getSectorDatesForPnr(p, sects)
-    const currentDep = currentSDs[sIdx]?.travel_date ?? ''
-    if (sIdx === 0) {
-      if (currentDep && newDep !== currentDep) { setShiftConfirm({ pnrIdx, origDep: currentDep, newDep }); return }
-      const newSDs = sects.map((s, i) => {
-        const dep = newDep ? calcSectorDate(newDep, s.day_offset) ?? '' : ''
-        return { ...currentSDs[i], sector_type: s.sector_type, day_offset: s.day_offset, travel_date: dep,
-          arr_date: dep ? addDaysToDate(dep, s.arr_day_offset ?? 0) : '', dep_manual: false as const, arr_manual: false as const }
-      })
-      markTouched(pnrIdx)
-      onChange(pnrs.map((row, i) => i !== pnrIdx ? row : { ...row, travel_start: newDep, travel_end: newSDs[newSDs.length - 1]?.arr_date || '', sector_dates: newSDs }))
-      return
+  const pnrToRecord = (p: FlightPNRFormData, idx: number): PNRRecord => {
+    const sects = getPnrSectors(p)
+    const sectorDates = getSectorDatesForPnr(p, sects)
+    return {
+      rowId:           String(idx),
+      seq:             idx + 1,
+      pnrCode:         p.pnr_code,
+      dummyPnr:        p.dummy_pnr,
+      activeScheduleId: p.schedule_id,
+      seatTotal:       p.seat_total,
+      priceFormat:     (p.price_format ?? 'FARE') as 'FARE' | 'FARE_YQ' | 'ALL_IN',
+      fare:            p.fare,
+      yq:              p.yq ?? null,
+      tax:             p.tax ?? null,
+      taxType:         (p.tax_type ?? 'separate') as 'separate' | 'included' | 'pending',
+      totalAmount:     p.total_amount,
+      currency:        p.currency || currency,
+      conditionId:     p.condition_id || '',
+      remark:          p.remark || '',
+      ttlType:         (p.ttl_type ?? 'NONE') as 'NONE' | 'DAYS_BEFORE' | 'FIXED_DATE',
+      ttlDate:         p.ttl_date ?? null,
+      ttlTime:         p.ttl_time ?? null,
+      ttlDaysBefore:   p.ttl_days_before ?? null,
+      sectors:         sects.map((s, i) => {
+        const sd = sectorDates[i]
+        return {
+          sectorType:     s.sector_type,
+          dayOffset:      s.day_offset,
+          arrDayOffset:   s.arr_day_offset ?? 0,
+          depAirportCode: s.dep_airport_code ?? '',
+          arrAirportCode: s.arr_airport_code ?? '',
+          depDate:        sd?.travel_date ?? '',
+          depTime:        sd?.dep_time ?? s.dep_time ?? '',
+          arrDate:        sd?.arr_date ?? '',
+          arrTime:        sd?.arr_time ?? s.arr_time ?? '',
+          depManual:      sd?.dep_manual ?? false,
+          arrManual:      sd?.arr_manual ?? false,
+          timeOverride:   sd?.time_override ?? false,
+          tmplDepTime:    s.dep_time ?? '',
+          tmplArrTime:    s.arr_time ?? '',
+        }
+      }),
     }
-    const newSDs = currentSDs.map((sd, i) => {
-      if (i !== sIdx) return sd
-      const s2 = sects[i]
-      const newArrDate = !(sd.arr_manual ?? false) && newDep
-        ? autoAdjustArrDate(newDep, sd.dep_time ?? '', sd.arr_time ?? '', s2?.arr_day_offset ?? 0).arrDate
-        : (sd.arr_date ?? '')
-      return { ...sd, travel_date: newDep, dep_manual: !!newDep, arr_date: newArrDate }
-    })
-    markTouched(pnrIdx)
-    onChange(pnrs.map((row, i) => i !== pnrIdx ? row : { ...row, travel_start: row.travel_start || newDep, sector_dates: newSDs }))
-  }
-  const handleSectorArrChange = (pnrIdx: number, sIdx: number, newArr: string) => {
-    const p = pnrs[pnrIdx]; const sects = getPnrSectors(p)
-    const currentSDs = getSectorDatesForPnr(p, sects)
-    const newSDs = currentSDs.map((sd, i) => i === sIdx ? { ...sd, arr_date: newArr, arr_manual: !!newArr } : sd)
-    markTouched(pnrIdx)
-    onChange(pnrs.map((row, i) => i !== pnrIdx ? row : { ...row, travel_end: sIdx === currentSDs.length - 1 ? newArr : row.travel_end, sector_dates: newSDs }))
-  }
-  const handleSectorDepTimeChange = (pnrIdx: number, sIdx: number, newTime: string) => {
-    const p = pnrs[pnrIdx]; const sects = getPnrSectors(p)
-    const currentSDs = getSectorDatesForPnr(p, sects)
-    const s = sects[sIdx]
-    const tmpl = s?.dep_time ?? ''
-    let pendingToast = ''
-    const newSDs = currentSDs.map((sd, i) => {
-      if (i !== sIdx) return sd
-      const arrManual = sd.arr_manual ?? false
-      const depDate = sd.travel_date || ''
-      const arrTime = sd.arr_time ?? ''
-      const arrDayOffset = s?.arr_day_offset ?? 0
-      const timeOverride = (newTime !== tmpl) || (arrTime !== (s?.arr_time ?? ''))
-      if (!arrManual && depDate) {
-        const { arrDate: newArrDate, wasAdjusted } = autoAdjustArrDate(depDate, newTime, arrTime, arrDayOffset)
-        if (wasAdjusted && newArrDate !== (sd.arr_date ?? '')) pendingToast = 'ปรับวันถึงเป็นวันถัดไป เนื่องจากเวลาถึงน้อยกว่าเวลาออก'
-        return { ...sd, dep_time: newTime, arr_date: newArrDate, time_override: timeOverride }
-      }
-      // arr_manual=true: never overwrite, but toast a warning when overnight on same day
-      if (arrManual && depDate && (sd.arr_date ?? '') === depDate && arrTime && newTime && arrTime < newTime) {
-        pendingToast = 'เวลาถึงน้อยกว่าเวลาออกในวันเดียวกัน กรุณาตรวจสอบ Arr Date'
-      }
-      return { ...sd, dep_time: newTime, time_override: timeOverride }
-    })
-    if (pendingToast) showToast(pendingToast)
-    markTouched(pnrIdx); onChange(pnrs.map((row, i) => i !== pnrIdx ? row : { ...row, sector_dates: newSDs }))
-  }
-  const handleSectorArrTimeChange = (pnrIdx: number, sIdx: number, newTime: string) => {
-    const p = pnrs[pnrIdx]; const sects = getPnrSectors(p)
-    const currentSDs = getSectorDatesForPnr(p, sects)
-    const s = sects[sIdx]
-    const tmpl = s?.arr_time ?? ''
-    let pendingToast = ''
-    const newSDs = currentSDs.map((sd, i) => {
-      if (i !== sIdx) return sd
-      const arrManual = sd.arr_manual ?? false
-      const depDate = sd.travel_date || ''
-      const depTime = sd.dep_time ?? ''
-      const arrDayOffset = s?.arr_day_offset ?? 0
-      const timeOverride = (depTime !== (s?.dep_time ?? '')) || (newTime !== tmpl)
-      if (!arrManual && depDate) {
-        const { arrDate: newArrDate, wasAdjusted } = autoAdjustArrDate(depDate, depTime, newTime, arrDayOffset)
-        if (wasAdjusted && newArrDate !== (sd.arr_date ?? '')) pendingToast = 'ปรับวันถึงเป็นวันถัดไป เนื่องจากเวลาถึงน้อยกว่าเวลาออก'
-        return { ...sd, arr_time: newTime, arr_date: newArrDate, time_override: timeOverride }
-      }
-      // arr_manual=true: never overwrite, but toast a warning when overnight on same day
-      if (arrManual && depDate && (sd.arr_date ?? '') === depDate && depTime && newTime && newTime < depTime) {
-        pendingToast = 'เวลาถึงน้อยกว่าเวลาออกในวันเดียวกัน กรุณาตรวจสอบ Arr Date'
-      }
-      return { ...sd, arr_time: newTime, time_override: timeOverride }
-    })
-    if (pendingToast) showToast(pendingToast)
-    markTouched(pnrIdx); onChange(pnrs.map((row, i) => i !== pnrIdx ? row : { ...row, sector_dates: newSDs }))
   }
 
-  const confirmRecalcAll = () => {
-    if (!shiftConfirm) return
-    const { pnrIdx, newDep } = shiftConfirm; const p = pnrs[pnrIdx]; const sects = getPnrSectors(p)
-    const currentSDs = getSectorDatesForPnr(p, sects)
-    const newSDs = sects.map((s, i) => {
-      const dep = calcSectorDate(newDep, s.day_offset) ?? ''; const sd = currentSDs[i]
-      const dTime = sd?.dep_time ?? (s.dep_time ?? ''); const aTime = sd?.arr_time ?? (s.arr_time ?? '')
-      const arrDate = dep ? autoAdjustArrDate(dep, dTime, aTime, s.arr_day_offset ?? 0).arrDate : ''
-      return { sector_type: s.sector_type, day_offset: s.day_offset, travel_date: dep,
-        arr_date: arrDate, dep_manual: false as const, arr_manual: false as const,
-        dep_time: dTime, arr_time: aTime, time_override: sd?.time_override ?? false }
-    })
-    markTouched(pnrIdx)
-    onChange(pnrs.map((row, i) => i !== pnrIdx ? row : { ...row, travel_start: newDep, travel_end: newSDs[newSDs.length - 1]?.arr_date || '', date_sync_status: 'SYNCED' as const, sector_dates: newSDs }))
-    setShiftConfirm(null)
-  }
-  const confirmRecalcNonManual = () => {
-    if (!shiftConfirm) return
-    const { pnrIdx, newDep } = shiftConfirm; const p = pnrs[pnrIdx]; const sects = getPnrSectors(p)
-    const currentSDs = getSectorDatesForPnr(p, sects)
-    const newSDs = sects.map((s, i) => {
-      const sd = currentSDs[i]
-      if (sd?.dep_manual) {
-        return { ...sd, day_offset: s.day_offset, arr_date: sd.arr_manual ? (sd.arr_date ?? '') : (sd.travel_date ? addDaysToDate(sd.travel_date, s.arr_day_offset ?? 0) : '') }
-      }
-      const dep = calcSectorDate(newDep, s.day_offset) ?? ''
-      return { sector_type: s.sector_type, day_offset: s.day_offset, travel_date: dep,
-        arr_date: dep ? addDaysToDate(dep, s.arr_day_offset ?? 0) : '', dep_manual: false as const, arr_manual: false as const,
-        dep_time: sd?.dep_time ?? (s.dep_time ?? ''), arr_time: sd?.arr_time ?? (s.arr_time ?? ''), time_override: sd?.time_override ?? false }
-    })
-    markTouched(pnrIdx)
-    onChange(pnrs.map((row, i) => i !== pnrIdx ? row : { ...row, travel_start: newDep, travel_end: newSDs[newSDs.length - 1]?.arr_date || '', date_sync_status: 'SYNCED' as const, sector_dates: newSDs }))
-    setShiftConfirm(null)
-  }
-  const confirmKeepManual = () => {
-    if (!shiftConfirm) return
-    const { pnrIdx, newDep } = shiftConfirm; const p = pnrs[pnrIdx]; const sects = getPnrSectors(p)
-    const currentSDs = getSectorDatesForPnr(p, sects)
-    const newSDs = currentSDs.map((sd, i) => i === 0 ? { ...sd, travel_date: newDep, dep_manual: false as const } : sd)
-    markTouched(pnrIdx)
-    onChange(pnrs.map((row, i) => i !== pnrIdx ? row : { ...row, travel_start: newDep, sector_dates: newSDs }))
-    setShiftConfirm(null)
+  const recordToPnr = (rec: PNRRecord, orig: FlightPNRFormData): FlightPNRFormData => {
+    const sects = getPnrSectors(orig)
+    return {
+      ...orig,
+      pnr_code:       rec.pnrCode,
+      dummy_pnr:      rec.pnrCode.trim() ? '' : orig.dummy_pnr,
+      schedule_id:    rec.activeScheduleId,
+      seat_total:     rec.seatTotal,
+      price_format:   rec.priceFormat,
+      fare:           rec.fare,
+      yq:             rec.yq,
+      tax:            rec.tax,
+      tax_type:       rec.taxType as TaxType,
+      total_amount:   rec.totalAmount,
+      currency:       rec.currency,
+      condition_id:   rec.conditionId,
+      remark:         rec.remark,
+      ttl_type:       rec.ttlType,
+      ttl_date:       rec.ttlDate,
+      ttl_time:       rec.ttlTime,
+      ttl_days_before: rec.ttlDaysBefore,
+      ttl_status:     rec.ttlType !== 'NONE' && rec.ttlDate ? 'SET' : 'UNSET',
+      travel_start:   rec.sectors[0]?.depDate || orig.travel_start,
+      travel_end:     rec.sectors[rec.sectors.length - 1]?.arrDate || orig.travel_end,
+      sector_dates:   rec.sectors.map((sd, i) => ({
+        sector_type:  sects[i]?.sector_type ?? sd.sectorType,
+        day_offset:   sd.dayOffset,
+        travel_date:  sd.depDate,
+        arr_date:     sd.arrDate,
+        dep_manual:   sd.depManual,
+        arr_manual:   sd.arrManual,
+        dep_time:     sd.depTime,
+        arr_time:     sd.arrTime,
+        time_override: sd.timeOverride,
+      })),
+    }
   }
 
-  const handleResetSector = (pnrIdx: number, sIdx: number) => {
-    const p = pnrs[pnrIdx]; const sects = getPnrSectors(p); const s = sects[sIdx]
-    if (!p.travel_start || !s) return
-    const currentSDs = getSectorDatesForPnr(p, sects)
-    const dep = calcSectorDate(p.travel_start, s.day_offset) ?? ''
-    const arr = dep ? addDaysToDate(dep, s.arr_day_offset ?? 0) : ''
-    const newSDs = currentSDs.map((sd, i) => i === sIdx
-      ? { ...sd, travel_date: dep, arr_date: arr, dep_manual: false as const, arr_manual: false as const, dep_time: s.dep_time ?? '', arr_time: s.arr_time ?? '', time_override: false as const }
-      : sd)
-    markTouched(pnrIdx)
-    onChange(pnrs.map((row, i) => i !== pnrIdx ? row : { ...row, travel_end: sIdx === sects.length - 1 ? arr : row.travel_end, sector_dates: newSDs }))
-  }
-  const handleResetAllSectors = (pnrIdx: number) => {
-    const p = pnrs[pnrIdx]; const sects = getPnrSectors(p); if (!p.travel_start) return
-    const newSDs = sects.map(s => {
-      const dep = calcSectorDate(p.travel_start!, s.day_offset) ?? ''
-      return { sector_type: s.sector_type, day_offset: s.day_offset, travel_date: dep,
-        arr_date: dep ? addDaysToDate(dep, s.arr_day_offset ?? 0) : '', dep_manual: false as const, arr_manual: false as const,
-        dep_time: s.dep_time ?? '', arr_time: s.arr_time ?? '', time_override: false as const }
-    })
-    markTouched(pnrIdx)
-    onChange(pnrs.map((row, i) => i !== pnrIdx ? row : { ...row, travel_end: newSDs[newSDs.length - 1]?.arr_date || '', date_sync_status: 'SYNCED' as const, sector_dates: newSDs }))
+  const records = useMemo(() => pnrs.map((p, i) => pnrToRecord(p, i)), [pnrs, schedules]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleTableChange = (newRecords: PNRRecord[]) => {
+    onChange(newRecords.map((rec, i) => recordToPnr(rec, pnrs[i] ?? emptyPNR(currency))))
   }
 
-  const update = (idx: number, patch: Partial<FlightPNRFormData>) => {
-    onChange(pnrs.map((p, i) => {
-      if (i !== idx) return p
-      const base = { ...p, ...patch }
-      const pnrSectors = getPnrSectors(base)
-      const needsDateRecompute = patch.travel_start !== undefined || patch.schedule_id !== undefined
-      const travel_end = needsDateRecompute
-        ? ((base.travel_end_override && base.travel_start) ? base.travel_end : calcTravelEndFromSectors(base.travel_start, pnrSectors) || '')
-        : base.travel_end
-      const sector_dates = needsDateRecompute
-        ? pnrSectors.map(s => {
-            const dep = calcSectorDate(base.travel_start, s.day_offset) || ''
-            return { sector_type: s.sector_type, day_offset: s.day_offset, travel_date: dep,
-              arr_date: dep ? addDaysToDate(dep, s.arr_day_offset ?? 0) : '', dep_manual: false as const, arr_manual: false as const,
-              dep_time: s.dep_time ?? '', arr_time: s.arr_time ?? '', time_override: false as const }
-          })
-        : base.sector_dates
-      const dummy_pnr = patch.pnr_code !== undefined && patch.pnr_code.trim() ? '' : base.dummy_pnr
-      return { ...base, travel_end, sector_dates, dummy_pnr }
-    }))
+  const handleDelete = (rowId: string) => {
+    const idx = parseInt(rowId, 10)
+    if (isNaN(idx)) return
+    onChange(pnrs.filter((_, i) => i !== idx))
   }
 
+  const handleDuplicate = (rowId: string) => {
+    const idx = parseInt(rowId, 10)
+    if (isNaN(idx)) return
+    const src = pnrs[idx]
+    onChange([...pnrs.slice(0, idx + 1), { ...src, id: undefined, pnr_code: '', dummy_pnr: '' }, ...pnrs.slice(idx + 1)])
+  }
+
+  // ─── UI state ─────────────────────────────────────────────────────────────
+  const [bulkOpen,        setBulkOpen]        = useState(false)
+  const [importOpen,      setImportOpen]      = useState(false)
+  const [bulkTtlOpen,     setBulkTtlOpen]     = useState(false)
+  const [bulkTtlMode,     setBulkTtlMode]     = useState<'days_before' | 'fixed_date'>('days_before')
+  const [bulkTtlDays,     setBulkTtlDays]     = useState('14')
+  const [bulkTtlFixedDate, setBulkTtlFixedDate] = useState('')
+  const [bulkTtlTime,     setBulkTtlTime]     = useState('17:00')
+  const [bulkTtlScope,    setBulkTtlScope]    = useState<'no_ttl' | 'all' | 'selected'>('no_ttl')
+  const [bulkTtlSelectedPnrs, setBulkTtlSelectedPnrs] = useState<Set<number>>(new Set())
+  const [bulkTtlInnerStep, setBulkTtlInnerStep] = useState<'config' | 'overwrite_confirm'>('config')
+  const [toastMsg,        setToastMsg]        = useState<string | null>(null)
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [newRowHighlight, setNewRowHighlight] = useState<{ start: number; count: number } | null>(null)
+  const newHighlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingScrollIdx = useRef<number | null>(null)
+
+  const showToast = (msg: string) => {
+    setToastMsg(msg)
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+    toastTimerRef.current = setTimeout(() => setToastMsg(null), 2500)
+  }
+
+  useEffect(() => {
+    const idx = pendingScrollIdx.current
+    if (idx === null) return
+    pendingScrollIdx.current = null
+    const el = document.querySelector<HTMLElement>(`[data-pnr-idx="${idx}"]`)
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }, [pnrs])
+
+  // ─── Row operations ────────────────────────────────────────────────────────
   const addRow = () => onChange([...pnrs, emptyPNR(currency)])
 
   const addBulkPNRs = (rows: BulkPnrRow[]) => {
@@ -524,7 +291,6 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
     })
     const firstNewIdx = pnrs.length
     pendingScrollIdx.current = firstNewIdx
-    // Highlight newly added rows with green, fade after 2.5s
     setNewRowHighlight({ start: firstNewIdx, count: newPNRs.length })
     if (newHighlightTimerRef.current) clearTimeout(newHighlightTimerRef.current)
     newHighlightTimerRef.current = setTimeout(() => setNewRowHighlight(null), 2500)
@@ -565,17 +331,23 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
     ttlRule: { calcType: c.ttlRule?.calcType ?? 'NOT_SET', baseDate: 'Travel Start', daysBefore: c.ttlRule?.daysBefore ?? 0, date: c.ttlRule?.fixedDate, time: c.ttlRule?.time },
   }))
 
-  const deleteRow = (idx: number) => setDeleteConfirmIdx(idx)
-  const confirmDelete = () => {
-    if (deleteConfirmIdx === null) return
-    onChange(pnrs.filter((_, i) => i !== deleteConfirmIdx))
-    setTouchedRows(new Set()); setDeleteConfirmIdx(null)
-  }
-  const duplicateRow = (idx: number) => {
-    const src = pnrs[idx]
-    onChange([...pnrs.slice(0, idx + 1), { ...src, id: undefined, pnr_code: '', dummy_pnr: '' }, ...pnrs.slice(idx + 1)])
+  // ─── Outdated PNRs ────────────────────────────────────────────────────────
+  const outdatedCount = pnrs.filter(p => p.date_sync_status === 'OUTDATED').length
+  const updateOutdatedPNRs = () => {
+    onChange(pnrs.map(p => {
+      if (p.date_sync_status !== 'OUTDATED' || !p.travel_start) return p
+      const pnrSectors = getPnrSectors(p)
+      const newSDs = pnrSectors.map(s => {
+        const dep = calcSectorDate(p.travel_start!, s.day_offset) ?? ''
+        return { sector_type: s.sector_type, day_offset: s.day_offset, travel_date: dep,
+          arr_date: dep ? addDaysToDate(dep, s.arr_day_offset ?? 0) : '', dep_manual: false as const, arr_manual: false as const,
+          dep_time: s.dep_time ?? '', arr_time: s.arr_time ?? '', time_override: false as const }
+      })
+      return { ...p, travel_end: calcTravelEndFromSectors(p.travel_start, pnrSectors) ?? p.travel_end, travel_end_override: false, sector_dates: newSDs, date_sync_status: 'SYNCED' as const }
+    }))
   }
 
+  // ─── Bulk TTL ─────────────────────────────────────────────────────────────
   const getTargetPnrIndices = (): number[] => {
     if (bulkTtlScope === 'all') return pnrs.map((_, i) => i)
     if (bulkTtlScope === 'selected') return [...bulkTtlSelectedPnrs].sort((a, b) => a - b)
@@ -607,24 +379,7 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
     commitBulkTtl('all')
   }
 
-  const outdatedCount = pnrs.filter(p => p.date_sync_status === 'OUTDATED').length
-  const updateOutdatedPNRs = () => {
-    onChange(pnrs.map(p => {
-      if (p.date_sync_status !== 'OUTDATED' || !p.travel_start) return p
-      const pnrSectors = getPnrSectors(p); const currentSDs = getSectorDatesForPnr(p, pnrSectors)
-      const newSDs = pnrSectors.map((s, i) => {
-        const dep = calcSectorDate(p.travel_start!, s.day_offset) ?? ''; const sd = currentSDs[i]
-        return { sector_type: s.sector_type, day_offset: s.day_offset, travel_date: dep,
-          arr_date: dep ? addDaysToDate(dep, s.arr_day_offset ?? 0) : '', dep_manual: false as const, arr_manual: false as const,
-          dep_time: sd?.dep_time ?? (s.dep_time ?? ''), arr_time: sd?.arr_time ?? (s.arr_time ?? ''), time_override: sd?.time_override ?? false }
-      })
-      return { ...p, travel_end: calcTravelEndFromSectors(p.travel_start, pnrSectors) ?? p.travel_end, travel_end_override: false, sector_dates: newSDs, date_sync_status: 'SYNCED' as const }
-    }))
-  }
-
   const ttlTargetIndices = bulkTtlOpen ? getTargetPnrIndices() : []
-  const ttlExistingTtlCount = ttlTargetIndices.filter(i => hasTtl(pnrs[i])).length
-  const ttlNoTtlCount = ttlTargetIndices.filter(i => !hasTtl(pnrs[i])).length
   const ttlDaysNum = parseInt(bulkTtlDays, 10)
   const ttlDaysValid = !isNaN(ttlDaysNum) && ttlDaysNum >= 0
   const ttlTimeValid = /^\d{2}:\d{2}$/.test(bulkTtlTime)
@@ -644,29 +399,15 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
     return { totalPnr, totalSeats, noTtlCount }
   }, [pnrs])
 
-  const activeConfirmBanner = shiftConfirm ? 'shift' : priceTypeConfirm ? 'priceType' : currencyConfirm ? 'currency' : null
-
-  // ─── Cell base classes — NO sticky, NO z-index, NO left offset ───────────────
-  // th: height 34px, overflow:hidden, whitespace:nowrap, box-sizing:border-box
-  const TH = 'border-r border-b border-[#E5EAF0] px-1.5 py-0 h-[34px] align-middle text-[11px] font-medium text-slate-600 bg-[#F0F4F8] select-none overflow-hidden whitespace-nowrap box-border'
-  const TH_C = cn(TH, 'text-center')
-  const TH_L = cn(TH, 'text-left')
-  // td: align-middle, overflow:hidden, whitespace:nowrap, box-sizing:border-box
-  const TD = 'border-r border-[#E5EAF0] px-1.5 align-middle overflow-hidden whitespace-nowrap box-border'
-  const TD_C = cn(TD, 'text-center')
-  const TD_L = cn(TD, 'text-left')
-  // sector columns: faint background tint
-  const TD_SEC = cn(TD, 'bg-[#F8FAFC]')
-  const TD_SEC_C = cn(TD_SEC, 'text-center')
+  const conditionsForTable = useMemo(() =>
+    conditions.map(c => ({ conditionId: c.conditionId, conditionName: c.conditionName }))
+  , [conditions])
 
   // ─── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col gap-1.5">
 
-      {/* Focus outline for editable cells */}
-      <style>{`.s4g td:focus-within{outline:1.5px solid #05a94f;outline-offset:-1px;position:relative;z-index:1}`}</style>
-
-      {/* Toast */}
+      {/* Toast (for bulk-add notifications) */}
       {toastMsg && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[9999] flex items-center gap-2 bg-slate-800/95 text-white text-xs px-4 py-2 rounded-full shadow-xl pointer-events-none">
           {toastMsg}
@@ -682,52 +423,6 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
             className="flex items-center gap-1 text-[11px] font-semibold text-amber-800 border border-amber-400 bg-amber-100 hover:bg-amber-200 px-2 py-0.5 rounded transition-colors whitespace-nowrap">
             <RefreshCw size={11} />อัปเดตทั้งหมด
           </button>
-        </div>
-      )}
-
-      {/* Confirmation banners */}
-      {activeConfirmBanner === 'shift' && shiftConfirm && (
-        <div className="flex items-center gap-2 px-2.5 py-1.5 bg-blue-50 border border-blue-200 rounded-lg text-[11px] text-blue-800 flex-wrap">
-          <CalendarDays size={12} className="shrink-0 text-blue-500" />
-          <span className="flex-1 min-w-0">Travel Start เปลี่ยนเป็น <strong>{formatTravelDate(shiftConfirm.newDep)}</strong> — คำนวณวันที่ Sector อื่นใหม่อย่างไร?</span>
-          <button type="button" onClick={confirmRecalcAll} className="px-2 py-0.5 bg-blue-600 text-white rounded text-[10px] font-semibold hover:bg-blue-700 whitespace-nowrap shrink-0">คำนวณใหม่ทุก Sector</button>
-          <button type="button" onClick={confirmRecalcNonManual} className="px-2 py-0.5 bg-white border border-blue-300 text-blue-700 rounded text-[10px] hover:bg-blue-50 whitespace-nowrap shrink-0">เฉพาะที่ไม่ได้แก้เอง</button>
-          <button type="button" onClick={confirmKeepManual} className="px-2 py-0.5 bg-white border border-slate-300 text-slate-600 rounded text-[10px] hover:bg-slate-50 whitespace-nowrap shrink-0">คงค่าที่แก้เอง</button>
-          <button type="button" onClick={() => setShiftConfirm(null)} className="text-slate-400 hover:text-slate-600 text-[10px] whitespace-nowrap shrink-0 px-1">ยกเลิก</button>
-        </div>
-      )}
-      {activeConfirmBanner === 'priceType' && priceTypeConfirm && (() => {
-        const pp = pnrs[priceTypeConfirm.idx]
-        const oldFmt = (pp.price_format ?? 'FARE') as string
-        const newFmt = priceTypeConfirm.newFmt
-        const fmtLabel = (f: string) => f === 'FARE_YQ' ? 'FARE+YQ' : f === 'ALL_IN' ? 'ALL IN' : 'FARE'
-        const losingTax = (newFmt === 'FARE_YQ' || newFmt === 'ALL_IN') && (pp.tax ?? 0) > 0
-        const losingYq = newFmt === 'ALL_IN' && (pp.yq ?? 0) > 0
-        const lossDesc = losingTax && losingYq ? 'Tax และ YQ' : losingTax ? 'Tax' : 'YQ'
-        return (
-          <div className="flex items-start gap-2 px-2.5 py-2 bg-amber-50 border border-amber-200 rounded-lg text-[11px] text-amber-800 flex-wrap">
-            <span className="shrink-0 mt-0.5">⚠</span>
-            <div className="flex-1 min-w-0 space-y-0.5">
-              <p className="font-semibold">เปลี่ยนประเภทราคา — PNR #{priceTypeConfirm.idx + 1}</p>
-              <p className="text-amber-700">
-                <span className={cn('font-bold', oldFmt === 'FARE_YQ' ? 'text-amber-600' : oldFmt === 'ALL_IN' ? 'text-blue-600' : 'text-slate-600')}>{fmtLabel(oldFmt)}</span>
-                {' → '}
-                <span className={cn('font-bold', newFmt === 'FARE_YQ' ? 'text-amber-600' : newFmt === 'ALL_IN' ? 'text-blue-600' : 'text-slate-600')}>{fmtLabel(newFmt)}</span>
-                {' · มีค่า '}<strong>{lossDesc}</strong>{' ที่กรอกไว้แล้ว'}
-              </p>
-            </div>
-            <button type="button" onClick={() => setPriceTypeConfirm(null)} className="px-2 py-0.5 bg-white border border-amber-300 text-amber-700 rounded text-[10px] hover:bg-amber-50 whitespace-nowrap shrink-0">ยกเลิก</button>
-            <button type="button" onClick={() => { commitPriceTypeKeep(priceTypeConfirm.idx, newFmt); setPriceTypeConfirm(null) }} className="px-2 py-0.5 bg-white border border-amber-400 text-amber-800 rounded text-[10px] font-semibold hover:bg-amber-100 whitespace-nowrap shrink-0">เก็บค่าที่กรอกไว้</button>
-            <button type="button" onClick={() => { commitPriceTypeChange(priceTypeConfirm.idx, newFmt); setPriceTypeConfirm(null) }} className="px-2 py-0.5 bg-amber-600 text-white rounded text-[10px] font-semibold hover:bg-amber-700 whitespace-nowrap shrink-0">ล้างค่าที่ไม่เกี่ยวข้อง</button>
-          </div>
-        )
-      })()}
-      {activeConfirmBanner === 'currency' && currencyConfirm && (
-        <div className="flex items-center gap-2 px-2.5 py-1.5 bg-amber-50 border border-amber-200 rounded-lg text-[11px] text-amber-800 flex-wrap">
-          <span className="shrink-0">⚠</span>
-          <span className="flex-1 min-w-0">เปลี่ยนสกุลเงิน PNR #{currencyConfirm.idx + 1} เป็น <strong className="font-mono">{currencyConfirm.newCurrency}</strong> — ราคาไม่ถูกแปลงอัตโนมัติ</span>
-          <button type="button" onClick={() => { update(currencyConfirm.idx, { currency: currencyConfirm.newCurrency }); setCurrencyConfirm(null) }} className="px-2 py-0.5 bg-amber-600 text-white rounded text-[10px] font-semibold hover:bg-amber-700 whitespace-nowrap shrink-0">เปลี่ยน</button>
-          <button type="button" onClick={() => setCurrencyConfirm(null)} className="px-2 py-0.5 bg-white border border-amber-300 text-amber-700 rounded text-[10px] hover:bg-amber-50 whitespace-nowrap shrink-0">ยกเลิก</button>
         </div>
       )}
 
@@ -753,506 +448,27 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
         </div>
       </div>
 
-      {/* ── Data Grid ─────────────────────────────────────────────────────────
-          NO position:sticky | NO z-index on cells | NO left offsets
-          Single scroll container — table scrolls as one unit horizontally
-          Header and body share ONE colgroup — guaranteed alignment
-      ─────────────────────────────────────────────────────────────────────── */}
-      <div className="overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-sm"
-        style={{ maxHeight: pnrs.length > 10 ? 'calc(100vh - 260px)' : undefined, overflowY: pnrs.length > 10 ? 'auto' : 'visible' }}>
-        <table
-          className="s4g text-[12px]"
-          style={{ width: '100%', minWidth: PNR_FIXED_WIDTH + 60, tableLayout: 'fixed', borderCollapse: 'separate', borderSpacing: 0 }}>
-
-          {/* Single colgroup — action col has no fixed width so it takes remaining space */}
-          <colgroup>
-            {PNR_COLS.map(c => c.key === 'action'
-              ? <col key={c.key} />
-              : <col key={c.key} style={{ width: c.width }} />)}
-          </colgroup>
-
-          {/* ── Header — 21 th cells matching PNR_COLS order ── */}
-          <thead>
-            <tr>
-              <th className={TH_C}>#</th>
-              <th className={TH_L}>PNR</th>
-              <th className={TH_L}>Flight Set</th>
-              <th className={cn(TH_C, 'bg-[#EDF5FF]')}>Sector</th>
-              <th className={cn(TH_C, 'bg-[#EDF5FF]')}>Day</th>
-              <th className={cn(TH_C, 'bg-[#EDF5FF]')}>Dep Date</th>
-              <th className={cn(TH_C, 'bg-[#EDF5FF]')} style={{ width: 78, minWidth: 78, maxWidth: 78, paddingLeft: 0, paddingRight: 0 }}>Dep Time</th>
-              <th className={cn(TH_C, 'bg-[#EDF5FF]')}>Arr Date</th>
-              <th className={cn(TH_C, 'bg-[#EDF5FF]')} style={{ width: 92, minWidth: 92, maxWidth: 92, paddingLeft: 0, paddingRight: 0 }}>Arr Time</th>
-              <th className={TH_C}>Seat</th>
-              <th className={TH_L}>รายละเอียดราคา</th>
-              <th className={TH_L}>Condition</th>
-              <th className={TH_L}>NAME TTL</th>
-              <th className={TH_L}>Remark</th>
-              <th className={cn(TH_C, 'border-r-0')}>Action</th>
-            </tr>
-          </thead>
-
-          {/* ── Body ── */}
-          <tbody>
-            {pnrs.length === 0 && (
-              <tr>
-                <td colSpan={19} className="py-10 text-center border-b border-[#E5EAF0]">
-                  <div className="flex flex-col items-center gap-2">
-                    <PlusCircle size={28} className="text-slate-200" strokeWidth={1} />
-                    <p className="text-[13px] text-slate-400">ยังไม่มีรายการ PNR</p>
-                    <p className="text-[11px] text-slate-300">กดปุ่ม &quot;+ เพิ่ม PNR&quot; หรือ &quot;หลาย PNR&quot; ด้านบน</p>
-                  </div>
-                </td>
-              </tr>
-            )}
-
-            {pnrs.map((p, pnrIdx) => {
-              const rowSectors = getPnrSectors(p)
-              const sectorDates = getSectorDatesForPnr(p, rowSectors)
-              const sectorCount = Math.max(sectorDates.length, 1)
-              const isHovered = hoveredPnrIdx === pnrIdx
-              const touched = touchedRows.has(pnrIdx) || showValidation
-              const fmt = (p.price_format ?? 'FARE') as 'FARE' | 'FARE_YQ' | 'ALL_IN'
-              const isDupPnr = !!p.pnr_code.trim() && pnrs.some((other, oi) => oi !== pnrIdx && other.pnr_code.trim() === p.pnr_code.trim())
-              const pnrErr = touched && isDupPnr
-              const missingSeat = touched && (!p.seat_total || p.seat_total <= 0)
-              const fareErr = touched && !(p.fare > 0)
-              const taxErr = touched && fmt === 'FARE' && p.tax == null
-              const yqErr = touched && (fmt === 'FARE' || fmt === 'FARE_YQ') && p.yq == null
-              const missingDate = touched && !p.travel_start
-              const ttlSt = getTtlStatus(p.ttl_date ?? null, p.ttl_time ?? null)
-              const activeScheduleId = p.schedule_id ?? schedules.find(s => s.isMain)?.scheduleId ?? schedules[0]?.scheduleId ?? ''
-              const fsName = schedules.find(s => s.scheduleId === activeScheduleId)?.scheduleName ?? schedules[0]?.scheduleName ?? 'Default'
-              const taxDisabled = fmt !== 'FARE'
-              const yqDisabled = fmt === 'ALL_IN'
-              const isNewlyAdded = newRowHighlight !== null && pnrIdx >= newRowHighlight.start && pnrIdx < newRowHighlight.start + newRowHighlight.count
-              const hvBg = isHovered ? '#F0F7FF' : isNewlyAdded ? '#f0fdf4' : '#FFFFFF'
-              const hvSec = isHovered ? '#EBF4FF' : isNewlyAdded ? '#dcfce7' : '#F8FAFC'
-              // PNR group border: thick bottom on last PNR, light on others
-              const isLastPnr = pnrIdx === pnrs.length - 1
-              const pnrBorderB = isLastPnr ? 'border-b border-b-[#E5EAF0]' : 'border-b-2 border-b-slate-300'
-
-              const sectorErrors: (string | null)[] = sectorDates.map((sd, i) => {
-                if (sd.travel_date && sd.arr_date && sd.arr_date < sd.travel_date) return 'Arr ก่อน Dep'
-                if (i > 0) { const prev = sectorDates[i - 1]; if (prev.arr_date && sd.travel_date && sd.travel_date < prev.arr_date) return `Dep ก่อน Arr S${i}` }
-                // Same-day with midnight crossing — only shows when user has manually locked arr_date
-                if (sd.travel_date && sd.arr_date === sd.travel_date && sd.dep_time && sd.arr_time && sd.arr_time < sd.dep_time) return 'เวลาถึงก่อนเวลาออก'
-                return null
-              })
-
-              return (
-                <Fragment key={pnrIdx}>
-                  {sectorDates.map((sd, sIdx) => {
-                    const isFirstRow = sIdx === 0
-                    const isLastSector = sIdx === sectorDates.length - 1
-                    const s = rowSectors[sIdx]
-                    const sectorErr = sectorErrors[sIdx]
-                    const expectedDep = p.travel_start && s ? calcSectorDate(p.travel_start, s.day_offset) ?? '' : ''
-                    const expectedArr = expectedDep && s ? addDaysToDate(expectedDep, s.arr_day_offset ?? 0) : ''
-                    const isDepManual = sd.dep_manual != null ? !!sd.dep_manual : !!(sd.travel_date && expectedDep && sd.travel_date !== expectedDep)
-                    const isArrManual = sd.arr_manual != null ? !!sd.arr_manual : !!(sd.arr_date && expectedArr && sd.arr_date !== expectedArr)
-                    const displayDep = shiftConfirm?.pnrIdx === pnrIdx && sIdx === 0 ? shiftConfirm.newDep : (sd.travel_date || '')
-                    const displayArr = sd.arr_date || ''
-                    // Per-sector row border: last sector of PNR group = PNR separator; others = light line
-                    const rowBorderB = isLastSector ? pnrBorderB : 'border-b border-b-[#E5EAF0]'
-
-                    return (
-                      <tr key={`${pnrIdx}-${sIdx}`}
-                        data-pnr-idx={isFirstRow ? pnrIdx : undefined}
-                        style={{ height: 36, backgroundColor: hvBg, transition: 'background-color 1.2s ease' }}
-                        onMouseEnter={() => setHoveredPnrIdx(pnrIdx)}
-                        onMouseLeave={() => setHoveredPnrIdx(null)}>
-
-                        {/* ── Col 1: # (PNR-level, rowspan) ── */}
-                        {isFirstRow && (
-                          <td rowSpan={sectorCount}
-                            className={cn('border-r border-[#E5EAF0] text-center align-middle overflow-hidden', pnrBorderB)}
-                            style={{ backgroundColor: hvBg }}>
-                            <span className="text-[11px] text-slate-400 select-none">{pnrIdx + 1}</span>
-                          </td>
-                        )}
-
-                        {/* ── Col 2: PNR (PNR-level, rowspan) ── */}
-                        {isFirstRow && (
-                          <td rowSpan={sectorCount}
-                            className={cn('border-r border-[#E5EAF0] align-middle text-center overflow-hidden', pnrBorderB,
-                              pnrErr ? 'bg-red-50' : '')}
-                            style={{ backgroundColor: pnrErr ? undefined : hvBg }}>
-                            <div className="px-1">
-                              <input
-                                value={p.pnr_code}
-                                maxLength={7}
-                                onChange={e => {
-                                  const filtered = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '')
-                                  update(pnrIdx, { pnr_code: filtered })
-                                }}
-                                onPaste={e => {
-                                  e.preventDefault()
-                                  const pasted = e.clipboardData.getData('text')
-                                  const filtered = pasted.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 7)
-                                  update(pnrIdx, { pnr_code: filtered })
-                                }}
-                                onBlur={() => markTouched(pnrIdx)}
-                                placeholder="ว่างได้"
-                                title="กรอกได้เฉพาะภาษาอังกฤษและตัวเลข ไม่เกิน 7 ตัวอักษร"
-                                className={cn(
-                                  'w-full min-w-0 h-7 text-[12px] font-mono text-center bg-transparent focus:outline-none',
-                                  'border rounded px-1 py-0 transition-colors placeholder:text-slate-300 placeholder:text-[10px] placeholder:not-italic',
-                                  pnrErr
-                                    ? 'border-red-300 text-red-600'
-                                    : 'border-transparent text-slate-800 hover:border-slate-200 focus:border-[#05a94f]'
-                                )}
-                              />
-                              {pnrErr && (
-                                <p className="text-[9px] text-red-500 leading-none mt-0.5 truncate">PNR ซ้ำ</p>
-                              )}
-                              {!pnrErr && p.dummy_pnr && (
-                                <div className="text-[9px] text-slate-300 font-mono truncate leading-none mt-0.5">{p.dummy_pnr}</div>
-                              )}
-                            </div>
-                          </td>
-                        )}
-
-                        {/* ── Col 3: Flight Set (PNR-level, rowspan) ── */}
-                        {isFirstRow && (
-                          <td rowSpan={sectorCount}
-                            className={cn('border-r border-[#E5EAF0] px-[5px] align-middle overflow-hidden', pnrBorderB)}
-                            style={{ backgroundColor: hvBg }}>
-                            {schedules.length > 1 ? (
-                              <select value={activeScheduleId}
-                                onChange={e => update(pnrIdx, { schedule_id: e.target.value || undefined })}
-                                title={schedules.find(s => s.scheduleId === activeScheduleId)?.scheduleName}
-                                className="w-full min-w-0 h-7 text-[12px] bg-transparent border-0 focus:outline-none cursor-pointer text-slate-700 truncate">
-                                {schedules.map(sch => <option key={sch.scheduleId} value={sch.scheduleId}>{sch.scheduleName}{sch.isMain ? ' ★' : ''}</option>)}
-                              </select>
-                            ) : (
-                              <span className="text-[12px] text-slate-600 block overflow-hidden text-ellipsis whitespace-nowrap" title={fsName}>{fsName}</span>
-                            )}
-                          </td>
-                        )}
-
-                        {/* ── Col 4: Sector (per-row) ── */}
-                        <td className={cn(TD_SEC_C, rowBorderB)} style={{ backgroundColor: hvSec }}>
-                          <span className={cn('inline-block text-[10px] font-bold px-1 py-0.5 rounded leading-none',
-                            s?.sector_type === 'Departure' ? 'text-emerald-700 bg-emerald-100' :
-                            s?.sector_type === 'Arrival'   ? 'text-blue-700 bg-blue-100' : 'text-slate-600 bg-slate-100')}>
-                            S{sIdx + 1}
-                          </span>
-                        </td>
-
-                        {/* ── Col 5: Day (per-row, read-only) ── */}
-                        <td className={cn(TD_SEC_C, 'text-[11px] text-slate-500 font-medium', rowBorderB)} style={{ backgroundColor: hvSec }}>
-                          {getDayLabel(displayDep)}
-                        </td>
-
-                        {/* ── Col 6: Dep Date (per-row) ── */}
-                        <td className={cn(TD_SEC, rowBorderB, sectorErr ? 'bg-red-50' : '', missingDate && sIdx === 0 ? 'bg-red-50' : '')} style={{ backgroundColor: sectorErr || (missingDate && sIdx === 0) ? undefined : hvSec }}>
-                          <div className="flex items-center h-7 group/dep">
-                            <input type="date" value={displayDep}
-                              onChange={e => handleSectorDepChange(pnrIdx, sIdx, e.target.value)}
-                              onBlur={() => markTouched(pnrIdx)}
-                              className={cn('flex-1 min-w-0 h-7 text-[12px] bg-transparent border-0 focus:outline-none tabular-nums',
-                                isDepManual ? 'text-orange-600 font-medium' : 'text-slate-700',
-                                missingDate && sIdx === 0 ? 'text-red-400' : '')}
-                            />
-                            {isDepManual && (
-                              <button type="button" onClick={() => handleResetSector(pnrIdx, sIdx)} title="คืนค่าตาม Flight Set"
-                                className="opacity-0 group-hover/dep:opacity-100 text-orange-400 hover:text-emerald-600 transition-all shrink-0">
-                                <RotateCcw size={11} />
-                              </button>
-                            )}
-                          </div>
-                        </td>
-
-                        {/* ── Col 7: Dep Time (per-row) ── */}
-                        <td className={cn(TD_SEC_C, 'px-0', rowBorderB)} style={{ backgroundColor: hvSec, width: 78, minWidth: 78, maxWidth: 78 }}>
-                          <TimeInput value={sd.dep_time ?? ''} onChange={v => handleSectorDepTimeChange(pnrIdx, sIdx, v)}
-                            compact
-                            className={cn('border-0 bg-transparent focus:outline-none text-center w-full min-w-0 h-7 text-[12px]',
-                              sd.time_override ? 'text-orange-600 font-medium' : 'text-slate-700')}
-                          />
-                        </td>
-
-                        {/* ── Col 8: Arr Date (per-row) ── */}
-                        <td className={cn(TD_SEC, rowBorderB, sectorErr ? 'bg-red-50' : '')} style={{ backgroundColor: sectorErr ? undefined : hvSec }}>
-                          <div className="flex items-center h-7 group/arr">
-                            <input type="date" value={displayArr}
-                              onChange={e => handleSectorArrChange(pnrIdx, sIdx, e.target.value)}
-                              onBlur={() => markTouched(pnrIdx)}
-                              className={cn('flex-1 min-w-0 h-7 text-[12px] bg-transparent border-0 focus:outline-none tabular-nums',
-                                isArrManual ? 'text-orange-600 font-medium' : 'text-slate-700')}
-                            />
-                            {isArrManual && (
-                              <button type="button" onClick={() => handleResetSector(pnrIdx, sIdx)} title="คืนค่าตาม Flight Set"
-                                className="opacity-0 group-hover/arr:opacity-100 text-orange-400 hover:text-emerald-600 transition-all shrink-0">
-                                <RotateCcw size={11} />
-                              </button>
-                            )}
-                          </div>
-                        </td>
-
-                        {/* ── Col 9: Arr Time + +Day badge (per-row) ── */}
-                        <td className={cn(TD_SEC_C, 'px-0', rowBorderB)} style={{ backgroundColor: hvSec, width: 92, minWidth: 92, maxWidth: 92 }}>
-                          {/* Grid: fixed time slot (58px) + fixed badge slot (26px) keeps time column-aligned */}
-                          <div className="h-7 items-center justify-center"
-                            style={{ display: 'grid', gridTemplateColumns: '58px 26px', columnGap: 3 }}>
-                            <TimeInput value={sd.arr_time ?? ''} onChange={v => handleSectorArrTimeChange(pnrIdx, sIdx, v)}
-                              compact
-                              className={cn('border-0 bg-transparent focus:outline-none text-center w-full min-w-0 h-7 text-[12px]',
-                                'tabular-nums',
-                                sd.time_override ? 'text-orange-600 font-medium' : 'text-slate-700')}
-                            />
-                            {/* Badge slot: always rendered, badge visibility toggled so time never shifts */}
-                            <div style={{ width: 26, display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
-                              {(() => {
-                                const pd = calculatePlusDay(sd.travel_date || null, sd.arr_date || null)
-                                const tip = pd === 1 ? 'ถึงวันถัดไป' : `ถึงอีก ${pd ?? 0} วัน`
-                                return (
-                                  <span title={pd && pd > 0 ? tip : undefined}
-                                    style={{ visibility: pd && pd > 0 ? 'visible' : 'hidden', minWidth: 22 }}
-                                    className="text-[10px] font-semibold text-amber-700 bg-amber-100 rounded px-[3px] py-[1px] text-center select-none whitespace-nowrap">
-                                    +{pd ?? 0}
-                                  </span>
-                                )
-                              })()}
-                            </div>
-                          </div>
-                        </td>
-
-                        {/* ── Cols 11-21: PNR-level (rowspan, first row only) ── */}
-                        {isFirstRow && (
-                          <>
-                            {/* Col 11: Seat */}
-                            <td rowSpan={sectorCount} className={cn(TD_C, pnrBorderB, missingSeat ? 'bg-red-50' : '')} style={{ backgroundColor: missingSeat ? undefined : hvBg }}>
-                              <input type="number" min={1} value={p.seat_total || ''}
-                                onChange={e => update(pnrIdx, { seat_total: parseInt(e.target.value) || 0 })}
-                                onBlur={() => markTouched(pnrIdx)}
-                                className={cn('w-full min-w-0 h-7 text-center text-[12px] font-medium bg-transparent border-0 focus:outline-none',
-                                  missingSeat ? 'text-red-500' : 'text-slate-800')}
-                              />
-                            </td>
-
-                            {/* Col 12: รายละเอียดราคา — Fare + Tax + YQ + Currency combined vertically */}
-                            <td rowSpan={sectorCount}
-                              className={cn('border-r border-[#E5EAF0] align-top overflow-hidden box-border', pnrBorderB)}
-                              style={{ backgroundColor: hvBg, transition: 'background-color 1.2s ease' }}>
-                              <div className="flex flex-col py-1">
-                                {/* Header: price format dropdown + currency selector */}
-                                <div className="flex items-center justify-between px-1 pb-0.5 mb-0.5 border-b border-[#E5EAF0]">
-                                  <select value={fmt}
-                                    onChange={e => handlePriceTypeChange(pnrIdx, e.target.value as 'FARE' | 'FARE_YQ' | 'ALL_IN')}
-                                    className={cn('h-[22px] text-[11px] font-bold cursor-pointer focus:outline-none border-0 bg-transparent rounded py-0 pl-0 pr-3 min-w-0',
-                                      fmt === 'FARE_YQ' ? 'text-amber-700' : fmt === 'ALL_IN' ? 'text-blue-700' : 'text-slate-600')}>
-                                    <option value="FARE">FARE</option>
-                                    <option value="FARE_YQ">FARE+YQ</option>
-                                    <option value="ALL_IN">ALL IN</option>
-                                  </select>
-                                  <CurrencyCombobox variant="inline" value={p.currency || currency} stockDefault={currency}
-                                    currencies={currencyOptions} onChange={code => handleCurrencyChange(pnrIdx, code)}
-                                    className="w-[38px]" />
-                                </div>
-                                {/* Fare / All In row */}
-                                <div className={cn('flex items-center h-[18px] px-1', fareErr ? 'bg-red-50/60 rounded' : '')}>
-                                  <span className="w-[26px] shrink-0 text-[10px] text-slate-500 leading-none">
-                                    {fmt === 'ALL_IN' ? 'AllIn' : 'Fare'}
-                                  </span>
-                                  <div className="flex-1 min-w-0">
-                                    <PriceInput value={p.fare > 0 ? p.fare : null} compact hasError={fareErr}
-                                      onChange={v => handleFareChange(pnrIdx, v)} onBlur={() => markTouched(pnrIdx)} />
-                                  </div>
-                                </div>
-                                {/* Tax row */}
-                                <div className={cn('flex items-center h-[18px] px-1', !taxDisabled && taxErr ? 'bg-red-50/60 rounded' : '')}>
-                                  <span className={cn('w-[26px] shrink-0 text-[10px] leading-none', taxDisabled ? 'text-slate-300' : 'text-slate-500')}>Tax</span>
-                                  <div className="flex-1 min-w-0">
-                                    {taxDisabled
-                                      ? <span className="block w-full text-right text-[10px] text-slate-300 pr-0.5">ไม่ใช้</span>
-                                      : <PriceInput value={p.tax ?? null} compact nullable hasError={taxErr}
-                                          onChange={v => handleTaxChange(pnrIdx, v)} onBlur={() => markTouched(pnrIdx)} />
-                                    }
-                                  </div>
-                                </div>
-                                {/* YQ row */}
-                                <div className={cn('flex items-center h-[18px] px-1', !yqDisabled && yqErr ? 'bg-red-50/60 rounded' : '')}>
-                                  <span className={cn('w-[26px] shrink-0 text-[10px] leading-none', yqDisabled ? 'text-slate-300' : 'text-slate-500')}>YQ</span>
-                                  <div className="flex-1 min-w-0">
-                                    {yqDisabled
-                                      ? <span className="block w-full text-right text-[10px] text-slate-300 pr-0.5">ไม่ใช้</span>
-                                      : <PriceInput value={p.yq ?? null} compact nullable hasError={yqErr}
-                                          onChange={v => handleYqChange(pnrIdx, v)} onBlur={() => markTouched(pnrIdx)} />
-                                    }
-                                  </div>
-                                </div>
-                              </div>
-                            </td>
-
-                            {/* Col 17: Condition */}
-                            <td rowSpan={sectorCount} className={cn(TD_L, pnrBorderB)} style={{ backgroundColor: hvBg }}>
-                              <select value={p.condition_id || ''}
-                                onChange={e => update(pnrIdx, { condition_id: e.target.value })}
-                                className="w-full min-w-0 h-7 text-[12px] bg-transparent border-0 focus:outline-none cursor-pointer text-slate-600">
-                                <option value="">ไม่ระบุ</option>
-                                {conditions.map(c => <option key={c.conditionId} value={c.conditionId}>{c.conditionName}</option>)}
-                              </select>
-                            </td>
-
-                            {/* Col 18: TTL */}
-                            <td rowSpan={sectorCount}
-                              className={cn(TD_L, pnrBorderB, ttlPopover === pnrIdx ? 'outline outline-1 outline-offset-[-1px] outline-[#05a94f]' : '')}
-                              style={{ backgroundColor: hvBg }}>
-                              <Popover.Root
-                                open={ttlPopover === pnrIdx}
-                                onOpenChange={open => setTtlPopover(open ? pnrIdx : null)}
-                              >
-                                <Popover.Trigger asChild>
-                                  <button type="button"
-                                    title={hasTtl(p) && p.ttl_date
-                                      ? `${formatDateTimeThai(p.ttl_date, p.ttl_time ?? null)}${p.ttl_type === 'DAYS_BEFORE' ? ` · ก่อนเดินทาง ${p.ttl_days_before} วัน` : p.ttl_type === 'FIXED_DATE' ? ' · วันที่กำหนดเอง' : ''}`
-                                      : 'ยังไม่ได้กำหนด NAME TTL — คลิกเพื่อตั้งค่า'}
-                                    className={cn('group w-full h-full min-h-[28px] flex flex-col items-start justify-center gap-0 px-2 py-0.5 rounded text-left transition-colors',
-                                      ttlSt === 'past' ? 'text-red-600 hover:bg-red-50' :
-                                      ttlSt === 'near' ? 'text-amber-700 hover:bg-amber-50' :
-                                      hasTtl(p) ? 'text-slate-700 hover:bg-slate-50' : 'hover:bg-slate-50')}>
-                                    {hasTtl(p) && p.ttl_date ? (
-                                      <>
-                                        <div className="w-full flex items-center justify-between gap-1">
-                                          <span className="font-medium text-[11px] whitespace-nowrap leading-[16px]">
-                                            {formatDateTimeThai(p.ttl_date, p.ttl_time ?? null)}
-                                          </span>
-                                          <Pencil size={9} className="text-slate-300 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
-                                        </div>
-                                        {(p.ttl_type === 'DAYS_BEFORE' || p.ttl_type === 'FIXED_DATE') && (
-                                          <span className="text-[9px] leading-[16px] text-slate-400 whitespace-nowrap">
-                                            {p.ttl_type === 'DAYS_BEFORE' ? `ก่อนเดินทาง ${p.ttl_days_before} วัน` : 'วันที่กำหนดเอง'}
-                                          </span>
-                                        )}
-                                      </>
-                                    ) : (
-                                      <span className="text-slate-400 text-[10px]">ไม่ระบุ</span>
-                                    )}
-                                  </button>
-                                </Popover.Trigger>
-                                <Popover.Portal>
-                                  <Popover.Content
-                                    side="bottom"
-                                    align="end"
-                                    sideOffset={6}
-                                    avoidCollisions
-                                    collisionPadding={8}
-                                    style={{ width: 360, maxWidth: 'calc(100vw - 32px)', zIndex: 9200 }}
-                                  >
-                                    <TtlEditor
-                                      pnrCode={p.pnr_code || p.dummy_pnr || undefined}
-                                      travelDate={p.travel_start ?? null}
-                                      ttlType={p.ttl_type ?? 'NONE'}
-                                      ttlDaysBefore={p.ttl_days_before ?? null}
-                                      ttlDate={p.ttl_date ?? null}
-                                      ttlTime={p.ttl_time ?? null}
-                                      onSave={val => {
-                                        update(pnrIdx, { ttl_type: val.ttlType, ttl_days_before: val.ttlDaysBefore,
-                                          ttl_status: val.ttlType !== 'NONE' ? 'SET' : 'UNSET', ttl_date: val.ttlDate, ttl_time: val.ttlTime })
-                                        setTtlPopover(null)
-                                      }}
-                                      onClose={() => setTtlPopover(null)}
-                                    />
-                                  </Popover.Content>
-                                </Popover.Portal>
-                              </Popover.Root>
-                            </td>
-
-                            {/* Col 19: Remark */}
-                            <td rowSpan={sectorCount} className={cn(TD_L, pnrBorderB)} style={{ backgroundColor: hvBg }}>
-                              <Popover.Root
-                                open={remarkPopover === pnrIdx}
-                                onOpenChange={open => setRemarkPopover(open ? pnrIdx : null)}
-                              >
-                                <Popover.Trigger asChild>
-                                  <button type="button"
-                                    title={p.remark || undefined}
-                                    className="w-full h-7 flex items-center px-1.5 text-left rounded hover:bg-slate-50 transition-colors">
-                                    {p.remark
-                                      ? <span className="text-[12px] text-slate-600 truncate">{p.remark}</span>
-                                      : <span className="text-slate-300 text-[12px]">—</span>}
-                                  </button>
-                                </Popover.Trigger>
-                                <Popover.Portal>
-                                  <Popover.Content
-                                    side="bottom" align="end" sideOffset={4}
-                                    avoidCollisions collisionPadding={8}
-                                    style={{ width: 240, zIndex: 9200 }}
-                                  >
-                                    <div className="bg-white border border-slate-200 rounded-xl shadow-2xl p-3 space-y-2">
-                                      <div className="flex items-center justify-between">
-                                        <span className="text-xs font-semibold text-slate-700">หมายเหตุ PNR #{pnrIdx + 1}</span>
-                                        <button type="button" onClick={() => setRemarkPopover(null)} className="text-slate-300 hover:text-slate-500 text-base leading-none">×</button>
-                                      </div>
-                                      <textarea
-                                        value={p.remark}
-                                        onChange={e => update(pnrIdx, { remark: e.target.value })}
-                                        autoFocus
-                                        rows={3}
-                                        placeholder="พิมพ์หมายเหตุ..."
-                                        className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 resize-none focus:outline-none focus:border-[#05a94f] focus:ring-1 focus:ring-[#05a94f]/20 text-slate-700 placeholder:text-slate-300"
-                                      />
-                                      <div className="flex justify-end">
-                                        <button type="button" onClick={() => setRemarkPopover(null)}
-                                          className="px-3 py-1 text-xs font-semibold bg-[#05a94f] text-white rounded-lg hover:bg-[#048f43] transition-colors">
-                                          เสร็จสิ้น
-                                        </button>
-                                      </div>
-                                    </div>
-                                  </Popover.Content>
-                                </Popover.Portal>
-                              </Popover.Root>
-                            </td>
-
-                            {/* Col 21: Action */}
-                            <td rowSpan={sectorCount} className={cn('border-b', pnrBorderB, 'align-middle p-0')} style={{ backgroundColor: hvBg }}>
-                              <div className="w-full h-full flex items-center justify-center" style={{ minHeight: 36 * sectorCount }}>
-                              <DropdownMenu.Root>
-                                <DropdownMenu.Trigger asChild>
-                                  <button type="button" title="จัดการรายการ"
-                                    className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-md transition-colors text-[16px] font-bold leading-none focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-300">
-                                    ⋮
-                                  </button>
-                                </DropdownMenu.Trigger>
-                                <DropdownMenu.Portal>
-                                  <DropdownMenu.Content
-                                    side="bottom" align="end" sideOffset={4}
-                                    style={{ zIndex: 9200 }}
-                                    className="bg-white border border-slate-200 rounded-xl shadow-2xl py-1 min-w-[148px] text-xs outline-none">
-                                    <DropdownMenu.Item
-                                      onSelect={() => duplicateRow(pnrIdx)}
-                                      className="flex items-center gap-2 px-3 py-1.5 text-slate-600 cursor-pointer outline-none select-none data-[highlighted]:bg-slate-50">
-                                      <Copy size={12} className="shrink-0" />คัดลอก PNR
-                                    </DropdownMenu.Item>
-                                    <DropdownMenu.Item
-                                      onSelect={() => handleResetAllSectors(pnrIdx)}
-                                      className="flex items-center gap-2 px-3 py-1.5 text-slate-600 cursor-pointer outline-none select-none data-[highlighted]:bg-slate-50">
-                                      <RotateCcw size={12} className="shrink-0" />คืนค่าตาม Flight Set
-                                    </DropdownMenu.Item>
-                                    <DropdownMenu.Separator className="my-1 h-px bg-slate-100" />
-                                    <DropdownMenu.Item
-                                      onSelect={() => deleteRow(pnrIdx)}
-                                      className="flex items-center gap-2 px-3 py-1.5 text-red-600 cursor-pointer outline-none select-none data-[highlighted]:bg-red-50">
-                                      <Trash2 size={12} className="shrink-0" />ลบ PNR
-                                    </DropdownMenu.Item>
-                                  </DropdownMenu.Content>
-                                </DropdownMenu.Portal>
-                              </DropdownMenu.Root>
-                              </div>
-                            </td>
-                          </>
-                        )}
-                      </tr>
-                    )
-                  })}
-                </Fragment>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
+      {/* ── PNR Table (shared component) ── */}
+      {pnrs.length === 0 ? (
+        <div className="flex flex-col items-center gap-2 py-10 border border-slate-200 rounded-xl bg-white">
+          <PlusCircle size={28} className="text-slate-200" strokeWidth={1} />
+          <p className="text-[13px] text-slate-400">ยังไม่มีรายการ PNR</p>
+          <p className="text-[11px] text-slate-300">กดปุ่ม &quot;+ เพิ่ม PNR&quot; หรือ &quot;หลาย PNR&quot; ด้านบน</p>
+        </div>
+      ) : (
+        <PNRSeatsTable
+          records={records}
+          scheduleTemplates={scheduleTemplates}
+          conditions={conditionsForTable}
+          currency={currency}
+          mode="step3"
+          showValidation={showValidation}
+          newHighlight={newRowHighlight}
+          onChange={handleTableChange}
+          onDelete={handleDelete}
+          onDuplicate={handleDuplicate}
+        />
+      )}
 
       {/* ── Summary bar ── */}
       {pnrs.length > 0 && (
@@ -1361,7 +577,7 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
                 </div>
               </div>
             )}
-            {ttlTargetIndices.length > 0 && ttlCanApply ? (
+            {ttlTargetIndices.length > 0 && ttlCanApply && (
               <div>
                 <p className="text-xs font-semibold text-slate-700 mb-2">ตัวอย่าง TTL ({ttlTargetIndices.length} PNR)</p>
                 <div className="border border-slate-200 rounded-xl overflow-hidden">
@@ -1397,58 +613,67 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
                 </div>
                 {ttlNoDepsCount > 0 && (
                   <div className="mt-2 flex items-start gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg">
-                    <AlertTriangle size={12} className="text-amber-500 mt-0.5 shrink-0" />
+                    <AlertTriangle size={12} className="text-amber-500 shrink-0 mt-0.5" />
                     <p className="text-[11px] text-amber-700">{ttlNoDepsCount} PNR ยังไม่มีวันเดินทาง — จะถูกข้ามไป</p>
                   </div>
                 )}
                 {ttlPastWarning && (
                   <div className="mt-2 flex items-start gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg">
-                    <AlertTriangle size={12} className="text-red-400 mt-0.5 shrink-0" />
-                    <p className="text-[11px] text-red-600">TTL ที่คำนวณได้ผ่านไปแล้ว — กรุณาตรวจสอบก่อนยืนยัน</p>
+                    <AlertTriangle size={12} className="text-red-500 shrink-0 mt-0.5" />
+                    <p className="text-[11px] text-red-700">TTL บางรายการเลยกำหนดแล้ว — ตรวจสอบก่อนบันทึก</p>
                   </div>
                 )}
               </div>
-            ) : ttlTargetIndices.length === 0 ? (
-              <div className="flex items-center gap-2 px-3 py-3 bg-slate-50 border border-slate-200 rounded-lg">
-                <Info size={13} className="text-slate-400 shrink-0" />
-                <p className="text-xs text-slate-400">ไม่มี PNR ในขอบเขตนี้</p>
-              </div>
-            ) : null}
+            )}
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="flex items-start gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl">
-              <AlertTriangle size={16} className="text-amber-600 mt-0.5 shrink-0" />
+            <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+              <AlertTriangle size={16} className="text-amber-500 shrink-0 mt-0.5" />
               <div>
-                <p className="text-sm font-semibold text-amber-800 mb-1">มี {ttlExistingTtlCount} PNR ที่มี TTL อยู่แล้ว</p>
-                <p className="text-xs text-amber-700">จาก {ttlTargetIndices.length} PNR ที่เลือก</p>
+                <p className="text-sm font-semibold text-amber-800 mb-1">มี TTL อยู่แล้ว — ต้องการเขียนทับ?</p>
+                <p className="text-xs text-amber-700">PNR บางรายการมีค่า NAME TTL อยู่แล้ว การดำเนินการนี้จะเขียนทับค่าเดิม</p>
               </div>
             </div>
-            <div className="space-y-2.5">
-              <button type="button" onClick={() => commitBulkTtl('all')} className="w-full flex items-center justify-between px-4 py-3 border-2 border-amber-300 bg-amber-50 hover:bg-amber-100 rounded-xl transition-colors text-left">
-                <div><p className="text-sm font-semibold text-amber-800">เขียนทับทั้งหมด</p><p className="text-xs text-amber-600 mt-0.5">อัปเดต {ttlTargetIndices.length} รายการ</p></div>
-                <span className="text-amber-400 text-xl font-light ml-3">→</span>
+            <div className="flex flex-col gap-2">
+              <button type="button" onClick={() => commitBulkTtl('all')}
+                className="flex items-center justify-between px-4 py-3 rounded-xl border border-amber-300 bg-amber-50 hover:bg-amber-100 text-left transition-colors">
+                <div>
+                  <p className="text-sm font-semibold text-amber-800">เขียนทับทั้งหมด</p>
+                  <p className="text-xs text-amber-600 mt-0.5">อัปเดต TTL ของทุก PNR ในขอบเขตที่เลือก</p>
+                </div>
               </button>
-              <button type="button" onClick={() => commitBulkTtl('skip_existing')} className="w-full flex items-center justify-between px-4 py-3 border-2 border-slate-200 bg-white hover:bg-slate-50 rounded-xl transition-colors text-left">
-                <div><p className="text-sm font-semibold text-slate-700">อัปเดตเฉพาะที่ยังไม่มี TTL</p><p className="text-xs text-slate-500 mt-0.5">ตั้ง TTL ให้ {ttlNoTtlCount} รายการ</p></div>
-                <span className="text-slate-300 text-xl font-light ml-3">→</span>
+              <button type="button" onClick={() => commitBulkTtl('skip_existing')}
+                className="flex items-center justify-between px-4 py-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-left transition-colors">
+                <div>
+                  <p className="text-sm font-semibold text-slate-700">เฉพาะที่ยังไม่มี TTL</p>
+                  <p className="text-xs text-slate-500 mt-0.5">ข้าม PNR ที่มีค่า TTL อยู่แล้ว</p>
+                </div>
               </button>
-              <button type="button" onClick={() => setBulkTtlInnerStep('config')} className="w-full px-4 py-2.5 border border-slate-200 hover:bg-slate-50 rounded-xl transition-colors text-sm text-slate-500">ยกเลิก — กลับไปแก้ไข</button>
             </div>
           </div>
         )}
       </Modal>
 
-      {/* Delete Confirm */}
-      <Modal open={deleteConfirmIdx !== null} onClose={() => setDeleteConfirmIdx(null)} title="ยืนยันการลบ PNR" size="sm"
-        footer={<div className="flex justify-end gap-2"><Button variant="ghost" onClick={() => setDeleteConfirmIdx(null)}>ยกเลิก</Button><Button variant="danger" onClick={confirmDelete}>ลบ PNR นี้</Button></div>}>
-        <p className="text-sm text-slate-600">คุณต้องการลบ PNR รายการที่ <strong>{deleteConfirmIdx !== null ? deleteConfirmIdx + 1 : ''}</strong> ออกจากรายการหรือไม่?</p>
-        {pnrs.length === 1 && <p className="mt-2 text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2">นี่คือ PNR รายการสุดท้าย</p>}
-      </Modal>
+      {/* ── Import Excel Modal ── */}
+      <ImportExcelModal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onConfirm={addPastedPNRs}
+        existingPnrCodes={pnrs.map(p => p.pnr_code).filter(Boolean)}
+        sectors={mainSectors}
+      />
 
-      <ImportExcelModal open={importOpen} onClose={() => setImportOpen(false)} onConfirm={addPastedPNRs} existingPnrCodes={existingPnrCodes} sectors={sectors} />
-      <BulkPnrBuilder open={bulkOpen} onClose={() => setBulkOpen(false)} mode="create_stock" sectors={builderSectors} conditions={builderConditions} currency={currency} onConfirm={addBulkPNRs} />
-
+      {/* ── BulkPnrBuilder ── */}
+      <BulkPnrBuilder
+        open={bulkOpen}
+        onClose={() => setBulkOpen(false)}
+        mode="create_stock"
+        sectors={builderSectors}
+        conditions={builderConditions}
+        currency={currency}
+        onConfirm={addBulkPNRs}
+      />
     </div>
   )
 }
