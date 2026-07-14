@@ -623,27 +623,27 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
         style={{ maxHeight: pnrs.length > 10 ? 'calc(100vh - 260px)' : undefined }}>
         <table className="s4grid border-collapse text-[12px]" style={{ minWidth: 1754 }}>
           <colgroup>
-            <col style={{ width: 42 }} />  {/* # */}
-            <col style={{ width: 105 }} /> {/* PNR */}
-            <col style={{ width: 135 }} /> {/* FlightSet */}
-            <col style={{ width: 54 }} />  {/* Sector */}
-            <col style={{ width: 55 }} />  {/* Day */}
-            <col style={{ width: 112 }} /> {/* Dep Date */}
-            <col style={{ width: 80 }} />  {/* Dep Time */}
-            <col style={{ width: 112 }} /> {/* Arr Date */}
-            <col style={{ width: 80 }} />  {/* Arr Time */}
-            <col style={{ width: 52 }} />  {/* +Day */}
-            <col style={{ width: 58 }} />  {/* Seat */}
-            <col style={{ width: 92 }} />  {/* Price Type */}
-            <col style={{ width: 82 }} />  {/* Fare */}
-            <col style={{ width: 70 }} />  {/* Tax */}
-            <col style={{ width: 70 }} />  {/* YQ */}
-            <col style={{ width: 62 }} />  {/* Currency */}
-            <col style={{ width: 110 }} /> {/* Condition */}
-            <col style={{ width: 105 }} /> {/* TTL */}
-            <col style={{ width: 94 }} />  {/* Confirm */}
-            <col style={{ width: 120 }} /> {/* Remark */}
-            <col style={{ width: 64 }} />  {/* Action */}
+            <col style={{ width: 42 }} />
+            <col style={{ width: 105 }} />
+            <col style={{ width: 135 }} />
+            <col style={{ width: 54 }} />
+            <col style={{ width: 55 }} />
+            <col style={{ width: 112 }} />
+            <col style={{ width: 80 }} />
+            <col style={{ width: 112 }} />
+            <col style={{ width: 80 }} />
+            <col style={{ width: 52 }} />
+            <col style={{ width: 58 }} />
+            <col style={{ width: 92 }} />
+            <col style={{ width: 82 }} />
+            <col style={{ width: 70 }} />
+            <col style={{ width: 70 }} />
+            <col style={{ width: 62 }} />
+            <col style={{ width: 110 }} />
+            <col style={{ width: 105 }} />
+            <col style={{ width: 94 }} />
+            <col style={{ width: 120 }} />
+            <col style={{ width: 64 }} />
           </colgroup>
 
           {/* ── Header ── */}
