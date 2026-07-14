@@ -620,9 +620,11 @@ export default function TicketTable({ tickets, filterType, filterGroupType, filt
         <div className="flex items-center justify-between px-4 py-2 bg-amber-50 border-b border-amber-100 text-xs text-amber-700">
           <span>{demoCount} รายการ Demo (บันทึกใน localStorage)</span>
           <div className="flex gap-2">
-            <button onClick={handleBannerExportJSON} className="flex items-center gap-1 hover:text-amber-900">
-              <FileJson size={12} /> Export JSON
-            </button>
+            {filterGroupType !== 'SERIES' && (
+              <button onClick={handleBannerExportJSON} className="flex items-center gap-1 hover:text-amber-900">
+                <FileJson size={12} /> Export JSON
+              </button>
+            )}
             <button onClick={handleClearDemo} className="flex items-center gap-1 hover:text-red-600 text-red-500">
               <Trash2 size={12} /> Clear Demo Data
             </button>
@@ -754,13 +756,15 @@ export default function TicketTable({ tickets, filterType, filterGroupType, filt
               disabled={!perms.canDuplicate}
               tooltip={!perms.canDuplicate ? disabledTip(activeTicket) : undefined}
             />
-            <MenuBtn
-              icon={<FileUp size={14} />}
-              label="Import Excel"
-              onClick={() => handleImportExcel(activeTicket)}
-              disabled={!perms.canImport}
-              tooltip={!perms.canImport ? disabledTip(activeTicket) : undefined}
-            />
+            {filterGroupType !== 'SERIES' && (
+              <MenuBtn
+                icon={<FileUp size={14} />}
+                label="Import Excel"
+                onClick={() => handleImportExcel(activeTicket)}
+                disabled={!perms.canImport}
+                tooltip={!perms.canImport ? disabledTip(activeTicket) : undefined}
+              />
+            )}
             <MenuBtn
               icon={<FileDown size={14} />}
               label="Export Excel"
@@ -774,7 +778,7 @@ export default function TicketTable({ tickets, filterType, filterGroupType, filt
                 danger
               />
             )}
-            {perms.canExportJSON && (
+            {perms.canExportJSON && filterGroupType !== 'SERIES' && (
               <MenuBtn
                 icon={<FileJson size={14} />}
                 label="Export JSON"

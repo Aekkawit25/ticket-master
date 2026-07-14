@@ -155,6 +155,7 @@ export default function TicketStockPage({ fixedTicketType, fixedGroupType }: Tic
   const isAll          = fixedTicketType === null
   const isAllGroup     = fixedTicketType === 'Group' && (fixedGroupType === null || fixedGroupType === undefined)
   const isGroupSpecific = fixedTicketType === 'Group' && !!fixedGroupType
+  const isSeries = fixedGroupType === 'SERIES'
 
   const [filters, setFilters] = useState<FilterState>({
     search: '', airline_code: '', ticket_type: '', country_code: '', period_from: '', period_to: '',
@@ -285,12 +286,16 @@ export default function TicketStockPage({ fixedTicketType, fixedGroupType }: Tic
               Template Excel
             </Button>
           )}
-          {/* Import Excel */}
-          <Button variant="outline" size="sm" icon={<Upload size={14} />}
-            onClick={() => fileRef.current?.click()}>
-            Import Excel
-          </Button>
-          <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImport} />
+          {/* Import Excel — hidden on Series page */}
+          {!isSeries && (
+            <>
+              <Button variant="outline" size="sm" icon={<Upload size={14} />}
+                onClick={() => fileRef.current?.click()}>
+                Import Excel
+              </Button>
+              <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImport} />
+            </>
+          )}
           {/* Export */}
           <Button variant="outline" size="sm" icon={<Download size={14} />}
             onClick={() => router.push('/import-export/export')}>

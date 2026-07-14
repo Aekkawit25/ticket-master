@@ -271,6 +271,11 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
   const [showScopeDialog, setShowScopeDialog] = useState(false)
   const [pendingSaveData, setPendingSaveData] = useState<{ pnr: DemoPNR; existingPnr?: DemoPNR } | null>(null)
 
+  const [priceFormatChangeConfirm, setPriceFormatChangeConfirm] = useState<{
+    fromFormat: 'FARE' | 'FARE_YQ' | 'ALL_IN'
+    toFormat: 'FARE' | 'FARE_YQ' | 'ALL_IN'
+  } | null>(null)
+
   // PNR operational status modals
   const [closingPnr, setClosingPnr]             = useState<DemoPNR | null>(null)
   const [showClosePnrModal, setShowClosePnrModal] = useState(false)
@@ -463,24 +468,17 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
       taxType = 'separate'
       total   = fare + yqAmt + tax
     } else if (priceFormat === 'FARE_YQ') {
-      fare    = Number(form.fare) || 0  // combined Fare+YQ entered by user
-      yqAmt   = 0
-      tax     = Number(form.tax) || 0   // optional other tax
+      fare    = Number(form.fare) || 0
+      yqAmt   = Number(form.yq)  || 0
+      tax     = 0
       taxType = 'separate'
-      total   = fare + tax
-    } else { // ALL_IN
+      total   = fare + yqAmt
+    } else { // ALL_IN — breakdown UI removed; always store as single total
       total   = Number(form.allIn) || 0
-      if (form.breakdown) {
-        fare    = Number(form.fare) || 0
-        yqAmt   = Number(form.yq)  || 0
-        tax     = Number(form.tax) || 0
-        taxType = 'separate'
-      } else {
-        fare    = 0
-        yqAmt   = 0
-        tax     = 0
-        taxType = 'included'
-      }
+      fare    = 0
+      yqAmt   = 0
+      tax     = 0
+      taxType = 'included'
     }
     const isReal       = !!form.pnrCode.trim()
     const pnrCode      = isReal ? form.pnrCode.trim() : ''
@@ -553,7 +551,7 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
       seatUsed:       existingPnr?.seatUsed ?? 0,
       seatBalance:    seatTotal - (existingPnr?.seatUsed ?? 0),
       priceFormat,
-      breakdown:      priceFormat === 'ALL_IN' ? form.breakdown : undefined,
+      breakdown:      undefined,
       fare,
       yq:             yqAmt,
       taxType,
@@ -589,7 +587,7 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
     if (fmt === 'FARE') {
       if (form.fare === '' || isNaN(Number(form.fare)) || Number(form.fare) <= 0) errs.fare = 'กรุณาระบุ Fare (> 0)'
     } else if (fmt === 'FARE_YQ') {
-      if (form.fare === '' || isNaN(Number(form.fare)) || Number(form.fare) <= 0) errs.fare = 'กรุณาระบุ Fare + YQ (> 0)'
+      if (form.fare === '' || isNaN(Number(form.fare)) || Number(form.fare) <= 0) errs.fare = 'กรุณาระบุ Fare (> 0)'
     } else { // ALL_IN
       if (form.allIn === '' || isNaN(Number(form.allIn)) || Number(form.allIn) <= 0) errs.allIn = 'กรุณาระบุ All In (> 0)'
       if (form.breakdown) {
@@ -1068,8 +1066,7 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                 <th className="px-2 py-1.5 text-right text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[75px]">Fare</th>
                 <th className="px-2 py-1.5 text-right text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[65px]">Tax</th>
                 <th className="px-2 py-1.5 text-right text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[65px]">YQ</th>
-                <th className="px-2 py-1.5 text-right text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[85px]">ยอดสุทธิ</th>
-                <th className="px-2 py-1.5 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[125px]">Condition</th>
+                <th className="px-2 py-1.5 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[140px]">Condition</th>
                 <th className="px-2 py-1.5 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[115px]">TTL Date</th>
                 <th className="px-2 py-1.5 text-center text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[90px]">การยืนยัน</th>
                 {canEdit && (
@@ -1080,7 +1077,7 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
             <tbody>
               {pnrRows.length === 0 ? (
                 <tr>
-                  <td colSpan={canEdit ? 21 : 19} className="px-4 py-8 text-center text-sm text-slate-400">ยังไม่มีข้อมูล PNR</td>
+                  <td colSpan={canEdit ? 20 : 18} className="px-4 py-8 text-center text-sm text-slate-400">ยังไม่มีข้อมูล PNR</td>
                 </tr>
               ) : (
                 pnrRows.map((p, pIdx) => {
@@ -1205,25 +1202,28 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                                     {p.price_format === 'FARE_YQ' ? 'FARE+YQ' : p.price_format === 'ALL_IN' ? 'ALL IN' : 'FARE'}
                                   </span>
                                 </td>
-                                {/* Fare */}
+                                {/* Fare / All In */}
                                 <td rowSpan={rowCount} className="px-2 py-1.5 text-right font-semibold tabular-nums align-top">
-                                  {p.fare > 0 ? formatNumber(p.fare) : <span className="text-slate-300">—</span>}
+                                  {p.price_format === 'ALL_IN' ? (
+                                    <div className="flex flex-col items-end gap-0.5">
+                                      <span>{p.total_amount > 0 ? formatNumber(p.total_amount) : <span className="text-slate-300">—</span>}</span>
+                                      <span className="text-[9px] text-blue-500 font-medium leading-none">All In</span>
+                                    </div>
+                                  ) : (
+                                    p.fare > 0 ? formatNumber(p.fare) : <span className="text-slate-300">—</span>
+                                  )}
                                 </td>
                                 {/* Tax */}
                                 <td rowSpan={rowCount} className="px-2 py-1.5 text-right tabular-nums text-slate-600 align-top">
-                                  {p.price_format === 'ALL_IN'
-                                    ? <span className="text-[10px] text-slate-400 italic">รวมแล้ว</span>
-                                    : p.tax > 0 ? formatNumber(p.tax) : p.tax === 0 ? '0' : <span className="text-slate-300">—</span>}
+                                  {(p.price_format === 'ALL_IN' || p.price_format === 'FARE_YQ')
+                                    ? <span className="text-slate-300">—</span>
+                                    : p.tax > 0 ? formatNumber(p.tax) : <span className="text-slate-400">0</span>}
                                 </td>
                                 {/* YQ */}
                                 <td rowSpan={rowCount} className="px-2 py-1.5 text-right tabular-nums text-slate-600 align-top">
-                                  {(p.price_format === 'FARE_YQ' || p.price_format === 'ALL_IN')
-                                    ? <span className="text-[10px] text-slate-400 italic">รวมแล้ว</span>
-                                    : p.yq > 0 ? formatNumber(p.yq) : p.yq === 0 ? '0' : <span className="text-slate-300">—</span>}
-                                </td>
-                                {/* Net total */}
-                                <td rowSpan={rowCount} className="px-2 py-1.5 text-right font-bold tabular-nums text-slate-800 align-top">
-                                  {p.total_amount > 0 ? formatNumber(p.total_amount) : <span className="text-slate-300">—</span>}
+                                  {p.price_format === 'ALL_IN'
+                                    ? <span className="text-slate-300">—</span>
+                                    : p.yq > 0 ? formatNumber(p.yq) : <span className="text-slate-400">0</span>}
                                 </td>
                                 {/* Condition */}
                                 <td rowSpan={rowCount} className="px-2 py-1.5 align-top">
@@ -1524,7 +1524,15 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                   <button
                     key={opt.v}
                     type="button"
-                    onClick={() => setForm(f => ({ ...f, priceFormat: opt.v, fare: '', yq: '', tax: '', allIn: '', breakdown: false }))}
+                    onClick={() => {
+                      if (form.priceFormat === opt.v) return
+                      const hasPriceData = Number(form.fare) > 0 || Number(form.yq) > 0 || Number(form.tax) > 0 || Number(form.allIn) > 0
+                      if (hasPriceData) {
+                        setPriceFormatChangeConfirm({ fromFormat: form.priceFormat, toFormat: opt.v })
+                      } else {
+                        setForm(f => ({ ...f, priceFormat: opt.v, fare: '', yq: '', tax: '', allIn: '', breakdown: false }))
+                      }
+                    }}
                     className={`flex-1 rounded-lg px-2 py-1.5 text-center border-2 transition-all ${
                       form.priceFormat === opt.v
                         ? 'border-[#05a94f] bg-emerald-50 text-[#05a94f]'
@@ -1572,11 +1580,11 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                 </div>
               )}
 
-              {/* FARE+YQ mode: single combined field + optional Tax */}
+              {/* FARE+YQ mode: separate Fare and YQ fields — Tax ไม่ใช้ */}
               {form.priceFormat === 'FARE_YQ' && (
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-medium text-slate-700 mb-1">Fare + YQ ({currency}) <span className="text-red-500">*</span></label>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">Fare ({currency}) <span className="text-red-500">*</span></label>
                     <input type="number" min="0" placeholder="0" value={form.fare}
                       onChange={e => setForm(f => ({ ...f, fare: e.target.value }))}
                       className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30 ${errors.fare ? 'border-red-400' : 'border-slate-300'}`}
@@ -1584,11 +1592,9 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                     {errors.fare && <p className="text-xs text-red-500 mt-1">{errors.fare}</p>}
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-slate-700 mb-1">
-                      Tax ({currency}) <span className="text-slate-400 font-normal text-[10px]">optional</span>
-                    </label>
-                    <input type="number" min="0" placeholder="0" value={form.tax}
-                      onChange={e => setForm(f => ({ ...f, tax: e.target.value }))}
+                    <label className="block text-xs font-medium text-slate-700 mb-1">YQ ({currency}) <span className="text-red-500">*</span></label>
+                    <input type="number" min="0" placeholder="0" value={form.yq}
+                      onChange={e => setForm(f => ({ ...f, yq: e.target.value }))}
                       className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30"
                     />
                   </div>
@@ -1596,108 +1602,30 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
               )}
 
               {/* ALL IN mode */}
-              {form.priceFormat === 'ALL_IN' && (() => {
-                const fareC  = Math.round((Number(form.fare)||0) * 100)
-                const yqC    = Math.round((Number(form.yq)||0)  * 100)
-                const taxC   = Math.round((Number(form.tax)||0)  * 100)
-                const allInC = Math.round((Number(form.allIn)||0) * 100)
-                const bkC    = fareC + yqC + taxC
-                const diffC  = bkC - allInC
-                const bkSum  = bkC / 100
-                const diff   = diffC / 100
-                const isMatch = allInC > 0 && diffC === 0
-                return (
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block text-xs font-medium text-slate-700 mb-1">All In / Total ({currency}) <span className="text-red-500">*</span></label>
-                      <input type="number" min="0" placeholder="0" value={form.allIn}
-                        onChange={e => setForm(f => ({ ...f, allIn: e.target.value }))}
-                        className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30 ${errors.allIn ? 'border-red-400' : 'border-slate-300'}`}
-                      />
-                      {errors.allIn && <p className="text-xs text-red-500 mt-1">{errors.allIn}</p>}
-                    </div>
-                    {!form.breakdown ? (
-                      <button type="button"
-                        onClick={() => setForm(f => ({ ...f, breakdown: true }))}
-                        className="flex items-center gap-1.5 text-xs text-[#05a94f] hover:text-emerald-700 font-medium transition-colors"
-                      >
-                        <PlusCircle size={12} /> เพิ่มรายละเอียดแยก Fare / YQ / Tax
-                      </button>
-                    ) : (
-                      <div className="border border-slate-200 rounded-xl overflow-hidden">
-                        <div className="flex items-center justify-between bg-slate-50 border-b border-slate-200 px-3 py-2">
-                          <span className="text-xs font-medium text-slate-700">รายละเอียดราคา</span>
-                          <button type="button"
-                            onClick={() => setForm(f => ({ ...f, breakdown: false, fare: '', yq: '', tax: '' }))}
-                            className="text-[10px] text-slate-400 hover:text-red-500 transition-colors"
-                          >
-                            ยกเลิกรายละเอียด
-                          </button>
-                        </div>
-                        <div className="p-3 space-y-3">
-                          <div className="grid grid-cols-3 gap-3">
-                            <div>
-                              <label className="block text-xs font-medium text-slate-700 mb-1">Fare ({currency})</label>
-                              <input type="number" min="0" placeholder="0" value={form.fare}
-                                onChange={e => setForm(f => ({ ...f, fare: e.target.value }))}
-                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-xs font-medium text-slate-700 mb-1">YQ ({currency})</label>
-                              <input type="number" min="0" placeholder="0" value={form.yq}
-                                onChange={e => setForm(f => ({ ...f, yq: e.target.value }))}
-                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-xs font-medium text-slate-700 mb-1">Tax ({currency})</label>
-                              <input type="number" min="0" placeholder="0" value={form.tax}
-                                onChange={e => setForm(f => ({ ...f, tax: e.target.value }))}
-                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30"
-                              />
-                            </div>
-                          </div>
-                          <div className="border-t border-slate-100 pt-2 space-y-1">
-                            <div className="flex items-center justify-between text-xs text-slate-500 px-0.5">
-                              <span>รวมจากรายละเอียด</span>
-                              <span className="font-semibold text-slate-700">{formatNumber(bkSum)}</span>
-                            </div>
-                            <div className="flex items-center justify-between text-xs text-slate-500 px-0.5">
-                              <span>All In / Total</span>
-                              <span className="font-semibold text-slate-700">{formatNumber(Number(form.allIn)||0)}</span>
-                            </div>
-                            <div className={`flex items-center justify-between text-xs font-bold rounded-lg px-2.5 py-1.5 ${
-                              allInC === 0 ? 'bg-slate-50 text-slate-400'
-                              : isMatch   ? 'bg-emerald-50 text-[#05a94f]'
-                              :             'bg-red-50 text-red-600'
-                            }`}>
-                              <span className="flex items-center gap-1">
-                                {isMatch && <CheckCircle2 size={11} />}
-                                {!isMatch && allInC > 0 && <AlertTriangle size={11} />}
-                                ส่วนต่าง
-                              </span>
-                              <span>{diffC === 0 ? '0 ✓' : `${diff > 0 ? '+' : ''}${formatNumber(diff)}`}</span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
+              {form.priceFormat === 'ALL_IN' && (
+                <div className="space-y-2">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">All In / Total ({currency}) <span className="text-red-500">*</span></label>
+                    <input type="number" min="0" placeholder="0" value={form.allIn}
+                      onChange={e => setForm(f => ({ ...f, allIn: e.target.value }))}
+                      className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30 ${errors.allIn ? 'border-red-400' : 'border-slate-300'}`}
+                    />
+                    {errors.allIn && <p className="text-xs text-red-500 mt-1">{errors.allIn}</p>}
                   </div>
-                )
-              })()}
+                  <p className="text-[11px] text-slate-400">ราคานี้รวม Fare, Tax และ YQ แล้ว ไม่ต้องแยกรายละเอียด</p>
+                </div>
+              )}
 
-              {/* Total (readonly) */}
-              <div className={`flex items-center justify-between rounded-lg px-3 py-2 text-xs ${
-                form.priceFormat === 'ALL_IN' && !form.breakdown ? 'bg-emerald-50 border border-emerald-200' : 'bg-slate-50 border border-slate-200'
-              }`}>
-                <span className="text-slate-500 font-medium">Total ({currency})</span>
-                <span className="font-bold text-slate-800 text-sm">
-                  {form.priceFormat === 'FARE' && formatNumber((Number(form.fare)||0) + (Number(form.yq)||0) + (Number(form.tax)||0))}
-                  {form.priceFormat === 'FARE_YQ' && formatNumber((Number(form.fare)||0) + (Number(form.tax)||0))}
-                  {form.priceFormat === 'ALL_IN' && formatNumber(Number(form.allIn)||0)}
-                </span>
-              </div>
+              {/* Total (readonly) — ซ่อนสำหรับ ALL IN เพราะ All In field คือยอดรวมอยู่แล้ว */}
+              {form.priceFormat !== 'ALL_IN' && (
+                <div className="flex items-center justify-between rounded-lg px-3 py-2 text-xs bg-slate-50 border border-slate-200">
+                  <span className="text-slate-500 font-medium">รวม ({currency})</span>
+                  <span className="font-bold text-slate-800 text-sm">
+                    {form.priceFormat === 'FARE' && formatNumber((Number(form.fare)||0) + (Number(form.yq)||0) + (Number(form.tax)||0))}
+                    {form.priceFormat === 'FARE_YQ' && formatNumber((Number(form.fare)||0) + (Number(form.yq)||0))}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1833,6 +1761,47 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
               )
             })()}
           </div>
+        </Modal>
+      )}
+
+      {/* Price Format Change Confirmation */}
+      {priceFormatChangeConfirm && (
+        <Modal
+          open
+          onClose={() => setPriceFormatChangeConfirm(null)}
+          title="เปลี่ยนประเภทราคา"
+          size="sm"
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setPriceFormatChangeConfirm(null)}>ยกเลิก</Button>
+              <Button variant="outline" onClick={() => {
+                setForm(f => ({ ...f, priceFormat: priceFormatChangeConfirm.toFormat, breakdown: false }))
+                setPriceFormatChangeConfirm(null)
+              }}>
+                เปลี่ยนและเก็บข้อมูลเดิม
+              </Button>
+              <Button onClick={() => {
+                const to = priceFormatChangeConfirm.toFormat
+                setForm(f => ({
+                  ...f,
+                  priceFormat: to,
+                  breakdown: false,
+                  ...(to === 'ALL_IN'  ? { fare: '', yq: '', tax: '' } : {}),
+                  ...(to === 'FARE_YQ' ? { allIn: '', tax: '' }       : {}),
+                  ...(to === 'FARE'    ? { allIn: '' }                : {}),
+                }))
+                setPriceFormatChangeConfirm(null)
+              }}>
+                เปลี่ยนและล้างค่าที่ไม่เกี่ยวข้อง
+              </Button>
+            </>
+          }
+        >
+          <p className="text-sm text-slate-700">การเปลี่ยนประเภทราคาอาจทำให้ข้อมูลบางช่องไม่ถูกนำมาใช้</p>
+          <p className="text-xs text-slate-500 mt-1.5">
+            จาก <strong>{priceFormatChangeConfirm.fromFormat === 'FARE_YQ' ? 'FARE+YQ' : priceFormatChangeConfirm.fromFormat}</strong>{' '}
+            → <strong>{priceFormatChangeConfirm.toFormat === 'FARE_YQ' ? 'FARE+YQ' : priceFormatChangeConfirm.toFormat}</strong>
+          </p>
         </Modal>
       )}
 
