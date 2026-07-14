@@ -4,9 +4,8 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ChevronLeft, ChevronRight, Save, CheckCircle2, X, Lock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { StockStatusBadge } from '@/components/ui/badge'
 import WizardStepper from '@/components/wizard/WizardStepper'
-import type { TicketType, StockStatus } from '@/types'
+import type { TicketType } from '@/types'
 
 const MIN_SECTORS: Record<TicketType, string> = {
   'Group': 'ขั้นต่ำ 2 Sectors',
@@ -20,7 +19,6 @@ interface WizardLayoutProps {
   pageTitle: string
   subtitle: string
   ticketType?: TicketType
-  stockStatus?: StockStatus
   error?: string
   saving?: boolean
   isLastStep?: boolean
@@ -29,10 +27,8 @@ interface WizardLayoutProps {
   cancelHref?: string
   onBack: () => void
   onNext: () => void
-  onSaveDraft?: () => void
+  onSave?: () => void
   onConfirm: () => void
-  /** If provided, the status badge in the header becomes a clickable button */
-  onManageStatus?: () => void
   children: React.ReactNode
 }
 
@@ -48,7 +44,6 @@ export default function WizardLayout({
   pageTitle,
   subtitle,
   ticketType,
-  stockStatus,
   error,
   saving,
   isLastStep = false,
@@ -57,14 +52,11 @@ export default function WizardLayout({
   cancelHref = '/tickets',
   onBack,
   onNext,
-  onSaveDraft,
+  onSave,
   onConfirm,
-  onManageStatus,
   children,
 }: WizardLayoutProps) {
   const router = useRouter()
-
-  const saveDraftLabel = stockStatus && stockStatus !== 'Draft' ? 'บันทึกการแก้ไข' : 'Save Draft'
 
   return (
     <div className="max-w-[1400px] mx-auto w-full">
@@ -91,33 +83,19 @@ export default function WizardLayout({
                 </span>
               </>
             )}
-            {stockStatus && (
-              onManageStatus
-                ? (
-                  <button
-                    type="button"
-                    onClick={onManageStatus}
-                    className="hover:opacity-75 transition-opacity cursor-pointer"
-                    title="คลิกเพื่อจัดการสถานะ Stock"
-                  >
-                    <StockStatusBadge status={stockStatus} />
-                  </button>
-                )
-                : <StockStatusBadge status={stockStatus} />
-            )}
           </div>
           <p className="text-sm text-slate-500 ml-5">{subtitle}</p>
         </div>
         <div className="flex gap-2 shrink-0">
-          {onSaveDraft && (
+          {onSave && (
             <Button
               variant="outline"
               size="sm"
               icon={<Save size={14} />}
               loading={saving}
-              onClick={onSaveDraft}
+              onClick={onSave}
             >
-              {saveDraftLabel}
+              บันทึก
             </Button>
           )}
           <Button variant="ghost" size="sm" icon={<X size={14} />} onClick={() => router.push(cancelHref)}>Cancel</Button>

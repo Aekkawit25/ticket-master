@@ -14,15 +14,7 @@ import Step2Sectors from '@/components/wizard/Step2Sectors'
 import Step3Conditions from '@/components/wizard/Step3Conditions'
 import Step4PNR from '@/components/wizard/Step4PNR'
 import Step5Review from '@/components/wizard/Step5Review'
-import {
-  UnsavedWarningModal,
-  StockStatusManagementModal,
-  DraftToActiveModal,
-  ActiveToClosedModal,
-  ClosedToActiveModal,
-  CancelStockModal,
-} from '@/components/wizard/StockStatusModals'
-import type { DraftToActiveResult, ActiveToClosedResult, ClosedToActiveResult } from '@/components/wizard/StockStatusModals'
+import { UnsavedWarningModal } from '@/components/wizard/UnsavedWarningModal'
 import {
   validateSectors, generateDummyPnrs, formatDate,
   calcTravelEndFromSectors, calcSectorDate,
@@ -33,7 +25,6 @@ import {
   demoStockToWizardState, wizardStateToDemoStock,
   saveDemoStock, calculateStockSummary,
   checkPNRDuplicatesInSystem, formatPNRConflictMessage,
-  getPnrOperationalStatus,
 } from '@/lib/demo-storage'
 import type { WizardState, FlightSeriesFormData, FlightSectorFormData, FlightScheduleFormData, TripType, TicketType } from '@/types'
 import type { DemoStock, DemoLog } from '@/lib/demo-storage'
@@ -304,20 +295,12 @@ function EditStockPageInner() {
   // Dirty detection
   const [savedStateStr, setSavedStateStr] = useState('')
 
-  // Status management modal states
-  const [showUnsavedWarning, setShowUnsavedWarning]   = useState(false)
-  const [showStatusManage,   setShowStatusManage]     = useState(false)
-  const [showDraftToActive,  setShowDraftToActive]    = useState(false)
-  const [showActiveToClose,  setShowActiveToClose]    = useState(false)
-  const [showClosedToActive, setShowClosedToActive]   = useState(false)
-  const [showCancelStock,    setShowCancelStock]      = useState(false)
-
   const [state, setState] = useState<WizardState>({
     step: 1,
     stockInfo: {
       ticket_type: 'Group', trip_type: 'Round-trip', stock_code: '',
       group_name: '', destination: '', airline_code: '',
-      currency: 'THB', status: 'Draft', remark: '',
+      currency: 'THB', remark: '',
     },
     schedules: [{ scheduleId: 'SCH-A', scheduleName: 'ชุดเที่ยวบินหลัก', isMain: true, remark: '', sectors: [] }],
     conditions: [],
@@ -511,14 +494,6 @@ function EditStockPageInner() {
       ...overrides,
       stockId: originalStock.stockId,
       stockCode: originalStock.stockCode,
-      status: originalStock.status,       // always preserve status from storage
-      closedAt: originalStock.closedAt,
-      closedBy: originalStock.closedBy,
-      cancelledAt: (originalStock as DemoStock & { cancelledAt?: string }).cancelledAt,
-      cancelledBy: (originalStock as DemoStock & { cancelledBy?: string }).cancelledBy,
-      cancellationReason: (originalStock as DemoStock & { cancellationReason?: string }).cancellationReason,
-      reopenedAt: (originalStock as DemoStock & { reopenedAt?: string }).reopenedAt,
-      reopenedBy: (originalStock as DemoStock & { reopenedBy?: string }).reopenedBy,
       createdAt: originalStock.createdAt,
       updatedAt: now,
       pnrs: mergedPNRs,
@@ -551,178 +526,6 @@ function EditStockPageInner() {
       setSaving(false)
       setSaveError('เกิดข้อผิดพลาดในการบันทึก')
     }
-  }
-
-  // ── Open status management (with dirty-check) ────────────────────────────────
-
-  const openStatusManage = () => {
-    if (isDirty) {
-      setShowUnsavedWarning(true)
-    } else {
-      setShowStatusManage(true)
-    }
-  }
-
-  // ── Status transition helpers ─────────────────────────────────────────────────
-
-  const commitStatusChange = (overrides: Partial<DemoStock>, logMessage: string) => {
-    const now = new Date().toISOString()
-    const log: DemoLog = {
-      logId: `LOG-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      action: overrides.status ?? 'Status Change',
-      message: logMessage,
-      createdAt: now,
-      createdBy: CURRENT_DEMO_USER.name,
-    }
-    const updated: DemoStock = {
-      ...originalStock,
-      ...overrides,
-      updatedAt: now,
-      logs: [log, ...originalStock.logs],
-    }
-    saveDemoStock(updated)
-    setOriginalStock(updated)
-    // Keep form state's status in sync
-    setState(prev => ({ ...prev, stockInfo: { ...prev.stockInfo, status: updated.status } }))
-  }
-
-  const handleDraftToActive = (result: DraftToActiveResult) => {
-    const now = new Date().toISOString()
-    const updatedPnrs = originalStock.pnrs.map(p => {
-      const opStatus = getPnrOperationalStatus(p)
-      let shouldActivate = false
-      if (result.scope === 'ALL_READY') {
-        shouldActivate = opStatus === 'PENDING' && !!p.travelStart && p.seatTotal > 0 && !!p.fare && !!p.conditionCode
-      } else if (result.scope === 'SELECTED') {
-        shouldActivate = result.selectedPnrIds.includes(p.pnrId) && opStatus === 'PENDING'
-      }
-      if (!shouldActivate) return p
-      return { ...p, pnrStatus: 'ACTIVE' as const, activatedAt: now, activatedBy: CURRENT_DEMO_USER.name }
-    })
-
-    const log: DemoLog = {
-      logId: `LOG-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      action: 'STOCK_ACTIVATED',
-      message: `เปิดใช้งาน Stock ${originalStock.stockCode} (scope: ${result.scope})`,
-      createdAt: now,
-      createdBy: CURRENT_DEMO_USER.name,
-    }
-    const updated: DemoStock = {
-      ...originalStock,
-      status: 'Active',
-      pnrs: updatedPnrs,
-      summary: calculateStockSummary(updatedPnrs),
-      updatedAt: now,
-      logs: [log, ...originalStock.logs],
-    }
-    saveDemoStock(updated)
-    setOriginalStock(updated)
-    setState(prev => ({ ...prev, stockInfo: { ...prev.stockInfo, status: 'Active' } }))
-    setShowDraftToActive(false)
-    setShowStatusManage(false)
-    setSaveMsg('เปิดใช้งาน Stock สำเร็จ')
-    setTimeout(() => setSaveMsg(''), 3000)
-  }
-
-  const handleActiveToClose = (result: ActiveToClosedResult) => {
-    const now = new Date().toISOString()
-    let updatedPnrs = originalStock.pnrs
-    if (result.closeOpenPnrs) {
-      updatedPnrs = originalStock.pnrs.map(p => {
-        const s = getPnrOperationalStatus(p)
-        if (s !== 'PENDING' && s !== 'ACTIVE') return p
-        return { ...p, pnrStatus: 'CLOSED' as const, closedAt: now, closedBy: CURRENT_DEMO_USER.name }
-      })
-    }
-    const log: DemoLog = {
-      logId: `LOG-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      action: 'STOCK_CLOSED',
-      message: `ปิด Stock ${originalStock.stockCode}${result.closeOpenPnrs ? ' — ปิด PNR ที่ค้างทั้งหมด' : ''}`,
-      createdAt: now, createdBy: CURRENT_DEMO_USER.name,
-    }
-    const updated: DemoStock = {
-      ...originalStock,
-      status: 'Closed',
-      pnrs: updatedPnrs,
-      summary: calculateStockSummary(updatedPnrs),
-      closedAt: now,
-      closedBy: CURRENT_DEMO_USER.name,
-      updatedAt: now,
-      logs: [log, ...originalStock.logs],
-    }
-    saveDemoStock(updated)
-    setOriginalStock(updated)
-    setState(prev => ({ ...prev, stockInfo: { ...prev.stockInfo, status: 'Closed' } }))
-    setShowActiveToClose(false)
-    setShowStatusManage(false)
-    setSaveMsg('ปิด Stock สำเร็จ')
-    setTimeout(() => setSaveMsg(''), 3000)
-  }
-
-  const handleClosedToActive = (result: ClosedToActiveResult) => {
-    const now = new Date().toISOString()
-    const updatedPnrs = originalStock.pnrs.map(p => {
-      if (result.scope === 'SELECTED' && result.selectedPnrIds.includes(p.pnrId) && getPnrOperationalStatus(p) === 'PENDING') {
-        return { ...p, pnrStatus: 'ACTIVE' as const, activatedAt: now, activatedBy: CURRENT_DEMO_USER.name }
-      }
-      return p
-    })
-    const log: DemoLog = {
-      logId: `LOG-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      action: 'STOCK_REOPENED',
-      message: `เปิด Stock ${originalStock.stockCode} อีกครั้ง (scope: ${result.scope})`,
-      createdAt: now,
-      createdBy: CURRENT_DEMO_USER.name,
-    }
-    const updated: DemoStock = {
-      ...originalStock,
-      status: 'Active',
-      pnrs: updatedPnrs,
-      summary: calculateStockSummary(updatedPnrs),
-      updatedAt: now,
-      logs: [log, ...originalStock.logs],
-    }
-    saveDemoStock(updated)
-    setOriginalStock(updated)
-    setState(prev => ({ ...prev, stockInfo: { ...prev.stockInfo, status: 'Active' } }))
-    setShowClosedToActive(false)
-    setShowStatusManage(false)
-    setSaveMsg('เปิดใช้งาน Stock อีกครั้งสำเร็จ')
-    setTimeout(() => setSaveMsg(''), 3000)
-  }
-
-  const handleCancelStock = (reason: string) => {
-    const now = new Date().toISOString()
-    const updatedPnrs = originalStock.pnrs.map(p => {
-      const s = getPnrOperationalStatus(p)
-      if (s !== 'PENDING' && s !== 'ACTIVE') return p
-      return { ...p, pnrStatus: 'CANCELLED' as const, cancelledAt: now, cancelledBy: CURRENT_DEMO_USER.name, cancellationReason: reason }
-    })
-    const cancelledCount = updatedPnrs.filter(p => p.pnrStatus === 'CANCELLED').length
-    const log: DemoLog = {
-      logId: `LOG-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      action: 'STOCK_CANCELLED',
-      message: `ยกเลิก Stock ${originalStock.stockCode}: ${reason}${cancelledCount > 0 ? ` — ยกเลิก PNR ${cancelledCount} รายการอัตโนมัติ` : ''}`,
-      createdAt: now, createdBy: CURRENT_DEMO_USER.name,
-    }
-    const updated: DemoStock = {
-      ...originalStock,
-      status: 'Cancelled',
-      pnrs: updatedPnrs,
-      summary: calculateStockSummary(updatedPnrs),
-      cancelledAt: now,
-      cancelledBy: CURRENT_DEMO_USER.name,
-      cancellationReason: reason,
-      updatedAt: now,
-      logs: [log, ...originalStock.logs],
-    }
-    saveDemoStock(updated)
-    setOriginalStock(updated)
-    setState(prev => ({ ...prev, stockInfo: { ...prev.stockInfo, status: 'Cancelled' } }))
-    setShowCancelStock(false)
-    setShowStatusManage(false)
-    setSaveMsg('ยกเลิก Stock สำเร็จ')
-    setTimeout(() => setSaveMsg(''), 3000)
   }
 
   // ── Save (Confirm & Save — go to listing after) ──────────────────────────────
@@ -760,7 +563,6 @@ function EditStockPageInner() {
         totalSteps={5}
         pageTitle={pageTitle}
         subtitle={STEP_SUBTITLES[step]}
-        stockStatus={state.stockInfo.status}
         error={errors._}
         saving={saving}
         isLastStep={step === 5}
@@ -768,9 +570,8 @@ function EditStockPageInner() {
         cancelHref={`/tickets/${originalStock.stockId}`}
         onBack={goBack}
         onNext={goNext}
-        onSaveDraft={doQuickSave}
+        onSave={doQuickSave}
         onConfirm={saveChangesHandler}
-        onManageStatus={openStatusManage}
       >
         {/* Success toast */}
         {saveMsg && (
@@ -795,8 +596,6 @@ function EditStockPageInner() {
             errors={{}}
             isTypeLocked
             typeConfirmed
-            pnrStatusList={originalStock.pnrs}
-            onManageStatus={openStatusManage}
           />
         )}
 
@@ -880,53 +679,6 @@ function EditStockPageInner() {
         )}
       </WizardLayout>
 
-      {/* ── Status Management Modals ── */}
-      <UnsavedWarningModal
-        open={showUnsavedWarning}
-        onBack={() => setShowUnsavedWarning(false)}
-        onSaveAndContinue={() => {
-          setShowUnsavedWarning(false)
-          doQuickSave()
-          setShowStatusManage(true)
-        }}
-        onDiscardAndContinue={() => {
-          setShowUnsavedWarning(false)
-          setShowStatusManage(true)
-        }}
-      />
-      <StockStatusManagementModal
-        open={showStatusManage}
-        onClose={() => setShowStatusManage(false)}
-        stock={originalStock}
-        onDraftToActive={() => { setShowStatusManage(false); setShowDraftToActive(true) }}
-        onActiveToClose={() => { setShowStatusManage(false); setShowActiveToClose(true) }}
-        onClosedToActive={() => { setShowStatusManage(false); setShowClosedToActive(true) }}
-        onAnyToCancel={() => { setShowStatusManage(false); setShowCancelStock(true) }}
-      />
-      <DraftToActiveModal
-        open={showDraftToActive}
-        onClose={() => setShowDraftToActive(false)}
-        stock={originalStock}
-        onConfirm={handleDraftToActive}
-      />
-      <ActiveToClosedModal
-        open={showActiveToClose}
-        onClose={() => setShowActiveToClose(false)}
-        stock={originalStock}
-        onConfirm={handleActiveToClose}
-      />
-      <ClosedToActiveModal
-        open={showClosedToActive}
-        onClose={() => setShowClosedToActive(false)}
-        stock={originalStock}
-        onConfirm={handleClosedToActive}
-      />
-      <CancelStockModal
-        open={showCancelStock}
-        onClose={() => setShowCancelStock(false)}
-        stock={originalStock}
-        onConfirm={handleCancelStock}
-      />
     </AppLayout>
   )
 }

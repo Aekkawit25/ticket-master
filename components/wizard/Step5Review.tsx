@@ -2,7 +2,7 @@
 
 import { useState, Fragment } from 'react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
-import { Badge, StockStatusBadge, TicketTypeBadge, PNRStatusBadge } from '@/components/ui/badge'
+import { Badge, TicketTypeBadge, PNRStatusBadge } from '@/components/ui/badge'
 import { Table, TableHead, TableBody, Th, Td, TableRow, EmptyRow } from '@/components/ui/table'
 import { formatDate, formatDateTime, calcTravelEndFromSectors, buildRouteText } from '@/lib/utils'
 import { getStockTypeConfigSafe } from '@/lib/stock-type-config'
@@ -91,7 +91,7 @@ export default function Step5Review({ state, excludeStockId }: Step5Props) {
                   <span className="font-mono font-bold">{d.pnrCode}</span>
                   <span>
                     {d.rowIndices.length > 1 && ` — ซ้ำที่แถว ${d.rowIndices.map(i => i + 1).join(' และ ')}`}
-                    {d.conflictingStock && ` — ซ้ำใน Stock ${d.conflictingStock.stockCode} · ${d.conflictingStock.groupName} (${d.conflictingStock.status})`}
+                    {d.conflictingStock && ` — ซ้ำใน Stock ${d.conflictingStock.stockCode} · ${d.conflictingStock.groupName} (${d.conflictingStock.ticketType})`}
                   </span>
                 </li>
               ))}
@@ -150,10 +150,6 @@ export default function Step5Review({ state, excludeStockId }: Step5Props) {
             <div>
               <p className="text-xs text-slate-400">Currency</p>
               <p className="font-medium">{stockInfo.currency}</p>
-            </div>
-            <div>
-              <p className="text-xs text-slate-400">Status</p>
-              <StockStatusBadge status={stockInfo.status} />
             </div>
           </div>
           {stockInfo.remark && (

@@ -1,6 +1,6 @@
 import { format, parseISO, isValid } from 'date-fns'
 import { buildRouteText, formatDate } from '@/lib/utils'
-import type { WizardState, FlightSeries, TicketType, TripType, StockStatus, PnrOperationalStatus, PnrConfirmationStatus } from '@/types'
+import type { WizardState, FlightSeries, TicketType, TripType, PnrOperationalStatus, PnrConfirmationStatus } from '@/types'
 import { calcTtlDateFromTravel, condTtlTypeToTtlType, type TtlType } from '@/lib/ttl-utils'
 import {
   type AppStockCondition, type AppCondition, type CondCalcType, type CondDueType, type CondTtlCalcType, type CondRefundableType,
@@ -175,18 +175,6 @@ export interface DemoLog {
   message: string
   createdAt: string
   createdBy: string
-}
-
-export interface DemoReopenEvent {
-  eventId: string
-  eventType: 'STOCK_REOPEN_REQUESTED' | 'STOCK_REOPEN_PIN_FAILED' | 'STOCK_REOPENED' | 'STOCK_UPDATED_AFTER_REOPEN' | 'STOCK_RECLOSED' | 'STOCK_REOPEN_SCOPE_EXTENDED'
-  actor: string
-  role: string
-  timestamp: string
-  reason?: string
-  sections?: string[]
-  details?: string
-  failedAttempts?: number
 }
 
 // ─── Financial Transactions ───────────────────────────────────────────────────
@@ -425,7 +413,6 @@ export interface DemoStock {
   tourGroupId?: string
   destination: string
   currency: string
-  status: StockStatus
   remark: string
   routeText: string
   createdAt: string
@@ -438,21 +425,7 @@ export interface DemoStock {
   summary: DemoSummary
   logs: DemoLog[]
   transactions: FinancialTransaction[]
-  // Closed state
-  closedAt?: string
-  closedBy?: string
-  // Reopened state
-  reopenedAt?: string
-  reopenedBy?: string
-  reopenedByRole?: string
-  reopenReason?: string
-  reopenAllowedSections?: string[]
-  reopenEvents?: DemoReopenEvent[]
   defaultConditionCode?: string
-  // Cancelled state
-  cancelledAt?: string
-  cancelledBy?: string
-  cancellationReason?: string
 }
 
 // ============================================================
@@ -927,7 +900,6 @@ export function demoStockToWizardState(stock: DemoStock): WizardState {
       destination: stock.destination,
       airline_code: stock.airlineCode,
       currency: stock.currency,
-      status: stock.status,
       remark: stock.remark,
     },
     schedules: (() => {
@@ -1284,7 +1256,6 @@ export function wizardStateToDemoStock(state: WizardState): DemoStock {
     tourGroupId: stockInfo.tour_group_id ?? '',
     destination: stockInfo.destination ?? '',
     currency: stockInfo.currency,
-    status: stockInfo.status,
     remark: stockInfo.remark ?? '',
     routeText,
     createdAt: now,
@@ -1582,7 +1553,6 @@ export interface PNRConflictDetail {
     stockCode: string
     groupName: string
     ticketType: string
-    status: string
   }
 }
 
@@ -1607,13 +1577,13 @@ export function checkPNRDuplicatesInSystem(
   const allStocks = getDemoStocks().filter(s => !excludeStockId || s.stockId !== excludeStockId)
 
   // Build system lookup: UPPER(code) → stock meta
-  const systemMap = new Map<string, { stockId: string; stockCode: string; groupName: string; ticketType: string; status: string }>()
+  const systemMap = new Map<string, { stockId: string; stockCode: string; groupName: string; ticketType: string }>()
   for (const s of allStocks) {
     for (const p of s.pnrs) {
       const realCode = p.pnrCode.trim().toUpperCase()
-      if (realCode) systemMap.set(realCode, { stockId: s.stockId, stockCode: s.stockCode, groupName: s.groupName, ticketType: s.ticketType, status: s.status })
+      if (realCode) systemMap.set(realCode, { stockId: s.stockId, stockCode: s.stockCode, groupName: s.groupName, ticketType: s.ticketType })
       const dummyCode = (p.dummyPnr || '').trim().toUpperCase()
-      if (dummyCode) systemMap.set(dummyCode, { stockId: s.stockId, stockCode: s.stockCode, groupName: s.groupName, ticketType: s.ticketType, status: s.status })
+      if (dummyCode) systemMap.set(dummyCode, { stockId: s.stockId, stockCode: s.stockCode, groupName: s.groupName, ticketType: s.ticketType })
     }
   }
 
@@ -1659,12 +1629,12 @@ export function formatPNRConflictMessage(conflicts: PNRConflictDetail[]): string
       return `PNR ${c.pnrCode} ซ้ำในรายการ (แถว ${c.rowIndices.map(i => i + 1).join(', ')})`
     }
     const s = c.conflictingStock!
-    return `PNR ${c.pnrCode} มีอยู่แล้วใน Stock ${s.stockCode} — ${s.groupName} (${s.status} · ${s.ticketType}) — ไม่สามารถบันทึกซ้ำได้`
+    return `PNR ${c.pnrCode} มีอยู่แล้วใน Stock ${s.stockCode} — ${s.groupName} (${s.ticketType}) — ไม่สามารถบันทึกซ้ำได้`
   }
   const lines = conflicts.map(c => {
     if (c.conflictType === 'in_list') return `• ${c.pnrCode}: ซ้ำในรายการ`
     const s = c.conflictingStock!
-    return `• ${c.pnrCode}: ซ้ำกับ ${s.stockCode} — ${s.groupName} (${s.status})`
+    return `• ${c.pnrCode}: ซ้ำกับ ${s.stockCode} — ${s.groupName} (${s.ticketType})`
   })
   return `พบ PNR ซ้ำ ${conflicts.length} รายการ:\n${lines.join('\n')}`
 }
@@ -1688,7 +1658,6 @@ export function demoStockToFlightSeries(d: DemoStock): FlightSeries {
     period_start: d.summary.periodStart,
     period_end: d.summary.periodEnd,
     currency: d.currency,
-    status: d.status,
     remark: d.remark || null,
     created_by: null,
     created_at: d.createdAt,

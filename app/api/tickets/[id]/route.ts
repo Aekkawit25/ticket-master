@@ -74,20 +74,6 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
       )
     }
 
-    // Check stock status — only Draft can be deleted
-    const { data: series } = await supabase
-      .from('flight_series')
-      .select('status')
-      .eq('id', id)
-      .single()
-
-    if (series?.status !== 'Draft') {
-      return NextResponse.json(
-        { data: null, error: 'ลบได้เฉพาะ Stock ที่มี Status = Draft เท่านั้น' },
-        { status: 400 }
-      )
-    }
-
     const { error } = await supabase.from('flight_series').delete().eq('id', id)
     if (error) return NextResponse.json({ data: null, error: error.message }, { status: 400 })
 

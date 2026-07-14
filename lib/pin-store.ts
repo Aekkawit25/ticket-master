@@ -31,12 +31,11 @@ export const DEMO_USERS_META: Array<{
   userId: string
   name: string
   role: string
-  canReopenStock: boolean
 }> = [
-  { userId: 'u-admin', name: 'Admin User', role: 'Admin',   canReopenStock: true  },
-  { userId: 'u-mgr',   name: 'Manager A',  role: 'Manager', canReopenStock: true  },
-  { userId: 'u-staff', name: 'Staff B',    role: 'Staff',   canReopenStock: false },
-  { userId: 'u-view',  name: 'Viewer C',   role: 'Viewer',  canReopenStock: false },
+  { userId: 'u-admin', name: 'Admin User', role: 'Admin'   },
+  { userId: 'u-mgr',   name: 'Manager A',  role: 'Manager' },
+  { userId: 'u-staff', name: 'Staff B',    role: 'Staff'   },
+  { userId: 'u-view',  name: 'Viewer C',   role: 'Viewer'  },
 ]
 
 /**
@@ -72,10 +71,6 @@ export function getPinStatus(userId: string): {
     lockedUntil: isLocked ? new Date(rec.lockedUntil!).toISOString() : null,
     failedAttempts: rec.failedAttempts,
   }
-}
-
-export function userCanReopen(userId: string): boolean {
-  return DEMO_USERS_META.find(u => u.userId === userId)?.canReopenStock ?? false
 }
 
 export function validatePinFormat(pin: string): { valid: boolean; reason?: string } {

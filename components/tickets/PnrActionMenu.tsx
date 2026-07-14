@@ -11,7 +11,6 @@ import {
 interface Props {
   opStatus: string        // 'PENDING' | 'ACTIVE' | 'CLOSED' | 'CANCELLED'
   isDummy: boolean
-  stockActive: boolean
   canOperate: boolean
   onEditFlight: () => void
   onDuplicate: () => void
@@ -47,7 +46,7 @@ function MenuItem({
 }
 
 export function PnrActionMenu({
-  opStatus, isDummy, stockActive, canOperate,
+  opStatus, isDummy, canOperate,
   onEditFlight, onDuplicate, onConvert, onResetSchedule,
   onActivate, onClose, onCancel, onDelete,
 }: Props) {
@@ -134,7 +133,7 @@ export function PnrActionMenu({
         <MenuItem icon={<ArrowRightLeft size={12} />} label="ใช้ข้อมูลกับ PNR อื่น" onClick={close(onConvert)} />
       )}
       <MenuItem icon={<RotateCcw size={12} />} label="คืนค่า Schedule จาก Flight Set" onClick={close(onResetSchedule)} />
-      {opStatus === 'PENDING' && stockActive && (
+      {opStatus === 'PENDING' && (
         <MenuItem icon={<CheckCircle2 size={12} />} label="เปิดใช้งาน PNR" onClick={close(onActivate)} />
       )}
       {opStatus === 'ACTIVE' && (

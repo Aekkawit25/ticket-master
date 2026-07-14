@@ -2,7 +2,7 @@
 
 import { useMemo, type Dispatch, type SetStateAction } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
-import { StockStatusBadge, TicketTypeBadge } from '@/components/ui/badge'
+import { TicketTypeBadge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input, Select, Textarea } from '@/components/ui/input'
 import { Lock, Pencil, X, ArrowRight } from 'lucide-react'
@@ -10,16 +10,13 @@ import { formatDate, formatDateTime, formatNumber } from '@/lib/utils'
 
 import { getStockTypeConfigSafe } from '@/lib/stock-type-config'
 import type { DemoStock, DemoFlightSet, PaymentScheduleItem } from '@/lib/demo-storage'
-import { REOPEN_SECTIONS } from './ReopenStockModal'
-
 const CURRENCY_OPTIONS = ['THB', 'USD', 'JPY', 'EUR', 'SGD', 'KRW', 'CNY', 'AUD', 'GBP', 'HKD']
-const STATUS_OPTIONS   = ['Draft', 'Active', 'Closed', 'Cancelled']
 
 interface StockForm {
   group_name: string
   airline_code: string
   currency: string
-  status: string
+  status?: string
   remark: string
 }
 
@@ -34,14 +31,14 @@ export interface SummaryTabProps {
   tripType: string
   createdAt: string
   updatedAt: string
-  status: string
+  status?: string
   currency: string
   summaryEditMode: boolean
   stockForm: StockForm
   stockSaving: boolean
   canEditSummary: boolean
   showSummaryEditBtn: boolean
-  isReopened: boolean
+  isReopened?: boolean
   isClosed: boolean
   onOpenSummaryEdit: () => void
   onCancelSummaryEdit: () => void
@@ -106,14 +103,12 @@ export function SummaryTab({
   tripType,
   createdAt,
   updatedAt,
-  status,
   currency,
   summaryEditMode,
   stockForm,
   stockSaving,
   canEditSummary,
   showSummaryEditBtn,
-  isReopened,
   isClosed,
   onOpenSummaryEdit,
   onCancelSummaryEdit,
@@ -211,7 +206,6 @@ export function SummaryTab({
           <div className="flex items-center gap-2 text-sm text-blue-700">
             <Pencil size={14} />
             <span className="font-medium">กำลังแก้ไขข้อมูล Stock</span>
-            {isReopened && <span className="text-xs text-blue-500">(Reopen mode)</span>}
           </div>
           <div className="flex gap-2">
             <Button size="sm" variant="ghost" icon={<X size={13} />} onClick={onCancelSummaryEdit}>ยกเลิก</Button>
@@ -233,12 +227,6 @@ export function SummaryTab({
           )}
           {isClosed && (
             <span className="flex items-center gap-1 text-xs text-slate-400"><Lock size={11} /> Read-only</span>
-          )}
-          {isReopened && !canEditSummary && (
-            <button type="button" onClick={() => onOpenExtend(['stock-info'])}
-              className="flex items-center gap-1 text-xs text-slate-400 hover:text-emerald-700 transition">
-              <Lock size={11} /> ขอเปิดสิทธิ์
-            </button>
           )}
         </div>
 
@@ -266,13 +254,6 @@ export function SummaryTab({
                 <Select label="Currency" value={stockForm.currency}
                   onChange={e => onStockFormChange(f => ({ ...f, currency: e.target.value }))}
                   options={CURRENCY_OPTIONS.map(c => ({ value: c, label: c }))} />
-                {!isReopened && (
-                  <div className="sm:col-span-2">
-                    <Select label="Status" value={stockForm.status}
-                      onChange={e => onStockFormChange(f => ({ ...f, status: e.target.value }))}
-                      options={STATUS_OPTIONS.map(s => ({ value: s, label: s }))} />
-                  </div>
-                )}
                 <div className="sm:col-span-2">
                   <Textarea label="Remark" value={stockForm.remark}
                     onChange={e => onStockFormChange(f => ({ ...f, remark: e.target.value }))}
@@ -290,10 +271,6 @@ export function SummaryTab({
               <div>
                 <p className="text-[10px] text-slate-400 mb-0.5">Ticket Type</p>
                 <TicketTypeBadge type={ticketType} groupType={groupType} />
-              </div>
-              <div>
-                <p className="text-[10px] text-slate-400 mb-0.5">Status</p>
-                <StockStatusBadge status={status} />
               </div>
               <div className="sm:col-span-2">
                 <p className="text-[10px] text-slate-400 mb-0.5">{stockTypeCfg.nameLabel}</p>
@@ -320,11 +297,6 @@ export function SummaryTab({
                 <div className="col-span-2 sm:col-span-3 pt-2 border-t border-slate-100">
                   <p className="text-[10px] text-slate-400 mb-0.5">Remark</p>
                   <p className="text-xs text-slate-600">{liveStock.remark}</p>
-                </div>
-              )}
-              {liveStock.reopenedAt && (
-                <div className="col-span-2 sm:col-span-3 pt-2 border-t border-slate-100 text-xs text-amber-700">
-                  <span className="font-medium">Reopened</span> โดย {liveStock.reopenedBy} เมื่อ {formatDateTime(liveStock.reopenedAt)}
                 </div>
               )}
             </div>

@@ -6,7 +6,6 @@ export type StockType  = 'SERIES' | 'AD_HOC' | 'FIT' | 'TICKET_ONLY'
 export type TicketType = 'Group' | 'FIT' | 'Ticket + Land'
 export type GroupType  = 'SERIES' | 'ADHOC'
 export type TripType = 'One-way' | 'Round-trip' | 'Multi-city'
-export type StockStatus = 'Draft' | 'Active' | 'Closed' | 'Cancelled' | 'Reopened'
 export type PNRStatus = 'Pending' | 'Confirmed'
 export type PnrOperationalStatus = 'PENDING' | 'ACTIVE' | 'CLOSED' | 'CANCELLED'
 export type PnrConfirmationStatus = 'PENDING_CONFIRMATION' | 'CONFIRMED'
@@ -56,7 +55,6 @@ export interface FlightSeries {
   period_start: string | null
   period_end: string | null
   currency: string
-  status: StockStatus
   remark: string | null
   created_by: string | null
   created_at: string
@@ -86,7 +84,6 @@ export interface FlightSeriesFormData {
   tour_group_id?: string
   airline_code: string
   currency: string
-  status: StockStatus
   remark: string
 }
 
@@ -526,7 +523,6 @@ export interface PaginatedResponse<T> {
 
 export interface TicketFilter {
   ticket_type?: TicketType
-  status?: StockStatus
   airline_code?: string
   country_id?: string
   search?: string

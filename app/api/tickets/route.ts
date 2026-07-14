@@ -8,7 +8,6 @@ export async function GET(request: NextRequest) {
     const supabase = getServerSupabase()
     const { searchParams } = new URL(request.url)
     const ticket_type = searchParams.get('ticket_type')
-    const status = searchParams.get('status')
     const search = searchParams.get('search')
 
     let query = supabase
@@ -24,7 +23,6 @@ export async function GET(request: NextRequest) {
       .order('created_at', { ascending: false })
 
     if (ticket_type) query = query.eq('ticket_type', ticket_type)
-    if (status) query = query.eq('status', status)
     if (search) query = query.or(`stock_code.ilike.%${search}%,group_name.ilike.%${search}%`)
 
     const { data, error } = await query
@@ -86,7 +84,6 @@ export async function POST(request: NextRequest) {
         destination: stockInfo.destination || null,
         airline_code: stockInfo.airline_code,
         currency: stockInfo.currency,
-        status: stockInfo.status,
         remark: stockInfo.remark || null,
       })
       .select()

@@ -8,7 +8,6 @@ import { getActiveCountries, type CountryData } from '@/lib/country-storage'
 
 interface FilterState {
   search: string
-  status: string
   airline_code: string
   ticket_type: string
   country_code: string
@@ -26,7 +25,6 @@ export default function TicketFilter({ onFilter, showTypeFilter = true, searchPl
   const [expanded, setExpanded] = useState(false)
   const [filters, setFilters] = useState<FilterState>({
     search: '',
-    status: '',
     airline_code: '',
     ticket_type: '',
     country_code: '',
@@ -47,7 +45,7 @@ export default function TicketFilter({ onFilter, showTypeFilter = true, searchPl
 
   const reset = () => {
     const empty: FilterState = {
-      search: '', status: '', airline_code: '',
+      search: '', airline_code: '',
       ticket_type: '', country_code: '', period_from: '', period_to: '',
     }
     setFilters(empty)
@@ -104,18 +102,6 @@ export default function TicketFilter({ onFilter, showTypeFilter = true, searchPl
               placeholder="ทุกประเภท"
             />
           )}
-          <Select
-            label="Status"
-            value={filters.status}
-            onChange={e => set('status', e.target.value)}
-            options={[
-              { value: 'Draft', label: 'Draft' },
-              { value: 'Active', label: 'Active' },
-              { value: 'Closed', label: 'Closed' },
-              { value: 'Cancelled', label: 'Cancelled' },
-            ]}
-            placeholder="ทุก Status"
-          />
           <Input
             label="Airline Code"
             value={filters.airline_code}

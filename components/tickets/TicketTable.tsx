@@ -8,16 +8,16 @@ import { useRouter } from 'next/navigation'
 import * as XLSX from 'xlsx'
 import { format as dateFmt } from 'date-fns'
 import { Table, TableHead, TableBody, Th, Td, TableRow, EmptyRow } from '@/components/ui/table'
-import { Badge, StockStatusBadge, TicketTypeBadge } from '@/components/ui/badge'
+import { Badge, TicketTypeBadge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
 import { cn, formatDateTime, formatNumber, formatStockPeriod } from '@/lib/utils'
 import {
   Eye, Pencil, Copy, PlusCircle, FileUp, FileDown,
-  XCircle, Lock, Trash2, MoreHorizontal, FileJson,
+  Trash2, MoreHorizontal, FileJson,
   CheckCircle, AlertCircle,
 } from 'lucide-react'
-import type { FlightSeries, TicketType, StockStatus } from '@/types'
+import type { FlightSeries, TicketType } from '@/types'
 import { getStockTypeConfig, STOCK_TYPE_CONFIG } from '@/lib/stock-type-config'
 import {
   getDemoStocks,
@@ -159,25 +159,21 @@ function withLog(stock: DemoStock, action: string, message: string): DemoStock {
 }
 
 function getPerms(ticket: FlightSeries) {
-  const s = ticket.status
   const isDemo = ticket.id.startsWith('STK-')
   return {
-    canAddPNR:      isDemo && (s === 'Draft' || s === 'Active'),
+    canAddPNR:      isDemo,
     canDuplicate:   isDemo,
-    canImport:      isDemo && (s === 'Draft' || s === 'Active'),
+    canImport:      isDemo,
     canExportExcel: true,
-    canClose:       isDemo && (s === 'Draft' || s === 'Active'),
-    canCancel:      isDemo && (s === 'Draft' || s === 'Active'),
-    canDelete:      isDemo && s === 'Draft',
+    canClose:       false,
+    canCancel:      false,
+    canDelete:      isDemo,
     canExportJSON:  isDemo,
   }
 }
 
-function disabledTip(ticket: FlightSeries, key: keyof ReturnType<typeof getPerms>): string {
+function disabledTip(ticket: FlightSeries): string {
   if (!ticket.id.startsWith('STK-')) return 'ใช้ได้เฉพาะ Demo Stock'
-  if (ticket.status === 'Closed') return 'Stock ถูกปิดแล้ว'
-  if (ticket.status === 'Cancelled') return 'Stock ถูกยกเลิกแล้ว'
-  if (key === 'canDelete') return 'ลบได้เฉพาะ Stock สถานะ Draft'
   return 'ไม่สามารถดำเนินการได้'
 }
 
@@ -215,8 +211,6 @@ export default function TicketTable({ tickets, filterType, filterGroupType, filt
   const [mounted, setMounted] = useState(false)
   const [demoStocks, setDemoStocks] = useState<FlightSeries[]>([])
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null)
-  const [cancelModal, setCancelModal] = useState<{ stockId: string; stockCode: string } | null>(null)
-  const [cancelReason, setCancelReason] = useState('')
   const [importModal, setImportModal] = useState<ImportModalState | null>(null)
   const [toasts, setToasts] = useState<ToastItem[]>([])
 
@@ -311,7 +305,7 @@ export default function TicketTable({ tickets, filterType, filterGroupType, filt
       title: 'Duplicate Stock',
       message: (
         <div className="space-y-1 text-sm">
-          <p>คัดลอกโครงสร้าง Stock <strong>{stock.stockCode}</strong> "{stock.groupName}" ไปยัง Stock ใหม่ สถานะ Draft?</p>
+          <p>คัดลอกโครงสร้าง Stock <strong>{stock.stockCode}</strong> "{stock.groupName}" ไปยัง Stock ใหม่?</p>
           <p className="text-slate-500 text-xs">PNR จริง, Seat Used, Booking, TTL จะไม่ถูกคัดลอก</p>
         </div>
       ),
@@ -325,7 +319,6 @@ export default function TicketTable({ tickets, filterType, filterGroupType, filt
           ...stock,
           stockId: newId,
           stockCode: newCode,
-          status: 'Draft',
           pnrs: [],
           createdAt: nowISO,
           updatedAt: nowISO,
@@ -482,7 +475,6 @@ export default function TicketTable({ tickets, filterType, filterGroupType, filt
         ['Series Name', ticket.group_name],
         ['Airline',     ticket.airline_code],
         ['Route',       ticket.route_text ?? ''],
-        ['Status',      ticket.status],
         ['Currency',    ticket.currency],
         ['Period',      formatStockPeriod(ticket.period_start, ticket.period_end)],
         ['PNR Count',   ticket.pnr_count   ?? 0],
@@ -530,73 +522,6 @@ export default function TicketTable({ tickets, filterType, filterGroupType, filt
     } catch {
       showToast('Export Excel ล้มเหลว', 'error')
     }
-  }
-
-  // ── Action: Close Stock ────────────────────────────────────
-  const handleCloseStock = (ticket: FlightSeries) => {
-    closeMenu()
-    const stock = getDemoStockById(ticket.id)
-    if (!stock) { showToast('ไม่พบข้อมูล Stock', 'error'); return }
-
-    const pendingPNRs = stock.pnrs.filter(p => p.status === 'Pending').length
-    const seatBal    = stock.summary.seatBalance
-    const hasTTL     = stock.pnrs.some(p => p.ttlDateTime && new Date(p.ttlDateTime) > new Date())
-    const hasWarnings = pendingPNRs > 0 || seatBal > 0 || hasTTL
-
-    setConfirmDialog({
-      title: 'Close Stock',
-      message: (
-        <div className="space-y-3 text-sm">
-          <p>ต้องการปิด Stock <strong>{stock.stockCode}</strong> หรือไม่?
-            <span className="block text-xs text-slate-500 mt-0.5">หลังปิดจะไม่สามารถเพิ่มหรือแก้ไข PNR ได้</span>
-          </p>
-          {hasWarnings && (
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-amber-800 text-xs space-y-0.5">
-              <p className="font-semibold mb-1">รายการที่ยังค้างอยู่:</p>
-              {pendingPNRs > 0 && <p>• PNR Pending: {pendingPNRs} รายการ</p>}
-              {seatBal > 0    && <p>• Seat Balance: {seatBal} ที่นั่ง</p>}
-              {hasTTL         && <p>• มี TTL ที่ยังไม่ครบกำหนด</p>}
-            </div>
-          )}
-        </div>
-      ),
-      confirmLabel: 'Close Stock',
-      variant: 'warning',
-      onConfirm: () => {
-        const updated = withLog(
-          { ...stock, status: 'Closed' as StockStatus },
-          'CLOSE_STOCK',
-          `ปิด Stock ${stock.stockCode}`,
-        )
-        saveDemoStock(updated)
-        refreshDemos()
-        showToast(`Stock ${stock.stockCode} ปิดแล้ว`, 'success')
-        setConfirmDialog(null)
-      },
-    })
-  }
-
-  // ── Action: Cancel Stock ───────────────────────────────────
-  const handleCancelStock = (ticket: FlightSeries) => {
-    closeMenu()
-    if (!ticket.id.startsWith('STK-')) { showToast('Cancel ใช้ได้เฉพาะ Demo Stock', 'error'); return }
-    setCancelReason('')
-    setCancelModal({ stockId: ticket.id, stockCode: ticket.stock_code })
-  }
-
-  const confirmCancelStock = () => {
-    if (!cancelModal || !cancelReason.trim()) return
-    const stock = getDemoStockById(cancelModal.stockId)
-    if (!stock) return
-    const updated = withLog(
-      { ...stock, status: 'Cancelled' as StockStatus },
-      'CANCEL_STOCK',
-      `ยกเลิก Stock ${stock.stockCode} — เหตุผล: ${cancelReason}`,
-    )
-    saveDemoStock(updated)
-    refreshDemos()
-    showToast(`Stock ${stock.stockCode} ถูกยกเลิกแล้ว`, 'success')
-    setCancelModal(null)
   }
 
   // ── Action: Delete ─────────────────────────────────────────
@@ -656,7 +581,7 @@ export default function TicketTable({ tickets, filterType, filterGroupType, filt
 
   // Show Type column only on pages where multiple types can appear
   const showTypeColumn = !filterType || (filterType === 'Group' && !filterGroupType)
-  const colCount = showTypeColumn ? 11 : 10
+  const colCount = showTypeColumn ? 10 : 9
 
   // Derive column label config from current filter context
   const pageConfig = getStockTypeConfig(filterType ?? '', filterGroupType)
@@ -677,7 +602,6 @@ export default function TicketTable({ tickets, filterType, filterGroupType, filt
         (t.route_text || '').toLowerCase().includes(q)
       if (!matches) return false
     }
-    if (filters.status && t.status !== filters.status) return false
     if (filters.airline_code && !(t.airline_code || '').toLowerCase().includes(filters.airline_code.toLowerCase())) return false
     if (filters.country_code && t.country_id !== filters.country_code) return false
     if (filters.period_from && t.period_start && t.period_start < filters.period_from) return false
@@ -727,7 +651,6 @@ export default function TicketTable({ tickets, filterType, filterGroupType, filt
             <Th className="hidden sm:table-cell">PNR</Th>
             <Th>Seat (Bal/Total)</Th>
             <Th className="hidden xl:table-cell">TTL Date</Th>
-            <Th>Status</Th>
             <Th>Action</Th>
           </tr>
         </TableHead>
@@ -785,20 +708,10 @@ export default function TicketTable({ tickets, filterType, filterGroupType, filt
                 <Td className="hidden xl:table-cell text-xs text-slate-700">
                   {t.nearest_ttl ? formatDateTime(t.nearest_ttl) : <span className="text-slate-400">—</span>}
                 </Td>
-                <Td><StockStatusBadge status={t.status} /></Td>
                 <Td>
                   <div className="flex items-center gap-1">
                     <Button variant="ghost" size="sm" icon={<Eye size={14} />} className="p-1.5" title="View" onClick={() => router.push(`/tickets/${t.id}`)} />
-                    {(t.status === 'Draft' || t.status === 'Active') ? (
-                      <Button variant="ghost" size="sm" icon={<Pencil size={14} />} className="p-1.5" title="Edit" onClick={() => router.push(`/tickets/${t.id}/edit`)} />
-                    ) : (
-                      <Button
-                        variant="ghost" size="sm" icon={<Pencil size={14} />}
-                        className="p-1.5 opacity-30 cursor-not-allowed"
-                        title={`ไม่สามารถแก้ไขได้ (${t.status})`}
-                        disabled
-                      />
-                    )}
+                    <Button variant="ghost" size="sm" icon={<Pencil size={14} />} className="p-1.5" title="Edit" onClick={() => router.push(`/tickets/${t.id}/edit`)} />
                     <Button
                       variant="ghost"
                       size="sm"
@@ -832,42 +745,26 @@ export default function TicketTable({ tickets, filterType, filterGroupType, filt
               label="Add PNR"
               onClick={() => handleAddPNR(activeTicket)}
               disabled={!perms.canAddPNR}
-              tooltip={!perms.canAddPNR ? disabledTip(activeTicket, 'canAddPNR') : undefined}
+              tooltip={!perms.canAddPNR ? disabledTip(activeTicket) : undefined}
             />
             <MenuBtn
               icon={<Copy size={14} />}
               label="Duplicate"
               onClick={() => handleDuplicate(activeTicket)}
               disabled={!perms.canDuplicate}
-              tooltip={!perms.canDuplicate ? disabledTip(activeTicket, 'canDuplicate') : undefined}
+              tooltip={!perms.canDuplicate ? disabledTip(activeTicket) : undefined}
             />
             <MenuBtn
               icon={<FileUp size={14} />}
               label="Import Excel"
               onClick={() => handleImportExcel(activeTicket)}
               disabled={!perms.canImport}
-              tooltip={!perms.canImport ? disabledTip(activeTicket, 'canImport') : undefined}
+              tooltip={!perms.canImport ? disabledTip(activeTicket) : undefined}
             />
             <MenuBtn
               icon={<FileDown size={14} />}
               label="Export Excel"
               onClick={() => handleExportExcel(activeTicket)}
-            />
-            <div className="border-t border-slate-100 my-1" />
-            <MenuBtn
-              icon={<Lock size={14} />}
-              label="Close Stock"
-              onClick={() => handleCloseStock(activeTicket)}
-              disabled={!perms.canClose}
-              tooltip={!perms.canClose ? disabledTip(activeTicket, 'canClose') : undefined}
-            />
-            <MenuBtn
-              icon={<XCircle size={14} />}
-              label="Cancel Stock"
-              onClick={() => handleCancelStock(activeTicket)}
-              disabled={!perms.canCancel}
-              tooltip={!perms.canCancel ? disabledTip(activeTicket, 'canCancel') : undefined}
-              danger
             />
             {perms.canDelete && (
               <MenuBtn
@@ -911,46 +808,6 @@ export default function TicketTable({ tickets, filterType, filterGroupType, filt
           }
         >
           <div className="text-slate-700">{confirmDialog.message}</div>
-        </Modal>,
-        document.body,
-      )}
-
-      {/* ── Portal: Cancel Reason Modal ── */}
-      {mounted && cancelModal && createPortal(
-        <Modal
-          open
-          onClose={() => setCancelModal(null)}
-          title="Cancel Stock"
-          size="sm"
-          footer={
-            <>
-              <Button variant="outline" size="sm" onClick={() => setCancelModal(null)}>ปิด</Button>
-              <Button
-                variant="danger"
-                size="sm"
-                onClick={confirmCancelStock}
-                disabled={!cancelReason.trim()}
-              >
-                ยืนยันการยกเลิก
-              </Button>
-            </>
-          }
-        >
-          <div className="space-y-3 text-sm">
-            <p>ยกเลิก Stock <strong>{cancelModal.stockCode}</strong></p>
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">
-                เหตุผลการยกเลิก <span className="text-red-500">*</span>
-              </label>
-              <textarea
-                value={cancelReason}
-                onChange={e => setCancelReason(e.target.value)}
-                rows={3}
-                placeholder="ระบุเหตุผล..."
-                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#05a94f] resize-none"
-              />
-            </div>
-          </div>
         </Modal>,
         document.body,
       )}

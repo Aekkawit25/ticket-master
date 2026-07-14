@@ -19,8 +19,8 @@ import { getStockTypeConfig, STOCK_TYPE_CONFIG } from '@/lib/stock-type-config'
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 interface FilterState {
-  search: string; status: string; airline_code: string
-  ticket_type: string; period_from: string; period_to: string
+  search: string; airline_code: string; ticket_type: string
+  country_code: string; period_from: string; period_to: string
 }
 
 export interface TicketStockPageProps {
@@ -157,7 +157,7 @@ export default function TicketStockPage({ fixedTicketType, fixedGroupType }: Tic
   const isGroupSpecific = fixedTicketType === 'Group' && !!fixedGroupType
 
   const [filters, setFilters] = useState<FilterState>({
-    search: '', status: '', airline_code: '', ticket_type: '', period_from: '', period_to: '',
+    search: '', airline_code: '', ticket_type: '', country_code: '', period_from: '', period_to: '',
   })
   const [typeModal,      setTypeModal]      = useState(false)
   const [groupTypeModal, setGroupTypeModal] = useState(false)
@@ -330,7 +330,7 @@ export default function TicketStockPage({ fixedTicketType, fixedGroupType }: Tic
       )}
 
       {/* ── Filter ── */}
-      <TicketFilter onFilter={setFilters} showTypeFilter={isAll} searchPlaceholder={cfg.searchPlaceholder} />
+      <TicketFilter onFilter={(f) => setFilters(f)} showTypeFilter={isAll} searchPlaceholder={cfg.searchPlaceholder} />
 
       {/* ── Table ── */}
       <TicketTable

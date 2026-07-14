@@ -813,7 +813,7 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
         // Allow same stock (editing existing PNR in same stock)
         if (!s || (s.stockId !== liveStock?.stockId)) {
           errs.pnrCode = s
-            ? `PNR "${form.pnrCode}" มีอยู่ใน Stock ${s.stockCode} — ${s.groupName} (${s.status})`
+            ? `PNR "${form.pnrCode}" มีอยู่ใน Stock ${s.stockCode} — ${s.groupName} (${s.ticketType})`
             : `PNR "${form.pnrCode}" มีอยู่แล้วในระบบ`
         }
       }
@@ -1413,14 +1413,6 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
         </div>
       )}
 
-      {/* Active-series notification */}
-      {canEdit && liveStock?.status === 'Active' && (
-        <div className="flex items-center gap-2 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-xl px-3 py-2">
-          <AlertTriangle size={13} className="shrink-0" />
-          PNR ใหม่ที่เพิ่มใน Series Active จะเริ่มต้นเป็น <strong>PENDING</strong> — ต้องเปิดใช้งานด้วยตนเอง
-        </div>
-      )}
-
       {/* Action Bar */}
       {canEdit && (
         <div className="space-y-2">
@@ -1434,13 +1426,11 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                 <Button size="sm" variant="outline" onClick={() => { setBulkCondCode(''); setShowBulkCond(true) }}>
                   เปลี่ยน Condition
                 </Button>
-                {liveStock?.status === 'Active' && (
-                  <Button size="sm" variant="outline"
-                    onClick={() => handleBulkActivatePnr(selectedPnrIds)}
-                    className="border-green-300 text-green-700 hover:bg-green-50">
-                    เปิดใช้งาน
-                  </Button>
-                )}
+                <Button size="sm" variant="outline"
+                  onClick={() => handleBulkActivatePnr(selectedPnrIds)}
+                  className="border-green-300 text-green-700 hover:bg-green-50">
+                  เปิดใช้งาน
+                </Button>
                 <Button size="sm" variant="outline"
                   onClick={() => handleBulkClosePnr(selectedPnrIds)}
                   className="border-slate-400 text-slate-600 hover:bg-slate-50">
@@ -1713,7 +1703,6 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                                           <PnrActionMenu
                                             opStatus={opStatus}
                                             isDummy={demoPnr.pnrType === 'dummy'}
-                                            stockActive={liveStock?.status === 'Active'}
                                             canOperate={canOperate}
                                             onEditFlight={() => openCustomFlight(demoPnr)}
                                             onDuplicate={() => handleDuplicate(demoPnr)}

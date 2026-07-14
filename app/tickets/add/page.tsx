@@ -128,7 +128,6 @@ function AddStockPageInner() {
       destination: '',
       airline_code: '',
       currency: getDefaultCurrencyCode(),
-      status: 'Draft',
       remark: '',
     },
     schedules: [getDefaultSchedule(defaultType, '')],
@@ -428,7 +427,6 @@ function AddStockPageInner() {
         pageTitle={pageTitle}
         subtitle={STEP_SUBTITLES[step]}
         ticketType={typeConfirmed ? state.stockInfo.ticket_type : undefined}
-        stockStatus={state.stockInfo.status}
         error={errors._}
         saving={saving}
         isLastStep={step === 4}

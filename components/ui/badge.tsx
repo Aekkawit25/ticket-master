@@ -21,16 +21,6 @@ export function Badge({ children, className, variant = 'gray' }: BadgeProps) {
   )
 }
 
-export function StockStatusBadge({ status }: { status: string }) {
-  const map: Record<string, 'green' | 'gray' | 'blue' | 'red'> = {
-    Draft: 'gray',
-    Active: 'green',
-    Closed: 'blue',
-    Cancelled: 'red',
-  }
-  return <Badge variant={map[status] || 'gray'}>{status}</Badge>
-}
-
 /** แสดงสถานะ PNR เป็นภาษาไทย — Confirmed → ยืนยันแล้ว, ค่าอื่น (รวมค่าเก่า) → รอยืนยัน */
 export function pnrStatusLabel(status: string): string {
   return status === 'Confirmed' ? 'ยืนยันแล้ว' : 'รอยืนยัน'

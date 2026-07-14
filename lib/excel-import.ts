@@ -26,7 +26,6 @@ export interface ImportStockInfo {
   countryId: string
   destination: string
   currency: string
-  status: string
   tripType: string
   remark: string
 }
@@ -199,7 +198,6 @@ export async function parseExcelImport(file: File): Promise<ImportReviewData> {
     countryId: '',
     destination: '',
     currency: '',
-    status: 'Draft',
     tripType: '',
     remark: '',
   }
@@ -216,7 +214,6 @@ export async function parseExcelImport(file: File): Promise<ImportReviewData> {
         countryId:   str(r['country']),
         destination: str(r['destination']),
         currency:    str(r['currency']).toUpperCase() || 'THB',
-        status:      str(r['status']) || 'Draft',
         tripType:    str(r['tripType']),
         remark:      str(r['remark']),
       }

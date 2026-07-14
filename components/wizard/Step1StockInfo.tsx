@@ -3,9 +3,6 @@
 import { useState } from 'react'
 import type { ReactNode } from 'react'
 import { Lock, Check, AlertTriangle, ListChecks, Users, User, Globe } from 'lucide-react'
-import type { StockStatus } from '@/types'
-import StockStatusCard, { calcPnrCounts } from '@/components/wizard/StockStatusCard'
-import type { PnrCounts } from '@/components/wizard/StockStatusCard'
 import { Input, Textarea } from '@/components/ui/input'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
@@ -106,9 +103,6 @@ interface Step1Props {
   isTypeLocked?: boolean
   typeConfirmed?: boolean
   onTypeConfirm?: () => void
-  /** Edit-mode: pass pnrStatusList to compute counts; onManageStatus opens the management modal */
-  pnrStatusList?: { pnrStatus?: string }[]
-  onManageStatus?: () => void
 }
 
 export default function Step1StockInfo({
@@ -118,8 +112,6 @@ export default function Step1StockInfo({
   isTypeLocked = false,
   typeConfirmed = false,
   onTypeConfirm,
-  pnrStatusList,
-  onManageStatus,
 }: Step1Props) {
   const [pendingType, setPendingType] = useState<{ ticketType: TicketType; groupType?: GroupType } | null>(null)
 
@@ -306,15 +298,6 @@ export default function Step1StockInfo({
           </div>
         </CardContent>
       </Card>
-
-      {/* ───── สถานะ Stock (edit mode only) ───── */}
-      {pnrStatusList !== undefined && (
-        <StockStatusCard
-          status={data.status}
-          pnrCounts={calcPnrCounts(pnrStatusList)}
-          onManage={onManageStatus}
-        />
-      )}
 
       {/* ───── Remark ───── */}
       <Card>

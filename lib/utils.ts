@@ -457,20 +457,6 @@ export function formatCurrency(n: number | null | undefined, currency = 'THB'): 
 }
 
 // ============================================================
-// Status Colors
-// ============================================================
-
-export function getStockStatusColor(status: string): string {
-  const map: Record<string, string> = {
-    Draft: 'badge-gray',
-    Active: 'badge-green',
-    Closed: 'badge-blue',
-    Cancelled: 'badge-red',
-  }
-  return map[status] || 'badge-gray'
-}
-
-// ============================================================
 // Flight Number Helpers
 // ============================================================
 

@@ -4,14 +4,13 @@ import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import AppLayout from '@/components/layout/AppLayout'
-import { Badge, StockStatusBadge, TicketTypeBadge, PnrOperationalStatusBadge } from '@/components/ui/badge'
+import { Badge, TicketTypeBadge, PnrOperationalStatusBadge } from '@/components/ui/badge'
 import { Table, TableHead, TableBody, Th, Td, TableRow, EmptyRow } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
 import { formatDate, formatDateTime, formatNumber, formatStockPeriod, PAYMENT_TYPE_LABELS } from '@/lib/utils'
 import {
-  ChevronLeft, Pencil, FileDown, Lock, AlertCircle, X, CheckCircle2,
-  RefreshCw, History, PlusCircle,
+  ChevronLeft, Pencil, FileDown, AlertCircle, X, CheckCircle2,
 } from 'lucide-react'
 import {
   getDemoStockById, getDemoStockByCode, exportStockJSON,
@@ -21,130 +20,11 @@ import type { DemoStock, DemoLog, PaymentScheduleItem } from '@/lib/demo-storage
 import { PNRTab }        from '@/components/tickets/detail/PNRTab'
 import { SegmentsTab }   from '@/components/tickets/detail/SegmentsTab'
 import { ConditionsTab } from '@/components/tickets/detail/ConditionsTab'
-import { ReopenStockModal, REOPEN_SECTIONS, CURRENT_DEMO_USER } from '@/components/tickets/detail/ReopenStockModal'
-import { ExtendScopeModal } from '@/components/tickets/detail/ExtendScopeModal'
 import { SummaryTab } from '@/components/tickets/detail/SummaryTab'
-import {
-  DraftToActiveModal, ActiveToClosedModal, CancelStockModal,
-} from '@/components/wizard/StockStatusModals'
-import type { DraftToActiveResult, ActiveToClosedResult } from '@/components/wizard/StockStatusModals'
 
 
 const TABS = ['Summary', 'PNR', 'Flight Segments', 'Conditions', 'Payment Schedule', 'Logs']
 const newId = (p: string) => `${p}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
-
-// ─── Locked Tab Banner ────────────────────────────────────────────────────────
-
-function LockedTabBanner({ sectionIds, onRequest }: {
-  sectionIds: string[]
-  onRequest: (sections: string[]) => void
-}) {
-  return (
-    <div className="mb-3 flex items-center justify-between gap-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-      <div className="flex items-center gap-2 text-sm text-slate-500">
-        <Lock size={14} className="shrink-0 text-slate-400" />
-        <span>Tab นี้เป็น <strong className="text-slate-700">Read-only</strong> — ไม่ได้รับอนุญาตใน Reopen ปัจจุบัน</span>
-      </div>
-      <button
-        type="button"
-        onClick={() => onRequest(sectionIds)}
-        className="shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 transition">
-        <PlusCircle size={12} /> ขอเปิดสิทธิ์แก้ไข Tab นี้
-      </button>
-    </div>
-  )
-}
-
-// ─── Close Again Modal ────────────────────────────────────────────────────────
-
-interface CloseAgainModalProps {
-  open: boolean
-  stock: DemoStock
-  onClose: () => void
-  onConfirm: () => void
-}
-
-function CloseAgainModal({ open, stock, onClose, onConfirm }: CloseAgainModalProps) {
-  if (!open) return null
-
-  const allowedSections = (stock.reopenAllowedSections ?? [])
-    .map(s => REOPEN_SECTIONS.find(r => r.id === s)?.label ?? s)
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative z-10 w-[calc(100vw-32px)] max-w-[520px] rounded-2xl bg-white shadow-2xl overflow-hidden">
-        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100">
-              <Lock size={18} className="text-slate-600" />
-            </div>
-            <h2 className="text-base font-semibold text-slate-900">Close Stock อีกครั้ง</h2>
-          </div>
-          <button type="button" onClick={onClose}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 transition">
-            <X size={16} />
-          </button>
-        </div>
-
-        <div className="px-6 py-5 space-y-4">
-          <p className="text-sm text-slate-700">
-            ตรวจสอบการเปลี่ยนแปลงก่อนปิด Stock ทบทวนให้เรียบร้อยก่อนยืนยัน
-          </p>
-
-          {/* Reopen summary */}
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-2 text-sm">
-            <p className="font-semibold text-slate-800 text-xs uppercase tracking-wide text-slate-500">สรุปการ Reopen</p>
-            {stock.reopenedBy && (
-              <div className="flex justify-between">
-                <span className="text-slate-500">เปิดโดย</span>
-                <span className="font-medium">{stock.reopenedBy} ({stock.reopenedByRole})</span>
-              </div>
-            )}
-            {stock.reopenedAt && (
-              <div className="flex justify-between">
-                <span className="text-slate-500">เปิดเมื่อ</span>
-                <span>{formatDateTime(stock.reopenedAt)}</span>
-              </div>
-            )}
-            {stock.reopenReason && (
-              <div className="flex justify-between gap-4">
-                <span className="text-slate-500 shrink-0">เหตุผล</span>
-                <span className="text-right">{stock.reopenReason}</span>
-              </div>
-            )}
-            {allowedSections.length > 0 && (
-              <div className="flex justify-between gap-4">
-                <span className="text-slate-500 shrink-0">ส่วนที่แก้ไข</span>
-                <span className="text-right">{allowedSections.join(', ')}</span>
-              </div>
-            )}
-          </div>
-
-          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            <p className="font-medium mb-1">ข้อควรทราบ</p>
-            <ul className="text-xs space-y-1 text-amber-700 list-disc list-inside">
-              <li>ข้อมูลที่แก้ไขจะถูกบันทึกและไม่สามารถย้อนกลับได้</li>
-              <li>ข้อมูล Snapshot เดิมยังคงอยู่ใน Logs</li>
-              <li>หลังปิด Stock จะไม่สามารถแก้ไขได้อีก</li>
-            </ul>
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between gap-4 border-t border-slate-200 px-6 py-4">
-          <button type="button" onClick={onClose}
-            className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors">
-            ยกเลิก
-          </button>
-          <Button onClick={onConfirm} variant="secondary" className="bg-slate-700 hover:bg-slate-800 text-white">
-            <Lock size={14} />
-            ยืนยัน Close Stock
-          </Button>
-        </div>
-      </div>
-    </div>
-  )
-}
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -161,19 +41,8 @@ export default function TicketDetailPage() {
 
   // Summary inline edit mode
   const [summaryEditMode, setSummaryEditMode] = useState(false)
-  const [stockForm, setStockForm]             = useState({ group_name: '', airline_code: '', currency: '', status: '', remark: '' })
+  const [stockForm, setStockForm]             = useState({ group_name: '', airline_code: '', currency: '', remark: '' })
   const [stockSaving, setStockSaving]         = useState(false)
-
-  // Reopen
-  const [showReopenModal, setShowReopenModal]   = useState(false)
-  const [showCloseAgain, setShowCloseAgain]     = useState(false)
-  const [showExtendScope, setShowExtendScope]   = useState(false)
-  const [extendPreSections, setExtendPreSections] = useState<string[]>([])
-
-  // Stock status modals
-  const [showActivateModal, setShowActivateModal] = useState(false)
-  const [showCloseModal, setShowCloseModal]       = useState(false)
-  const [showCancelModal, setShowCancelModal]     = useState(false)
 
   // Toast
   const [toast, setToast]                     = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
@@ -220,7 +89,6 @@ export default function TicketDetailPage() {
       group_name:    liveStock.groupName,
       airline_code:  liveStock.airlineCode,
       currency:      liveStock.currency,
-      status:        liveStock.status,
       remark:        liveStock.remark || '',
     })
     setSummaryEditMode(true)
@@ -238,22 +106,20 @@ export default function TicketDetailPage() {
     const now = new Date().toISOString()
     const changes: string[] = []
     if (stockForm.group_name    !== liveStock.groupName)           changes.push(`Series Name: "${liveStock.groupName}" → "${stockForm.group_name}"`)
-if (stockForm.airline_code  !== liveStock.airlineCode)         changes.push(`Airline: ${liveStock.airlineCode} → ${stockForm.airline_code}`)
+    if (stockForm.airline_code  !== liveStock.airlineCode)         changes.push(`Airline: ${liveStock.airlineCode} → ${stockForm.airline_code}`)
     if (stockForm.currency      !== liveStock.currency)            changes.push(`Currency: ${liveStock.currency} → ${stockForm.currency}`)
-    if (stockForm.status        !== liveStock.status)              changes.push(`Status: ${liveStock.status} → ${stockForm.status}`)
     if (stockForm.remark        !== (liveStock.remark || ''))      changes.push(`Remark: แก้ไข`)
     const log: DemoLog = {
       logId: newId('LOG'),
-      action: 'STOCK_UPDATED_AFTER_REOPEN',
+      action: 'STOCK_UPDATED',
       message: changes.length > 0 ? `[${liveStock.stockCode}] ${changes.join(' | ')}` : `[${liveStock.stockCode}] ไม่มีการเปลี่ยนแปลง`,
-      createdAt: now, createdBy: CURRENT_DEMO_USER.name,
+      createdAt: now, createdBy: 'Admin User',
     }
     const updated: DemoStock = {
       ...liveStock,
       groupName:    stockForm.group_name,
       airlineCode:  stockForm.airline_code,
       currency:     stockForm.currency,
-      status:       liveStock.status,  // don't allow manual status change while Reopened
       remark:       stockForm.remark,
       updatedAt:    now,
       logs:         [log, ...liveStock.logs],
@@ -264,165 +130,6 @@ if (stockForm.airline_code  !== liveStock.airlineCode)         changes.push(`Air
     setSummaryEditMode(false)
     setHasDirtyTab(false)
     showToast('บันทึกข้อมูล Stock สำเร็จ', 'success')
-  }
-
-  // Activate stock (Draft → Active) — scope via DraftToActiveModal
-  const handleActivateStock = (result: DraftToActiveResult) => {
-    if (!liveStock) return
-    const now = new Date().toISOString()
-    let updatedPnrs = liveStock.pnrs
-    if (result.scope === 'ALL_READY') {
-      updatedPnrs = liveStock.pnrs.map(p => {
-        if (getPnrOperationalStatus(p) !== 'PENDING') return p
-        const isReady = !!(p.travelStart && p.seatTotal > 0 && p.fare && p.conditionCode)
-        if (!isReady) return p
-        return { ...p, pnrStatus: 'ACTIVE' as const, activatedAt: now, activatedBy: CURRENT_DEMO_USER.name }
-      })
-    } else if (result.scope === 'SELECTED') {
-      updatedPnrs = liveStock.pnrs.map(p => {
-        if (!result.selectedPnrIds.includes(p.pnrId)) return p
-        if (getPnrOperationalStatus(p) !== 'PENDING') return p
-        return { ...p, pnrStatus: 'ACTIVE' as const, activatedAt: now, activatedBy: CURRENT_DEMO_USER.name }
-      })
-    }
-    const activatedCount = updatedPnrs.filter(p => p.pnrStatus === 'ACTIVE').length
-    const log: DemoLog = {
-      logId: newId('LOG'),
-      action: 'Activate Stock',
-      message: `เปิดใช้งาน Stock ${liveStock.stockCode} (scope: ${result.scope}) — เปิดใช้งาน PNR ${activatedCount} รายการ`,
-      createdAt: now, createdBy: CURRENT_DEMO_USER.name,
-    }
-    const updated: DemoStock = {
-      ...liveStock,
-      status: 'Active',
-      pnrs: updatedPnrs,
-      updatedAt: now,
-      logs: [log, ...liveStock.logs],
-    }
-    saveDemoStock(updated)
-    setLiveStock(updated)
-    setShowActivateModal(false)
-    showToast('เปิดใช้งาน Stock สำเร็จ', 'success')
-  }
-
-  // Close stock — via ActiveToClosedModal, enforces PNR closure
-  const handleCloseStock = (result: ActiveToClosedResult) => {
-    if (!liveStock) return
-    const now = new Date().toISOString()
-    let updatedPnrs = liveStock.pnrs
-    if (result.closeOpenPnrs) {
-      updatedPnrs = liveStock.pnrs.map(p => {
-        const s = getPnrOperationalStatus(p)
-        if (s !== 'PENDING' && s !== 'ACTIVE') return p
-        return { ...p, pnrStatus: 'CLOSED' as const, closedAt: now, closedBy: CURRENT_DEMO_USER.name }
-      })
-    }
-    const closedPnrCount = updatedPnrs.filter(p => p.pnrStatus === 'CLOSED').length
-    const log: DemoLog = {
-      logId: newId('LOG'),
-      action: 'Close Stock',
-      message: `ปิด Stock ${liveStock.stockCode}${result.closeOpenPnrs ? ` — ปิด PNR ที่ค้างทั้งหมด (${closedPnrCount} รายการ)` : ''}`,
-      createdAt: now, createdBy: CURRENT_DEMO_USER.name,
-    }
-    const updated: DemoStock = {
-      ...liveStock,
-      status: 'Closed',
-      pnrs: updatedPnrs,
-      closedAt: now,
-      closedBy: CURRENT_DEMO_USER.name,
-      updatedAt: now,
-      logs: [log, ...liveStock.logs],
-    }
-    saveDemoStock(updated)
-    setLiveStock(updated)
-    setShowCloseModal(false)
-    showToast('Stock ถูกปิดแล้ว', 'success')
-  }
-
-  // Cancel stock — auto-cancel PENDING/ACTIVE PNRs
-  const handleCancelStock = (reason: string) => {
-    if (!liveStock) return
-    const now = new Date().toISOString()
-    const updatedPnrs = liveStock.pnrs.map(p => {
-      const s = getPnrOperationalStatus(p)
-      if (s !== 'PENDING' && s !== 'ACTIVE') return p
-      return { ...p, pnrStatus: 'CANCELLED' as const, cancelledAt: now, cancelledBy: CURRENT_DEMO_USER.name, cancellationReason: reason }
-    })
-    const cancelledCount = updatedPnrs.filter(p => p.pnrStatus === 'CANCELLED').length
-    const log: DemoLog = {
-      logId: newId('LOG'),
-      action: 'Cancel Stock',
-      message: `ยกเลิก Stock ${liveStock.stockCode} — เหตุผล: ${reason}${cancelledCount > 0 ? ` — ยกเลิก PNR ${cancelledCount} รายการอัตโนมัติ` : ''}`,
-      createdAt: now, createdBy: CURRENT_DEMO_USER.name,
-    }
-    const updated: DemoStock = {
-      ...liveStock,
-      status: 'Cancelled',
-      pnrs: updatedPnrs,
-      cancelledAt: now,
-      cancelledBy: CURRENT_DEMO_USER.name,
-      cancellationReason: reason,
-      updatedAt: now,
-      logs: [log, ...liveStock.logs],
-    }
-    saveDemoStock(updated)
-    setLiveStock(updated)
-    setShowCancelModal(false)
-    showToast('Stock ถูกยกเลิกแล้ว', 'success')
-  }
-
-  // Reopen confirmed
-  const handleReopened = (updated: DemoStock) => {
-    saveDemoStock(updated)
-    setLiveStock(updated)
-    setShowReopenModal(false)
-    showToast(`Stock "${updated.stockCode}" เปิดกลับมาแก้ไขแล้ว`, 'success')
-  }
-
-  // Extend scope confirmed
-  const handleExtended = (updated: DemoStock) => {
-    saveDemoStock(updated)
-    setLiveStock(updated)
-    setShowExtendScope(false)
-    showToast('เพิ่มขอบเขตการแก้ไขสำเร็จ', 'success')
-  }
-
-  const openExtend = (preSelectSections: string[] = []) => {
-    setExtendPreSections(preSelectSections)
-    setShowExtendScope(true)
-  }
-
-  // Close Again (after Reopen)
-  const handleCloseAgainConfirm = () => {
-    if (!liveStock) return
-    const now = new Date().toISOString()
-    const reopenEvent = {
-      eventId: `EVT-${Date.now()}`,
-      eventType: 'STOCK_RECLOSED' as const,
-      actor: CURRENT_DEMO_USER.name,
-      role: CURRENT_DEMO_USER.role,
-      timestamp: now,
-      details: `ปิดกลับหลังแก้ไข — เหตุผลเดิม: ${liveStock.reopenReason ?? '—'}`,
-    }
-    const log: DemoLog = {
-      logId: newId('LOG'),
-      action: 'STOCK_RECLOSED',
-      message: `[${liveStock.stockCode}] ปิด Stock อีกครั้งโดย ${CURRENT_DEMO_USER.name} หลังแก้ไขส่วน: ${(liveStock.reopenAllowedSections ?? []).map(s => REOPEN_SECTIONS.find(r => r.id === s)?.label).join(', ')}`,
-      createdAt: now, createdBy: CURRENT_DEMO_USER.name,
-    }
-    const updated: DemoStock = {
-      ...liveStock,
-      status: 'Closed',
-      closedAt: now,
-      closedBy: CURRENT_DEMO_USER.name,
-      reopenEvents: [reopenEvent, ...(liveStock.reopenEvents ?? [])],
-      updatedAt: now,
-      logs: [log, ...liveStock.logs],
-    }
-    saveDemoStock(updated)
-    setLiveStock(updated)
-    setShowCloseAgain(false)
-    showToast('Stock ถูกปิดอีกครั้งแล้ว', 'success')
   }
 
   // Loading / Not found
@@ -447,7 +154,7 @@ if (stockForm.airline_code  !== liveStock.airlineCode)         changes.push(`Air
   const stock = {
     id: liveStock.stockId, stock_code: liveStock.stockCode, ticket_type: liveStock.ticketType, group_type: liveStock.groupType, trip_type: liveStock.tripType,
     group_name: liveStock.groupName, airline_code: liveStock.airlineCode, route_text: liveStock.routeText,
-    currency: liveStock.currency, status: liveStock.status, remark: liveStock.remark,
+    currency: liveStock.currency, remark: liveStock.remark,
     created_at: liveStock.createdAt, updated_at: liveStock.updatedAt,
     seat_total: liveStock.summary.seatTotal, seat_used: liveStock.summary.seatUsed, seat_balance: liveStock.summary.seatBalance,
     pnr_count: liveStock.summary.pnrCount, fare_total: liveStock.summary.fareTotal,
@@ -477,27 +184,8 @@ if (stockForm.airline_code  !== liveStock.airlineCode)         changes.push(`Air
   const depDates    = pnrRows.map(p => p.travel_start).filter(Boolean).sort()
   const stockPeriod = formatStockPeriod(depDates[0] ?? null, depDates[depDates.length - 1] ?? null)
 
-  // ── Permission helpers ──
-  const isDraft     = !!liveStock && liveStock.status === 'Draft'
-  const isClosed    = !!liveStock && liveStock.status === 'Closed'
-  const isReopened  = !!liveStock && liveStock.status === 'Reopened'
-  const isCancelled = !!liveStock && liveStock.status === 'Cancelled'
-
-  // Section-level edit permission — active as long as status is Reopened
-  const sectionAllowed = (sectionId: string) =>
-    isReopened && !!(liveStock?.reopenAllowedSections?.includes(sectionId))
-
-  const canEditSummary    = (!!liveStock && !isClosed && !isCancelled && !isReopened)
-                         || sectionAllowed('stock-info')
-  const canEditPNR        = (!!liveStock && !isClosed && !isCancelled && !isReopened)
-                         || sectionAllowed('pnr') || sectionAllowed('price') || sectionAllowed('seats')
-  const canEditSegments   = (!!liveStock && !isClosed && !isCancelled && !isReopened)
-                         || sectionAllowed('flight-segments')
-  const canEditConditions = (!!liveStock && !isClosed && !isCancelled && !isReopened)
-                         || sectionAllowed('conditions')
-
-  // Summary edit button: only show if not Closed/Cancelled and section allowed
-  const showSummaryEditBtn = canEditSummary && !summaryEditMode
+  // Summary edit button
+  const showSummaryEditBtn = !summaryEditMode
 
   return (
     <AppLayout title={stock.stock_code}>
@@ -518,7 +206,6 @@ if (stockForm.airline_code  !== liveStock.airlineCode)         changes.push(`Air
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-lg font-bold text-slate-900 font-mono">{stock.stock_code}</h1>
               <TicketTypeBadge type={stock.ticket_type} groupType={stock.group_type} />
-              <StockStatusBadge status={stock.status} />
               {liveStock && <span className="inline-flex items-center px-1.5 py-px text-[9px] font-bold bg-amber-100 text-amber-600 rounded">DEMO</span>}
             </div>
             <p className="text-sm text-slate-500">{stock.group_name}</p>
@@ -545,117 +232,8 @@ if (stockForm.airline_code  !== liveStock.airlineCode)         changes.push(`Air
             title={!liveStock ? 'Export ใช้ได้เฉพาะ Demo Stock' : 'Export JSON'}>
             Export
           </Button>
-
-          {/* Activate Stock — show for Draft only */}
-          {isDraft && (
-            <Button size="sm" icon={<CheckCircle2 size={14} />}
-              onClick={() => setShowActivateModal(true)} disabled={!liveStock}
-              className="bg-[#05a94f] hover:bg-[#048f43] text-white">
-              เปิดใช้งาน Stock
-            </Button>
-          )}
-
-          {/* Close Stock — show for Active only */}
-          {!isClosed && !isCancelled && !isReopened && !isDraft && (
-            <Button variant="outline" size="sm" icon={<Lock size={14} />}
-              onClick={() => setShowCloseModal(true)} disabled={!liveStock}>
-              Close Stock
-            </Button>
-          )}
-
-          {/* Cancel Stock — show when not already Cancelled */}
-          {!isCancelled && !isReopened && (
-            <Button variant="outline" size="sm" icon={<X size={14} />}
-              onClick={() => setShowCancelModal(true)} disabled={!liveStock}
-              className="border-red-300 text-red-600 hover:bg-red-50">
-              ยกเลิก Stock
-            </Button>
-          )}
-
-          {/* Close Stock Again — after Reopen */}
-          {isReopened && (
-            <Button variant="outline" size="sm" icon={<Lock size={14} />}
-              onClick={() => setShowCloseAgain(true)}
-              className="border-slate-600 text-slate-700 hover:bg-slate-50">
-              Close Stock อีกครั้ง
-            </Button>
-          )}
         </div>
       </div>
-
-      {/* ── Status Banners ── */}
-
-      {/* Closed banner */}
-      {isClosed && (
-        <div className="mb-4 rounded-xl border border-slate-300 bg-slate-50 p-4">
-          <div className="flex items-start gap-3">
-            <Lock size={16} className="mt-0.5 shrink-0 text-slate-500" />
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-slate-800">
-                Stock นี้ถูกปิดแล้ว ไม่สามารถแก้ไขข้อมูลได้ หากจำเป็นต้องแก้ไข กรุณาเปิดกลับมาด้วยรหัสยืนยัน 4 หลัก
-              </p>
-              {liveStock?.closedAt && (
-                <p className="mt-1 text-xs text-slate-500">
-                  ปิดเมื่อ {formatDateTime(liveStock.closedAt)}
-                  {liveStock.closedBy && ` โดย ${liveStock.closedBy}`}
-                </p>
-              )}
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => setTab('Logs')}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 transition">
-                  <History size={12} /> ดูประวัติการปิด
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowReopenModal(true)}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-600 transition">
-                  <RefreshCw size={12} /> Reopen Stock
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Reopened banner */}
-      {isReopened && (
-        <div className="mb-4 rounded-xl border border-emerald-300 bg-emerald-50 p-4">
-          <div className="flex items-start gap-3">
-            <RefreshCw size={16} className="mt-0.5 shrink-0 text-emerald-600" />
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-emerald-800">Reopened — เปิดกลับมาแก้ไข</p>
-              {liveStock?.reopenedBy && (
-                <p className="mt-1 text-xs text-emerald-700">
-                  เปิดกลับมาแก้ไขโดย {liveStock.reopenedBy}
-                  {liveStock.reopenedAt && ` เมื่อ ${formatDateTime(liveStock.reopenedAt)}`}
-                  {liveStock.reopenReason && ` — เหตุผล: ${liveStock.reopenReason}`}
-                </p>
-              )}
-              {liveStock?.reopenAllowedSections && liveStock.reopenAllowedSections.length > 0 && (
-                <p className="mt-1 text-xs text-emerald-600">
-                  ส่วนที่อนุญาต: {liveStock.reopenAllowedSections.map(s => REOPEN_SECTIONS.find(r => r.id === s)?.label ?? s).join(', ')}
-                </p>
-              )}
-              <button
-                type="button"
-                onClick={() => openExtend()}
-                className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-emerald-400 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 transition">
-                <PlusCircle size={12} /> เพิ่มขอบเขตการแก้ไข
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Cancelled banner */}
-      {isCancelled && (
-        <div className="mb-4 flex items-center gap-2 bg-red-50 border border-red-200 rounded-xl px-4 py-2.5 text-sm text-red-600">
-          <AlertCircle size={14} />
-          Stock นี้ถูกยกเลิกแล้ว — ไม่สามารถแก้ไขได้
-        </div>
-      )}
 
       {hasDirtyTab && (
         <div className="mb-4 flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 text-sm text-blue-700">
@@ -714,87 +292,61 @@ if (stockForm.airline_code  !== liveStock.airlineCode)         changes.push(`Air
           tripType={stock.trip_type}
           createdAt={stock.created_at}
           updatedAt={stock.updated_at}
-          status={stock.status}
           currency={stock.currency}
           summaryEditMode={summaryEditMode}
           stockForm={stockForm}
           stockSaving={stockSaving}
-          canEditSummary={canEditSummary}
+          canEditSummary={true}
           showSummaryEditBtn={showSummaryEditBtn}
-          isReopened={isReopened}
-          isClosed={isClosed}
+          isClosed={false}
           onOpenSummaryEdit={openSummaryEdit}
           onCancelSummaryEdit={cancelSummaryEdit}
           onSaveStock={handleSaveStock}
           onStockFormChange={setStockForm}
-          onOpenExtend={openExtend}
+          onOpenExtend={() => {}}
           onNavigateTab={trySetTab}
         />
       )}
 
       {/* ── PNR Tab ── */}
       {tab === 'PNR' && (
-        <>
-          {isReopened && !canEditPNR && (
-            <LockedTabBanner
-              sectionIds={['pnr', 'price', 'seats']}
-              onRequest={openExtend}
-            />
-          )}
-          <PNRTab
-            liveStock={liveStock}
-            mockPNRs={[]}
-            currency={stock.currency}
-            canEdit={canEditPNR}
-            jumpToEdit={false}
-            onUpdate={handleUpdate}
-            onDirtyChange={setHasDirtyTab}
-            onJumpDone={() => {}}
-          />
-        </>
+        <PNRTab
+          liveStock={liveStock}
+          mockPNRs={[]}
+          currency={stock.currency}
+          canEdit={true}
+          jumpToEdit={false}
+          onUpdate={handleUpdate}
+          onDirtyChange={setHasDirtyTab}
+          onJumpDone={() => {}}
+        />
       )}
 
       {/* ── Flight Segments Tab ── */}
       {tab === 'Flight Segments' && (
-        <>
-          {isReopened && !canEditSegments && (
-            <LockedTabBanner
-              sectionIds={['flight-segments']}
-              onRequest={openExtend}
-            />
-          )}
-          <SegmentsTab
-            liveStock={liveStock}
-            mockSectors={sectors}
-            ticketType={stock.ticket_type}
-            canEdit={canEditSegments}
-            jumpToEdit={false}
-            onUpdate={handleUpdate}
-            onDirtyChange={setHasDirtyTab}
-            onJumpDone={() => {}}
-          />
-        </>
+        <SegmentsTab
+          liveStock={liveStock}
+          mockSectors={sectors}
+          ticketType={stock.ticket_type}
+          canEdit={true}
+          jumpToEdit={false}
+          onUpdate={handleUpdate}
+          onDirtyChange={setHasDirtyTab}
+          onJumpDone={() => {}}
+        />
       )}
 
       {/* ── Conditions Tab ── */}
       {tab === 'Conditions' && (
-        <>
-          {isReopened && !canEditConditions && (
-            <LockedTabBanner
-              sectionIds={['conditions']}
-              onRequest={openExtend}
-            />
-          )}
-          <ConditionsTab
-            liveStock={liveStock}
-            currency={stock.currency}
-            canEdit={canEditConditions}
-            jumpToEdit={false}
-            onUpdate={handleUpdate}
-            onDirtyChange={setHasDirtyTab}
-            onJumpDone={() => {}}
-          />
-        </>
+        <ConditionsTab
+          liveStock={liveStock}
+          currency={stock.currency}
+          canEdit={true}
+          jumpToEdit={false}
+          onUpdate={handleUpdate}
+          onDirtyChange={setHasDirtyTab}
+          onJumpDone={() => {}}
+        />
       )}
 
       {/* ── Payment Schedule ── */}
@@ -957,66 +509,6 @@ if (stockForm.airline_code  !== liveStock.airlineCode)         changes.push(`Air
         <p className="text-xs text-slate-500 mt-1.5">ข้อมูลที่แก้ไขจะสูญหาย</p>
       </Modal>
 
-      {/* ── Reopen Modal ── */}
-      {liveStock && (
-        <ReopenStockModal
-          open={showReopenModal}
-          stock={liveStock}
-          onClose={() => setShowReopenModal(false)}
-          onReopened={handleReopened}
-        />
-      )}
-
-      {/* ── Extend Scope Modal ── */}
-      {liveStock && (
-        <ExtendScopeModal
-          open={showExtendScope}
-          stock={liveStock}
-          preSelectSections={extendPreSections}
-          onClose={() => setShowExtendScope(false)}
-          onExtended={handleExtended}
-        />
-      )}
-
-      {/* ── Close Again Modal ── */}
-      {liveStock && (
-        <CloseAgainModal
-          open={showCloseAgain}
-          stock={liveStock}
-          onClose={() => setShowCloseAgain(false)}
-          onConfirm={handleCloseAgainConfirm}
-        />
-      )}
-
-      {/* ── Draft → Active Modal ── */}
-      {liveStock && (
-        <DraftToActiveModal
-          open={showActivateModal}
-          onClose={() => setShowActivateModal(false)}
-          stock={liveStock}
-          onConfirm={handleActivateStock}
-        />
-      )}
-
-      {/* ── Active → Closed Modal ── */}
-      {liveStock && (
-        <ActiveToClosedModal
-          open={showCloseModal}
-          onClose={() => setShowCloseModal(false)}
-          stock={liveStock}
-          onConfirm={handleCloseStock}
-        />
-      )}
-
-      {/* ── Cancel Stock Modal ── */}
-      {liveStock && (
-        <CancelStockModal
-          open={showCancelModal}
-          onClose={() => setShowCancelModal(false)}
-          stock={liveStock}
-          onConfirm={handleCancelStock}
-        />
-      )}
     </AppLayout>
   )
 }

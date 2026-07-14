@@ -375,7 +375,6 @@ function ImportReviewInner() {
       countryId: stockInfo.countryId ?? '',
       destination: stockInfo.destination ?? '',
       currency: stockInfo.currency,
-      status: (stockInfo.status || 'Draft') as DemoStock['status'],
       remark: stockInfo.remark ?? '',
       routeText,
       createdAt: now,
@@ -627,7 +626,6 @@ function ImportReviewInner() {
                 ['Route',        routeText,             'font-mono font-bold text-[#05a94f]'],
 ['Destination',  stockInfo.destination],
                 ['Currency',     stockInfo.currency],
-                ['Status',       stockInfo.status],
                 ['Remark',       stockInfo.remark,      'sm:col-span-3'],
               ] as [string, string, string?][]).map(([label, value, cls]) => (
                 <div key={label} className={cls || ''}>

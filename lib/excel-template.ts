@@ -141,8 +141,8 @@ export function downloadExcelTemplate(ticketType: 'Group' | 'FIT' | 'Ticket + La
   const tripTypeExample = ticketType === 'FIT' ? 'One-way' : 'Round-trip'
 
   const stockInfoData = [
-    ['stockCode', 'ticketType', 'groupName', 'airlineCode', 'country', 'destination', 'currency', 'status', 'tripType', 'remark'],
-    [stockCodeExample, ticketType, '(ชื่อกรุ๊ป)', 'TG', 'Japan', 'Tokyo, Japan', 'THB', 'Draft', tripTypeExample, ''],
+    ['stockCode', 'ticketType', 'groupName', 'airlineCode', 'country', 'destination', 'currency', 'tripType', 'remark'],
+    [stockCodeExample, ticketType, '(ชื่อกรุ๊ป)', 'TG', 'Japan', 'Tokyo, Japan', 'THB', tripTypeExample, ''],
   ]
   const wsStockInfo = XLSX.utils.aoa_to_sheet(stockInfoData)
   XLSX.utils.book_append_sheet(wb, wsStockInfo, 'STOCK_INFO')
@@ -187,12 +187,12 @@ export function downloadExcelTemplate(ticketType: 'Group' | 'FIT' | 'Ticket + La
   // ── MASTER_DATA sheet ─────────────────────────────────────────────────────────
   const masterData = [
     // Headers
-    ['ticketType', 'tripType', 'sectorType', 'taxType', 'status', 'pnrStatus', 'paymentType', 'amountType', 'baseDate', 'currency'],
+    ['ticketType', 'tripType', 'sectorType', 'taxType', 'pnrStatus', 'paymentType', 'amountType', 'baseDate', 'currency'],
     // Values (max 4 rows to cover all columns)
-    ['Group',          'One-way',    'Outbound',  'separate', 'Draft',     'Pending',   'Deposit',       'Fixed',     'Travel Start', 'THB'],
-    ['FIT',            'Round-trip', 'Transit',   'included', 'Active',    'Confirmed', 'Final Payment', 'Percent',   'Travel End',   'USD'],
-    ['Ticket + Land',  '',           'Domestic',  'pending',  'Closed',    '',          'Full Payment',  'Remaining', '',             'EUR'],
-    ['',               '',           'Return',    '',         'Cancelled', '',          '',              '',          '',             'JPY'],
+    ['Group',          'One-way',    'Outbound',  'separate', 'Pending',   'Deposit',       'Fixed',     'Travel Start', 'THB'],
+    ['FIT',            'Round-trip', 'Transit',   'included', 'Confirmed', 'Final Payment', 'Percent',   'Travel End',   'USD'],
+    ['Ticket + Land',  '',           'Domestic',  'pending',  '',          'Full Payment',  'Remaining', '',             'EUR'],
+    ['',               '',           'Return',    '',         '',          '',              '',          '',             'JPY'],
   ]
   const wsMaster = XLSX.utils.aoa_to_sheet(masterData)
   XLSX.utils.book_append_sheet(wb, wsMaster, 'MASTER_DATA')
