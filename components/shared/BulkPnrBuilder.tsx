@@ -88,6 +88,9 @@ export interface BulkPnrBuilderProps {
   // ADD_TO_EXISTING mode
   stock?: DemoStock
   onSaved?: (updatedStock: DemoStock, count: number) => void
+  // Initial config defaults (pre-filled on first open)
+  defaultSeatTotal?: number
+  defaultPriceFormat?: 'FARE' | 'FARE_YQ' | 'ALL_IN'
 }
 
 // ─── Internal Types ───────────────────────────────────────────────────────────
@@ -526,6 +529,7 @@ export function BulkPnrBuilder({
   open, onClose, mode,
   sectors: sectorsProp, flightSets, conditions, currency,
   onConfirm, stock, onSaved,
+  defaultSeatTotal, defaultPriceFormat,
 }: BulkPnrBuilderProps) {
 
   useEffect(() => {
@@ -551,6 +555,18 @@ export function BulkPnrBuilder({
   const [bCond, setBCond]   = useState('')
 
   // (Preview table UI state is now internal to PNRSeatsTable)
+
+  // Pre-fill defaults from initialConfig when modal opens
+  useEffect(() => {
+    if (!open) return
+    if (defaultSeatTotal !== undefined || defaultPriceFormat !== undefined) {
+      setShared(s => ({
+        ...s,
+        seatTotal:   defaultSeatTotal   !== undefined ? defaultSeatTotal   : s.seatTotal,
+        priceFormat: defaultPriceFormat !== undefined ? defaultPriceFormat : s.priceFormat,
+      }))
+    }
+  }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-select FS when modal opens — only when exactly 1 FS (multiple FS: user must choose)
   useEffect(() => {

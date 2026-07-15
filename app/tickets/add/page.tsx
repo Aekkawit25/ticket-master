@@ -9,6 +9,7 @@ import Step1StockInfo from '@/components/wizard/Step1StockInfo'
 import Step2Sectors from '@/components/wizard/Step2Sectors'
 import Step4PNR from '@/components/wizard/Step4PNR'
 import Step5Review from '@/components/wizard/Step5Review'
+import StockInitialConfigModal, { type StockInitialConfig, PRICE_TYPE_LABEL } from '@/components/wizard/StockInitialConfigModal'
 import { validateSectors, generateStockCode, getStockCodePrefix, generateDummyPnrs, calcTravelEndFromSectors, calcSectorDate } from '@/lib/utils'
 import { isValidHHmm, sameAirport } from '@/lib/time-utils'
 import { MASTER_AIRLINE_CODE_SET } from '@/lib/master-data'
@@ -82,9 +83,9 @@ function normalizeForReview(state: WizardState): WizardState {
   return { ...state, pnrs: generateDummyPnrs(normalizedPNRs, stockInfo, systemDummies) }
 }
 
-function getDefaultSchedule(ticketType: TicketType, airlineCode: string): FlightScheduleFormData {
+function getDefaultSchedule(ticketType: TicketType, airlineCode: string, travelDays = 1): FlightScheduleFormData {
   const dep: FlightSectorFormData = { seq: 1, sector_type: 'Departure', airline_code: airlineCode, flight_no: '', dep_airport_code: 'BKK', arr_airport_code: '', dep_time: '08:00', arr_time: '16:00', arr_day_offset: 0, day_offset: 1, remark: '' }
-  const arr: FlightSectorFormData = { seq: 2, sector_type: 'Arrival', airline_code: airlineCode, flight_no: '', dep_airport_code: '', arr_airport_code: 'BKK', dep_time: '17:00', arr_time: '22:00', arr_day_offset: 0, day_offset: 1, remark: '' }
+  const arr: FlightSectorFormData = { seq: 2, sector_type: 'Arrival', airline_code: airlineCode, flight_no: '', dep_airport_code: '', arr_airport_code: 'BKK', dep_time: '17:00', arr_time: '22:00', arr_day_offset: 0, day_offset: travelDays, remark: '' }
   return { scheduleId: 'SCH-A', scheduleName: 'ชุดเที่ยวบินหลัก', isMain: true, remark: '', sectors: ticketType === 'FIT' ? [dep] : [dep, arr] }
 }
 
@@ -128,6 +129,15 @@ function AddStockPageInner() {
   const [currencyChangeConfirm, setCurrencyChangeConfirm] = useState<{
     oldCurrency: string
     newCurrency: string
+  } | null>(null)
+
+  // ── Initial Config ────────────────────────────────────────────────────────────
+  const [initialConfig, setInitialConfig]         = useState<StockInitialConfig | null>(null)
+  const [configOpen, setConfigOpen]               = useState(true)
+  const [editConfigOpen, setEditConfigOpen]       = useState(false)
+  const [travelDaysConfirm, setTravelDaysConfirm] = useState<{
+    config: StockInitialConfig
+    oldDays: number
   } | null>(null)
 
   // Snapshot of schedules taken when going back from PNR step to Sectors step.
@@ -216,6 +226,63 @@ function AddStockPageInner() {
       return { ...prev, stockInfo: updated }
     })
   }, [])
+
+  // ── Initial Config Handlers ───────────────────────────────────────────────────
+
+  const handleInitialConfigConfirm = (config: StockInitialConfig) => {
+    setInitialConfig(config)
+    setConfigOpen(false)
+    setState(prev => ({
+      ...prev,
+      stockInfo: {
+        ...prev.stockInfo,
+        airline_code: config.airlineCode,
+        currency: config.currencyCode,
+      },
+      schedules: [getDefaultSchedule(prev.stockInfo.ticket_type, config.airlineCode, config.travelDurationDays)],
+    }))
+  }
+
+  const applyEditConfig = (config: StockInitialConfig) => {
+    const prev = initialConfig
+    setInitialConfig(config)
+    const needsCurrencyConfirm = !!(prev && config.currencyCode !== prev.currencyCode && state.pnrs.length > 0)
+    setState(s => ({
+      ...s,
+      stockInfo: {
+        ...s.stockInfo,
+        airline_code: config.airlineCode,
+        ...(needsCurrencyConfirm ? {} : { currency: config.currencyCode }),
+      },
+      schedules: s.schedules.map(sch => ({
+        ...sch,
+        sectors: sch.sectors.map(sec => ({ ...sec, airline_code: config.airlineCode })),
+      })),
+    }))
+    if (needsCurrencyConfirm) {
+      setCurrencyChangeConfirm({ oldCurrency: prev!.currencyCode, newCurrency: config.currencyCode })
+    }
+  }
+
+  const handleEditConfigConfirm = (config: StockInitialConfig) => {
+    setEditConfigOpen(false)
+    const prevDays = initialConfig?.travelDurationDays ?? config.travelDurationDays
+    if (config.travelDurationDays !== prevDays) {
+      setTravelDaysConfirm({ config, oldDays: prevDays })
+      return
+    }
+    applyEditConfig(config)
+  }
+
+  const configLabel = initialConfig
+    ? [
+        initialConfig.airlineCode,
+        initialConfig.currencyCode,
+        `${initialConfig.seatsPerPnr} ที่นั่ง/PNR`,
+        `${initialConfig.travelDurationDays} วัน`,
+        PRICE_TYPE_LABEL[initialConfig.priceType] ?? initialConfig.priceType,
+      ].join(' · ')
+    : undefined
 
   const handleCurrencyUpdateAll = () => {
     const { newCurrency } = currencyChangeConfirm!
@@ -460,6 +527,8 @@ function AddStockPageInner() {
         onBack={goBack}
         onNext={goNext}
         onConfirm={confirmSave}
+        onEditConfig={initialConfig ? () => setEditConfigOpen(true) : undefined}
+        initialConfigLabel={configLabel}
       >
         {saveMsg && (
           <div className="fixed bottom-6 right-6 z-50 px-4 py-3 rounded-xl bg-[#05a94f] text-white text-sm font-medium shadow-lg flex items-center gap-2">
@@ -515,6 +584,8 @@ function AddStockPageInner() {
             currency={state.stockInfo.currency}
             onChange={pnrs => setState(prev => ({ ...prev, pnrs }))}
             showValidation={pnrValidationShown}
+            defaultSeatsPerPnr={initialConfig?.seatsPerPnr}
+            defaultPriceFormat={initialConfig?.priceType}
           />
         )}
         {step === 4 && <Step5Review state={state} onGoToStep={s => setStep(s)} />}
@@ -561,6 +632,82 @@ function AddStockPageInner() {
               </Button>
               <Button className="w-full" variant="ghost" onClick={() => setCurrencyChangeConfirm(null)}>
                 ยกเลิก (ไม่เปลี่ยน Currency)
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+      {/* ── Initial Config Modal (first time) ── */}
+      <StockInitialConfigModal
+        open={configOpen}
+        onClose={() => router.back()}
+        onConfirm={handleInitialConfigConfirm}
+        mode="create"
+      />
+
+      {/* ── Edit Config Modal ── */}
+      {initialConfig && (
+        <StockInitialConfigModal
+          open={editConfigOpen}
+          onClose={() => setEditConfigOpen(false)}
+          onConfirm={handleEditConfigConfirm}
+          initial={initialConfig}
+          mode="edit"
+        />
+      )}
+
+      {/* ── Travel Days Change Confirmation ── */}
+      {travelDaysConfirm && (
+        <Modal
+          open={true}
+          onClose={() => setTravelDaysConfirm(null)}
+          title="เปลี่ยนจำนวนวันเดินทาง"
+          size="sm"
+        >
+          <div className="space-y-3">
+            <p className="text-sm text-slate-600">
+              เปลี่ยนจำนวนวันเดินทางจาก{' '}
+              <strong>{travelDaysConfirm.oldDays} วัน</strong> เป็น{' '}
+              <strong>{travelDaysConfirm.config.travelDurationDays} วัน</strong>
+              {' '}— ต้องการปรับ Sector สุดท้ายด้วยหรือไม่?
+            </p>
+            <div className="flex flex-col gap-2">
+              <Button
+                className="w-full"
+                onClick={() => {
+                  setState(prev => ({
+                    ...prev,
+                    schedules: prev.schedules.map(sch => ({
+                      ...sch,
+                      sectors: sch.sectors.map((s, i) =>
+                        i === sch.sectors.length - 1
+                          ? { ...s, day_offset: travelDaysConfirm.config.travelDurationDays }
+                          : s
+                      ),
+                    })),
+                  }))
+                  applyEditConfig(travelDaysConfirm.config)
+                  setTravelDaysConfirm(null)
+                }}
+              >
+                ปรับ Sector สุดท้ายให้เป็น Day {travelDaysConfirm.config.travelDurationDays}
+              </Button>
+              <Button
+                className="w-full"
+                variant="outline"
+                onClick={() => {
+                  applyEditConfig(travelDaysConfirm.config)
+                  setTravelDaysConfirm(null)
+                }}
+              >
+                ใช้กับ PNR ใหม่เท่านั้น (ไม่ปรับ Sector เดิม)
+              </Button>
+              <Button
+                className="w-full"
+                variant="ghost"
+                onClick={() => setTravelDaysConfirm(null)}
+              >
+                ยกเลิก (คงค่าเดิมไว้)
               </Button>
             </div>
           </div>

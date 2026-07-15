@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ChevronLeft, ChevronRight, Save, CheckCircle2, X, Lock } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Save, CheckCircle2, X, Lock, Settings2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import WizardStepper from '@/components/wizard/WizardStepper'
 import type { TicketType } from '@/types'
@@ -29,6 +29,8 @@ interface WizardLayoutProps {
   onNext: () => void
   onSave?: () => void
   onConfirm: () => void
+  onEditConfig?: () => void
+  initialConfigLabel?: string
   children: React.ReactNode
 }
 
@@ -54,6 +56,8 @@ export default function WizardLayout({
   onNext,
   onSave,
   onConfirm,
+  onEditConfig,
+  initialConfigLabel,
   children,
 }: WizardLayoutProps) {
   const router = useRouter()
@@ -105,6 +109,24 @@ export default function WizardLayout({
       {/* ── Stepper ── */}
       <div className="bg-white border border-slate-200 rounded-xl p-4 mb-5 shadow-sm">
         <WizardStepper currentStep={step} />
+        {onEditConfig && (
+          <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 min-w-0">
+              <Settings2 size={13} className="text-[#05a94f] shrink-0" />
+              <span className="text-xs font-medium text-slate-500 shrink-0">ค่าเริ่มต้น:</span>
+              {initialConfigLabel && (
+                <span className="text-xs text-slate-600 truncate">{initialConfigLabel}</span>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={onEditConfig}
+              className="text-xs text-[#05a94f] hover:underline font-medium shrink-0"
+            >
+              แก้ไขค่าเริ่มต้น
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ── Error Banner ── */}

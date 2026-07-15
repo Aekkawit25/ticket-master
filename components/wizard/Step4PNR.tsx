@@ -19,10 +19,15 @@ import { PNRSeatsTable } from '@/components/shared/PNRSeatsTable'
 import type { PNRRecord, ScheduleTemplate } from '@/lib/pnr-record'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-function emptyPNR(defaultCurrency = 'THB'): FlightPNRFormData {
+function emptyPNR(
+  defaultCurrency = 'THB',
+  opts?: { seats?: number; priceFormat?: 'FARE' | 'FARE_YQ' | 'ALL_IN' }
+): FlightPNRFormData {
   return {
     pnr_code: '', dummy_pnr: '', travel_start: '', travel_end: '',
-    seat_total: 40, price_format: 'FARE', fare: 0, yq: null, tax_type: 'separate',
+    seat_total: opts?.seats ?? 40,
+    price_format: opts?.priceFormat ?? 'FARE',
+    fare: 0, yq: null, tax_type: 'separate',
     tax: null, total_amount: 0, currency: defaultCurrency, condition_id: '',
     status: 'Pending', pnr_status: 'PENDING', confirmation_status: 'PENDING_CONFIRMATION',
     remark: '', sector_dates: [], ttl_status: 'UNSET', ttl_date: null,
@@ -77,10 +82,15 @@ interface Step4Props {
   currency: string
   onChange: (pnrs: FlightPNRFormData[]) => void
   showValidation?: boolean
+  defaultSeatsPerPnr?: number
+  defaultPriceFormat?: 'FARE' | 'FARE_YQ' | 'ALL_IN'
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
-export default function Step4PNR({ pnrs, schedules, conditions, currency, onChange, showValidation = false }: Step4Props) {
+export default function Step4PNR({
+  pnrs, schedules, conditions, currency, onChange, showValidation = false,
+  defaultSeatsPerPnr, defaultPriceFormat,
+}: Step4Props) {
   const mainSectors = schedules.find(s => s.isMain)?.sectors ?? schedules[0]?.sectors ?? []
 
   const getPnrSectors = (pnr: FlightPNRFormData): FlightSectorFormData[] => {
@@ -264,7 +274,7 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
   }, [pnrs])
 
   // ─── Row operations ────────────────────────────────────────────────────────
-  const addRow = () => onChange([...pnrs, emptyPNR(currency)])
+  const addRow = () => onChange([...pnrs, emptyPNR(currency, { seats: defaultSeatsPerPnr, priceFormat: defaultPriceFormat })])
 
   const addBulkPNRs = (rows: BulkPnrRow[]) => {
     const newPNRs: FlightPNRFormData[] = rows.map(row => {
@@ -693,6 +703,8 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
         sectors={builderSectors}
         conditions={builderConditions}
         currency={currency}
+        defaultSeatTotal={defaultSeatsPerPnr}
+        defaultPriceFormat={defaultPriceFormat}
         onConfirm={addBulkPNRs}
       />
     </div>
