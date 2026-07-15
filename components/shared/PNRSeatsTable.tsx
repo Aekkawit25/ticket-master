@@ -30,7 +30,7 @@ export const PNR_COLS = [
   { key: 'pnr',        label: 'PNR',            width: 92,  align: 'left'   },
   { key: 'flightSet',  label: 'Flight Set',     width: 110, align: 'left'   },
   { key: 'sector',     label: 'Sector',          width: 55,  align: 'center' },
-  { key: 'day',        label: 'Day',             width: 55,  align: 'center' },
+  { key: 'day',        label: 'Day',             width: 68,  align: 'center' },
   { key: 'depDate',    label: 'Dep Date',        width: 115, align: 'center' },
   { key: 'depTime',    label: 'Dep Time',        width: 78,  align: 'center' },
   { key: 'arrDate',    label: 'Arr Date',        width: 115, align: 'center' },
@@ -128,6 +128,9 @@ export interface PNRSeatsTableProps {
   // highlight newly added
   newHighlight?:     { start: number; count: number } | null
   readOnly?:         boolean
+  /** When true, changing sector-0 dep recalculates all sectors immediately (no confirmation banner).
+   *  Use in Add Stock wizard where all dates are auto-calculated from travelStart. */
+  immediateRecalcOnTravelStart?: boolean
 }
 
 const TTL_NEAR_DAYS = 7
@@ -156,6 +159,7 @@ export function PNRSeatsTable({
   onChange, onDelete, onDuplicate,
   onToggleSelect, onToggleAll, allSelected,
   newHighlight, readOnly = false,
+  immediateRecalcOnTravelStart = false,
 }: PNRSeatsTableProps) {
 
   const [hoveredIdx,        setHoveredIdx]        = useState<number | null>(null)
@@ -224,9 +228,12 @@ export function PNRSeatsTable({
     const r = records[idx]; const sectors = getSectors(r); const sch = getSchedule(r)
     const cur = sectors[sIdx]?.depDate ?? ''
     if (sIdx === 0) {
-      // If a date already exists, defer to shiftConfirm — do NOT update any cells yet
-      if (cur && newDep !== cur) { setShiftConfirm({ idx, origDep: cur, newDep }); return }
-      // Initial set (cur empty): recalculate all sectors atomically
+      // In Add Stock mode (immediateRecalcOnTravelStart) always recalc immediately — no banner.
+      // In Edit mode, defer to shiftConfirm so user can choose to keep manual overrides.
+      if (cur && newDep !== cur && !immediateRecalcOnTravelStart) {
+        setShiftConfirm({ idx, origDep: cur, newDep }); return
+      }
+      // Recalculate all sectors atomically from the new travelStart
       const newSects = recalcSectorDates(newDep, sch.sectors, r.sectors)
       markTouched(idx); update(idx, { sectors: newSects }); return
     }
@@ -383,7 +390,7 @@ export function PNRSeatsTable({
       )}
 
       {/* Confirmation banners */}
-      {!readOnly && shiftConfirm && (
+      {!readOnly && shiftConfirm && !immediateRecalcOnTravelStart && (
         <div className="flex items-center gap-2 px-2.5 py-1.5 bg-blue-50 border border-blue-200 rounded-lg text-[11px] text-blue-800 flex-wrap mb-1">
           <CalendarDays size={12} className="shrink-0 text-blue-500" />
           <span className="flex-1 min-w-0">Travel Start เปลี่ยนเป็น <strong>{formatTravelDate(shiftConfirm.newDep)}</strong> — คำนวณวันที่ Sector อื่นใหม่อย่างไร?</span>
@@ -625,9 +632,17 @@ export function PNRSeatsTable({
                           </span>
                         </td>
 
-                        {/* Day */}
-                        <td className={cn(TD_SEC_C, 'text-[11px] text-slate-500 font-medium', rowBorderB)} style={{ backgroundColor: hvSec }}>
-                          {getDayLabel(displayDep)}
+                        {/* Day — Travel Day number (from Flight Set) + weekday derived from dep date */}
+                        <td className={cn(TD_SEC_C, 'text-[11px] font-medium', rowBorderB)} style={{ backgroundColor: hvSec }}>
+                          {s?.dayOffset ? (
+                            <span className="inline-flex items-center gap-0.5 leading-none">
+                              <span className="text-[10px] font-bold text-slate-500">D{s.dayOffset}</span>
+                              <span className="text-slate-300 text-[9px] select-none">·</span>
+                              <span className="text-slate-500">{getDayLabel(displayDep)}</span>
+                            </span>
+                          ) : (
+                            <span className="text-slate-500">{getDayLabel(displayDep)}</span>
+                          )}
                         </td>
 
                         {/* Dep Date */}

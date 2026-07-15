@@ -122,9 +122,10 @@ export default function Step4PNR({
     if (p.sector_dates && p.sector_dates.length === sects.length) {
       return p.sector_dates.map((sd, i) => {
         const s = sects[i]
-        const dayOffsetChanged = s && sd.day_offset !== s.day_offset
-        const shouldRecompute = !sd.dep_manual && !!p.travel_start && (!sd.travel_date || dayOffsetChanged)
-        const dep = shouldRecompute ? (calcSectorDate(p.travel_start, s.day_offset) ?? '') : sd.travel_date
+        // Always derive dep from travel_start for non-manual sectors — never use stale stored travel_date
+        const dep = (!sd.dep_manual && !!p.travel_start)
+          ? (calcSectorDate(p.travel_start, s.day_offset) ?? '')
+          : (sd.travel_date ?? '')
         const arr = sd.arr_manual ? (sd.arr_date ?? '') : (dep ? addDaysToDate(dep, s?.arr_day_offset ?? 0) : '')
         return { ...sd, day_offset: s?.day_offset ?? sd.day_offset, travel_date: dep, arr_date: arr,
           dep_time: sd.dep_time !== undefined ? sd.dep_time : (s?.dep_time ?? ''),
@@ -492,6 +493,7 @@ export default function Step4PNR({
           conditions={conditionsForTable}
           currency={currency}
           mode="step3"
+          immediateRecalcOnTravelStart
           showValidation={showValidation}
           newHighlight={newRowHighlight}
           onChange={handleTableChange}
