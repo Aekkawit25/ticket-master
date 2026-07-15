@@ -53,9 +53,9 @@ export const PRICE_TYPE_LABEL: Record<string, string> = {
 }
 
 const PRICE_TYPES = [
-  { value: 'FARE'    as const, label: 'Fare',      desc: 'Fare + Tax + YQ (แสดงแยก 3 ช่อง)' },
-  { value: 'FARE_YQ' as const, label: 'Fare + YQ', desc: 'Fare + YQ เท่านั้น (ไม่มี Tax)' },
-  { value: 'ALL_IN'  as const, label: 'All In',    desc: 'ราคารวมทุกอย่าง (ช่องเดียว)' },
+  { value: 'FARE'    as const, label: 'Fare',      desc: 'Fare + Tax + YQ' },
+  { value: 'FARE_YQ' as const, label: 'Fare + YQ', desc: 'Fare + YQ เท่านั้น' },
+  { value: 'ALL_IN'  as const, label: 'All In',    desc: 'ราคารวมทุกอย่าง' },
 ]
 
 const AIRLINE_OPTS = MASTER_AIRLINES.map(a => ({ value: a.code, label: `${a.code} — ${a.name}` }))
@@ -111,12 +111,12 @@ const TYPE_CARDS: TypeCard[] = [
 
 function mkDefaultForm(lockedStockType?: StockType | null): ModalForm {
   return {
-    stockType:         lockedStockType ?? '',
-    airlineCode:       '',
-    currencyCode:      getDefaultCurrencyCode(),
-    seatsPerPnr:       40,
+    stockType:          lockedStockType ?? '',
+    airlineCode:        '',
+    currencyCode:       getDefaultCurrencyCode(),
+    seatsPerPnr:        40,
     travelDurationDays: 7,
-    priceType:         'FARE',
+    priceType:          'FARE',
   }
 }
 
@@ -142,10 +142,10 @@ export default function StockInitialConfigModal({
 
   const validate = (): boolean => {
     const e: Partial<Record<keyof ModalForm, string>> = {}
-    if (showTypeSelector && !form.stockType) e.stockType      = 'กรุณาเลือกประเภท Stock'
-    if (!form.airlineCode)                   e.airlineCode    = 'กรุณาเลือกสายการบิน'
-    if (!form.currencyCode)                  e.currencyCode   = 'กรุณาเลือกสกุลเงิน'
-    if ((form.seatsPerPnr ?? 0) < 1)         e.seatsPerPnr   = 'ขั้นต่ำ 1 ที่นั่ง'
+    if (showTypeSelector && !form.stockType) e.stockType          = 'กรุณาเลือกประเภท Stock'
+    if (!form.airlineCode)                   e.airlineCode        = 'กรุณาเลือกสายการบิน'
+    if (!form.currencyCode)                  e.currencyCode       = 'กรุณาเลือกสกุลเงิน'
+    if ((form.seatsPerPnr ?? 0) < 1)         e.seatsPerPnr        = 'ขั้นต่ำ 1 ที่นั่ง'
     if ((form.travelDurationDays ?? 0) < 1)  e.travelDurationDays = 'ขั้นต่ำ 1 วัน'
     setErrors(e)
     return !Object.keys(e).length
@@ -156,9 +156,9 @@ export default function StockInitialConfigModal({
     onConfirm({ ...form, stockType: form.stockType as StockType })
   }
 
-  const airline         = MASTER_AIRLINES.find(a => a.code === form.airlineCode)
-  const priceLabel      = PRICE_TYPES.find(p => p.value === form.priceType)?.label ?? ''
-  const lockedCfg       = lockedStockType ? STOCK_TYPE_CONFIG[lockedStockType] : null
+  const airline          = MASTER_AIRLINES.find(a => a.code === form.airlineCode)
+  const priceLabel       = PRICE_TYPES.find(p => p.value === form.priceType)?.label ?? ''
+  const lockedCfg        = lockedStockType ? STOCK_TYPE_CONFIG[lockedStockType] : null
   const selectedTypeCard = TYPE_CARDS.find(c => c.key === form.stockType)
 
   const inputCls = (err?: string) => cn(
@@ -166,6 +166,13 @@ export default function StockInitialConfigModal({
     'hover:border-slate-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15',
     err ? 'border-red-400 bg-red-50' : 'border-slate-300 bg-white',
   )
+
+  const inputClsDays = (err?: string) => cn(
+    'h-10 w-full rounded-lg border pl-3 pr-10 text-sm outline-none transition',
+    'hover:border-slate-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15',
+    err ? 'border-red-400 bg-red-50' : 'border-slate-300 bg-white',
+  )
+
   const errTxt = (msg?: string) => msg
     ? <p className="mt-1 text-xs text-red-500">{msg}</p>
     : null
@@ -177,7 +184,8 @@ export default function StockInitialConfigModal({
       open={open}
       onClose={onClose}
       title="ตั้งค่าเริ่มต้น Stock"
-      size={showTypeSelector ? 'xl' : 'lg'}
+      noScroll
+      style={{ width: 'min(1200px, calc(100vw - 48px))', maxWidth: 'none' }}
       footer={
         <>
           <Button variant="outline" onClick={onClose}>ยกเลิก</Button>
@@ -187,18 +195,13 @@ export default function StockInitialConfigModal({
         </>
       }
     >
-      <div className="space-y-5">
-        {mode === 'create' && !showTypeSelector && (
-          <p className="text-sm text-slate-500 -mt-1">
-            กำหนดค่าเริ่มต้นก่อนสร้าง Stock — สามารถแก้ไขได้ทีหลังในแต่ละขั้นตอน
-          </p>
-        )}
+      <div className="space-y-4">
 
         {/* ── Locked type badge (specific menu) ── */}
         {lockedCfg && !showTypeSelector && (() => {
           const card = TYPE_CARDS.find(c => c.key === lockedStockType)
           return (
-            <div className={cn('flex items-center gap-3 px-4 py-3 rounded-xl border-2', card?.selectedCls ?? 'border-slate-200 bg-slate-50')}>
+            <div className={cn('flex items-center gap-3 px-3 py-2.5 rounded-xl border-2', card?.selectedCls ?? 'border-slate-200 bg-slate-50')}>
               <div className={card?.iconCls}>{card?.icon}</div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
@@ -216,7 +219,7 @@ export default function StockInitialConfigModal({
         {/* ── Type selector (All Tickets only) ── */}
         {showTypeSelector && (
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">
               ประเภท Stock <span className="text-red-500">*</span>
             </label>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -228,18 +231,18 @@ export default function StockInitialConfigModal({
                     type="button"
                     onClick={() => { setForm(f => ({ ...f, stockType: card.key })); setErrors(e => ({ ...e, stockType: '' })) }}
                     className={cn(
-                      'flex flex-col items-start p-4 rounded-xl border-2 text-left transition-all duration-150',
+                      'flex flex-col items-start p-3 rounded-xl border-2 text-left transition-all duration-150',
                       selected ? card.selectedCls : `border-slate-200 bg-white ${card.hoverCls}`
                     )}
                   >
-                    <div className="flex items-center gap-2 mb-1.5">
+                    <div className="flex items-center gap-2 mb-1">
                       <div className={selected ? card.iconCls : 'text-slate-400'}>{card.icon}</div>
-                      {selected && <Check size={13} className="text-emerald-600" />}
+                      {selected && <Check size={12} className="text-emerald-600" />}
                     </div>
                     <span className={cn('text-sm font-semibold', selected ? 'text-slate-900' : 'text-slate-600')}>
                       {card.label}
                     </span>
-                    <span className={cn('text-xs mt-0.5 leading-relaxed', selected ? 'text-slate-600' : 'text-slate-400')}>
+                    <span className={cn('text-xs mt-0.5 leading-snug', selected ? 'text-slate-600' : 'text-slate-400')}>
                       {card.desc}
                     </span>
                   </button>
@@ -247,14 +250,14 @@ export default function StockInitialConfigModal({
               })}
             </div>
             {errTxt(errors.stockType)}
-            {errors.stockType && (
-              <p className="mt-1 text-xs text-slate-400">กรุณาเลือกประเภท Stock ก่อนดำเนินการต่อ</p>
-            )}
           </div>
         )}
 
-        {/* ── Row 1: Airline | Currency ── */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {/* ── 4-column row: Airline | Currency | Seats | Travel Days ── */}
+        <div
+          className="grid gap-3"
+          style={{ gridTemplateColumns: 'minmax(260px, 1.5fr) minmax(190px, 1fr) minmax(190px, 1fr) minmax(190px, 1fr)' }}
+        >
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1.5">
               สายการบินหลัก <span className="text-red-500">*</span>
@@ -264,6 +267,7 @@ export default function StockInitialConfigModal({
               value={form.airlineCode}
               onChange={v => { setForm(f => ({ ...f, airlineCode: v })); setErrors(e => ({ ...e, airlineCode: '' })) }}
               placeholder="เลือก Airline..."
+              usePortal
             />
             {errTxt(errors.airlineCode)}
           </div>
@@ -277,13 +281,9 @@ export default function StockInitialConfigModal({
             />
             {errTxt(errors.currencyCode)}
           </div>
-        </div>
-
-        {/* ── Row 2: Seats | Travel Days ── */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1.5">
-              ที่นั่ง / PNR (ค่าเริ่มต้น) <span className="text-red-500">*</span>
+              ที่นั่ง / PNR <span className="text-red-500">*</span>
             </label>
             <input
               type="number" min={1}
@@ -297,22 +297,24 @@ export default function StockInitialConfigModal({
             <label className="block text-sm font-medium text-slate-700 mb-1.5">
               จำนวนวันเดินทาง <span className="text-red-500">*</span>
             </label>
-            <div className="flex items-center gap-2">
+            <div className="relative">
               <input
                 type="number" min={1}
                 value={form.travelDurationDays}
                 onChange={e => setForm(f => ({ ...f, travelDurationDays: Math.max(1, Number(e.target.value) || 1) }))}
-                className={inputCls(errors.travelDurationDays)}
+                className={inputClsDays(errors.travelDurationDays)}
               />
-              <span className="text-sm text-slate-500 shrink-0">วัน</span>
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-400 pointer-events-none select-none">
+                วัน
+              </span>
             </div>
             {errTxt(errors.travelDurationDays)}
           </div>
         </div>
 
-        {/* ── Row 3: Price Format ── */}
+        {/* ── Price Format ── */}
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-2">
+          <label className="block text-sm font-medium text-slate-700 mb-1.5">
             รูปแบบราคาที่ได้รับ <span className="text-red-500">*</span>
           </label>
           <div className="grid grid-cols-3 gap-3">
@@ -322,16 +324,16 @@ export default function StockInitialConfigModal({
                 type="button"
                 onClick={() => setForm(f => ({ ...f, priceType: opt.value }))}
                 className={cn(
-                  'flex flex-col items-start p-3.5 rounded-xl border-2 text-left transition-all duration-150',
+                  'flex flex-col items-start p-3 rounded-xl border-2 text-left transition-all duration-150',
                   form.priceType === opt.value
                     ? 'border-[#05a94f] bg-emerald-50'
                     : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
                 )}
               >
-                <span className={cn('text-sm font-semibold mb-0.5', form.priceType === opt.value ? 'text-[#05a94f]' : 'text-slate-700')}>
+                <span className={cn('text-sm font-semibold', form.priceType === opt.value ? 'text-[#05a94f]' : 'text-slate-700')}>
                   {opt.label}
                 </span>
-                <span className="text-xs text-slate-500 leading-relaxed">{opt.desc}</span>
+                <span className="text-xs text-slate-500 mt-0.5">{opt.desc}</span>
               </button>
             ))}
           </div>
@@ -339,9 +341,9 @@ export default function StockInitialConfigModal({
 
         {/* ── Summary ── */}
         {form.airlineCode && (
-          <div className="bg-slate-50 rounded-xl border border-slate-200 p-4">
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2.5">สรุปค่าเริ่มต้น</p>
-            <div className="flex flex-wrap gap-x-5 gap-y-1.5 text-sm text-slate-700">
+          <div className="bg-slate-50 rounded-xl border border-slate-200 p-3">
+            <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-2">สรุปค่าเริ่มต้น</p>
+            <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm text-slate-700">
               {(selectedTypeCard || lockedCfg) && (
                 <span className="flex items-center gap-1.5">
                   <div className={cn('shrink-0', selectedTypeCard?.iconCls ?? 'text-[#05a94f]')}>
@@ -374,6 +376,7 @@ export default function StockInitialConfigModal({
             </div>
           </div>
         )}
+
       </div>
     </Modal>
   )

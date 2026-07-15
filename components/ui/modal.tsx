@@ -11,9 +11,13 @@ interface ModalProps {
   children: React.ReactNode
   size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl'
   footer?: React.ReactNode
+  /** Custom width/maxWidth override — applied as inline style on the modal box */
+  style?: React.CSSProperties
+  /** Removes overflow-y-auto and max-h-[90vh] so the modal sizes to its content */
+  noScroll?: boolean
 }
 
-export function Modal({ open, onClose, title, children, size = 'md', footer }: ModalProps) {
+export function Modal({ open, onClose, title, children, size = 'md', footer, style, noScroll }: ModalProps) {
   useEffect(() => {
     if (open) {
       document.body.style.overflow = 'hidden'
@@ -38,9 +42,11 @@ export function Modal({ open, onClose, title, children, size = 'md', footer }: M
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
       <div
         className={cn(
-          'relative bg-white rounded-2xl shadow-2xl w-full flex flex-col max-h-[90vh]',
+          'relative bg-white rounded-2xl shadow-2xl w-full flex flex-col',
+          !noScroll && 'max-h-[90vh]',
           sizeClasses[size]
         )}
+        style={style}
       >
         {title && (
           <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 flex-shrink-0">
@@ -50,7 +56,7 @@ export function Modal({ open, onClose, title, children, size = 'md', footer }: M
             </button>
           </div>
         )}
-        <div className="flex-1 overflow-y-auto p-5">{children}</div>
+        <div className={noScroll ? 'p-5' : 'flex-1 overflow-y-auto p-5'}>{children}</div>
         {footer && (
           <div className="px-5 py-4 border-t border-slate-200 flex-shrink-0 flex items-center justify-end gap-2">
             {footer}
