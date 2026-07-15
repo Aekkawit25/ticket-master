@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { TicketTypeBadge } from '@/components/ui/badge'
 import { Table, TableHead, TableBody, Th, Td, TableRow, EmptyRow } from '@/components/ui/table'
@@ -8,7 +8,7 @@ import { formatDate, buildRouteText } from '@/lib/utils'
 import { formatDateTimeThai } from '@/lib/utils'
 import { getStockTypeConfigSafe } from '@/lib/stock-type-config'
 import { checkPNRDuplicatesInSystem, type PNRConflictDetail } from '@/lib/demo-storage'
-import { CheckCircle2, Plane, Users, FileText, AlertTriangle, ArrowLeft } from 'lucide-react'
+import { CheckCircle2, Plane, Users, FileText, AlertTriangle, ArrowLeft, RefreshCw } from 'lucide-react'
 import type { WizardState, FlightPNRFormData, FlightSectorFormData } from '@/types'
 import { PNRSeatsTable } from '@/components/shared/PNRSeatsTable'
 import type { PNRRecord, ScheduleTemplate } from '@/lib/pnr-record'
@@ -17,6 +17,10 @@ interface Step5Props {
   state: WizardState
   excludeStockId?: string
   onGoToStep?: (step: number) => void
+  seriesName?: string
+  seriesNameSource?: 'auto' | 'manual'
+  onSeriesNameChange?: (name: string) => void
+  onRegenerateName?: () => void
 }
 
 const SECTOR_TYPE_COLOR: Record<string, string> = {
@@ -25,7 +29,16 @@ const SECTOR_TYPE_COLOR: Record<string, string> = {
   Transit:   'text-amber-600',
 }
 
-export default function Step5Review({ state, excludeStockId, onGoToStep }: Step5Props) {
+export default function Step5Review({
+  state,
+  excludeStockId,
+  onGoToStep,
+  seriesName,
+  seriesNameSource,
+  onSeriesNameChange,
+  onRegenerateName,
+}: Step5Props) {
+  const [regenConfirm, setRegenConfirm] = useState(false)
   const { stockInfo, schedules, pnrs } = state
   const stockTypeCfg = getStockTypeConfigSafe(stockInfo.ticket_type, stockInfo.group_type)
 
@@ -155,6 +168,101 @@ export default function Step5Review({ state, excludeStockId, onGoToStep }: Step5
 
   return (
     <div className="space-y-4">
+
+      {/* ── ยืนยันและตั้งชื่อ Series ─────────────────────────────────────────── */}
+      {onSeriesNameChange !== undefined && (
+        <Card className="border-[#05a94f]/40 bg-emerald-50/40">
+          <CardHeader>
+            <CardTitle className="text-[#05a94f]">ยืนยันและตั้งชื่อ {stockTypeCfg.displayName}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 sm:grid-cols-[auto_1fr] gap-4 items-start">
+              <div>
+                <p className="text-xs text-slate-400 mb-1">{stockTypeCfg.codeLabel}</p>
+                <p className="font-mono font-bold text-slate-800 text-sm px-3 py-2 bg-white rounded-lg border border-slate-200 whitespace-nowrap">
+                  {stockInfo.stock_code || '—'}
+                </p>
+              </div>
+              <div className="space-y-1">
+                <label className="block text-xs font-medium text-slate-700">
+                  ชื่อ {stockTypeCfg.displayName}<span className="text-red-500 ml-0.5">*</span>
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={seriesName ?? ''}
+                    onChange={e => onSeriesNameChange(e.target.value)}
+                    maxLength={150}
+                    placeholder={`ชื่อ ${stockTypeCfg.displayName}...`}
+                    className={`flex-1 px-3 py-2 text-sm rounded-lg border outline-none transition-colors focus:ring-2 focus:ring-[#05a94f]/30 ${
+                      !seriesName?.trim()
+                        ? 'border-red-300 focus:border-red-400'
+                        : 'border-slate-300 focus:border-[#05a94f]'
+                    }`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (seriesNameSource === 'manual' && seriesName?.trim()) {
+                        setRegenConfirm(true)
+                      } else {
+                        onRegenerateName?.()
+                      }
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 hover:border-slate-400 transition-colors whitespace-nowrap"
+                  >
+                    <RefreshCw size={12} />
+                    สร้างชื่อแนะนำใหม่
+                  </button>
+                </div>
+                <div className="flex items-center justify-between">
+                  {!seriesName?.trim() ? (
+                    <p className="text-xs text-red-500">กรุณาระบุชื่อ {stockTypeCfg.displayName} ก่อนบันทึก</p>
+                  ) : (
+                    <p className="text-xs text-slate-400">
+                      {seriesNameSource === 'auto' ? '✦ ชื่อแนะนำจากระบบ' : '✦ แก้ไขโดยผู้ใช้'}
+                    </p>
+                  )}
+                  <p className="text-xs text-slate-400">{(seriesName ?? '').length}/150</p>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Confirm overwrite dialog */}
+      {regenConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-xl p-6 max-w-sm w-full mx-4">
+            <div className="flex items-center gap-3 mb-3">
+              <AlertTriangle size={20} className="text-amber-500 shrink-0" />
+              <h3 className="font-semibold text-slate-900">สร้างชื่อแนะนำใหม่?</h3>
+            </div>
+            <p className="text-sm text-slate-600 mb-4">
+              ชื่อปัจจุบัน <strong>&ldquo;{seriesName}&rdquo;</strong> จะถูกแทนที่ด้วยชื่อแนะนำที่สร้างจากระบบ
+              ต้องการดำเนินการต่อหรือไม่?
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setRegenConfirm(false)}
+                className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={() => { setRegenConfirm(false); onRegenerateName?.() }}
+                className="px-4 py-2 text-sm font-medium text-white bg-[#05a94f] rounded-lg hover:bg-[#048a40]"
+              >
+                สร้างชื่อใหม่
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center gap-3 p-4 bg-green-50 border border-green-200 rounded-xl">
         <div className="w-10 h-10 bg-[#05a94f] rounded-full flex items-center justify-center flex-shrink-0">

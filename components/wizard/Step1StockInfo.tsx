@@ -153,15 +153,6 @@ export default function Step1StockInfo({
   const typeConfig = getStockTypeConfigSafe(data.ticket_type, data.group_type)
   const codePrefix    = typeConfig.prefix
   const codeLabel     = typeConfig.codeLabel
-  const nameLabel     = typeConfig.nameLabel
-  const namePlaceholder = typeConfig.key === 'AD_HOC'
-    ? 'เช่น Japan Cherry Blossom Apr 26'
-    : typeConfig.key === 'FIT'
-      ? 'เช่น Tokyo FIT Jul 26'
-      : typeConfig.key === 'TICKET_ONLY'
-        ? 'เช่น Europe Ticket Jul 26'
-        : 'เช่น Sweden Aurora Mar 26'
-  const nameHelper = typeConfig.key === 'AD_HOC' ? 'ชื่อ Ad Hoc' : 'ชื่อ Stock หรือชื่อซีรีส์'
   const runningNumber = data.stock_code.startsWith(codePrefix)
     ? data.stock_code.slice(codePrefix.length)
     : data.stock_code
@@ -246,7 +237,7 @@ export default function Step1StockInfo({
           <CardTitle>ข้อมูลหลักของ Stock</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-[3fr_4fr_3fr] gap-4">
             {/* ── Stock Code: prefix badge (locked) + running number (auto) ── */}
             <div className="space-y-1">
               <label className="block text-xs font-medium text-slate-700">
@@ -269,15 +260,6 @@ export default function Step1StockInfo({
               }
             </div>
 
-            <Input
-              label={nameLabel}
-              required
-              value={data.group_name}
-              onChange={e => onChange({ group_name: e.target.value })}
-              error={errors.group_name}
-              placeholder={namePlaceholder}
-              helper={nameHelper}
-            />
             <SearchableSelect
               label="Airline"
               required
@@ -319,8 +301,8 @@ export default function Step1StockInfo({
           <li>Route จะสร้างอัตโนมัติจาก Sector ใน Step 2</li>
           <li>Period จะคำนวณอัตโนมัติจาก PNR ใน Step 4</li>
           <li>Trip Type (One-way / Round-trip / Multi-city) กำหนดได้ใน Step 2 Flight Segments</li>
-          <li><strong>{nameLabel}</strong> = {typeConfig.key === 'AD_HOC' ? 'ชื่อ Ad Hoc เช่น "Japan Cherry Blossom Apr 26"' : 'ชื่อ Stock เช่น "Sweden Aurora Mar 26"'}</li>
           <li>Currency แสดงเฉพาะสกุลเงินที่ ACTIVE จาก Currencies Master (ISO 4217)</li>
+          <li><strong>ชื่อ {typeConfig.displayName}</strong> จะกำหนดใน Step 4 Review &amp; Save — ระบบจะสร้างชื่อแนะนำจาก Airline, Route และช่วงเดินทางให้อัตโนมัติ</li>
           {(typeConfig.key === 'SERIES' || typeConfig.key === 'AD_HOC' || typeConfig.key === 'TICKET_ONLY') && (
             <li>ต้องมี Sector ขั้นต่ำ 2 รายการ (Departure + Arrival)</li>
           )}

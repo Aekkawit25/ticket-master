@@ -143,6 +143,43 @@ function adjustSectorCount(
   })
 }
 
+// ── Series Name helpers ────────────────────────────────────────────────────────
+
+const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+
+function getTravelPeriodString(pnrs: WizardState['pnrs']): string {
+  const dates = pnrs.filter(p => p.travel_start).map(p => {
+    const lastSd = p.sector_dates?.[p.sector_dates.length - 1]
+    return { start: p.travel_start!, end: lastSd?.arr_date || p.travel_end || p.travel_start! }
+  })
+  if (dates.length === 0) return ''
+  const earliest = dates.reduce((a, b) => a.start < b.start ? a : b).start
+  const latest   = dates.reduce((a, b) => a.end > b.end ? a : b).end
+  const parseYM  = (d: string) => ({ y: parseInt(d.slice(0, 4)), m: parseInt(d.slice(5, 7)) - 1 })
+  const s = parseYM(earliest)
+  const e = parseYM(latest)
+  const sLabel = `${MONTHS_SHORT[s.m]} ${String(s.y).slice(2)}`
+  const eLabel = `${MONTHS_SHORT[e.m]} ${String(e.y).slice(2)}`
+  return s.y === e.y && s.m === e.m ? sLabel : `${sLabel}–${eLabel}`
+}
+
+function generateSeriesName(state: WizardState): string {
+  const { stockInfo, schedules, pnrs } = state
+  const mainSectors = schedules.find(s => s.isMain)?.sectors ?? schedules[0]?.sectors ?? []
+  const country  = stockInfo.destination?.trim() || 'Draft'
+  const airline  = stockInfo.airline_code || ''
+  const routeParts: string[] = []
+  for (const s of mainSectors) {
+    if (routeParts.length === 0 && s.dep_airport_code) routeParts.push(s.dep_airport_code)
+    if (s.arr_airport_code && s.arr_airport_code !== routeParts[routeParts.length - 1]) {
+      routeParts.push(s.arr_airport_code)
+    }
+  }
+  const route  = routeParts.join('–')
+  const period = getTravelPeriodString(pnrs)
+  return [country, airline, route, period].filter(Boolean).join(' · ')
+}
+
 function getPageTitle(ticketType: TicketType, groupType?: GroupType | null, typeConfirmed = true): string {
   if (!typeConfirmed) return 'Add Stock'
   const cfg = getStockTypeConfig(ticketType, groupType)
@@ -175,6 +212,7 @@ function AddStockPageInner() {
 
   const [step, setStep] = useState(1)
   const [typeConfirmed, setTypeConfirmed] = useState(isTypeLocked)
+  const [seriesNameSource, setSeriesNameSource] = useState<'auto' | 'manual'>('auto')
   const [saving, setSaving] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [saveMsg, setSaveMsg] = useState('')
@@ -447,7 +485,6 @@ function AddStockPageInner() {
       if (!state.stockInfo.stock_code.trim()) return `กรุณากรอก ${stepCfg.codeLabel}`
       const existingCodes = getDemoStocks().map(s => s.stockCode)
       if (existingCodes.includes(state.stockInfo.stock_code.trim())) return `${stepCfg.codeLabel} นี้ถูกใช้งานแล้ว กรุณาใช้รหัสอื่น`
-      if (!state.stockInfo.group_name.trim()) return `กรุณากรอก ${stepCfg.nameLabel}`
       if (!state.stockInfo.airline_code) return 'กรุณาเลือก Airline'
       if (!state.stockInfo.currency) return 'กรุณาเลือก Currency'
       return null
@@ -536,9 +573,17 @@ function AddStockPageInner() {
         return
       }
       setPnrValidationShown(false)
-      // Normalize all PNR derived fields (travel_end, sector_dates, total, dummy PNR)
-      // from the current sectors/fare values so Step 4 always shows the latest data.
-      setState(normalizeForReview)
+      // Normalize PNR derived fields then auto-generate Series Name (if not manually edited).
+      // Both must happen in one updater so name generation sees normalized sector_dates.
+      const capturedSource = seriesNameSource
+      setState(prev => {
+        const normalized = normalizeForReview(prev)
+        if (capturedSource === 'auto') {
+          const autoName = generateSeriesName(normalized)
+          return { ...normalized, stockInfo: { ...normalized.stockInfo, group_name: autoName } }
+        }
+        return normalized
+      })
     }
     setStep(s => Math.min(s + 1, 4))
   }
@@ -612,7 +657,26 @@ function AddStockPageInner() {
     setPnrImpact(null)
   }
 
+  const handleSeriesNameChange = useCallback((name: string) => {
+    setSeriesNameSource('manual')
+    setState(prev => ({ ...prev, stockInfo: { ...prev.stockInfo, group_name: name } }))
+  }, [])
+
+  const handleRegenerateName = useCallback(() => {
+    setState(prev => {
+      const autoName = generateSeriesName(prev)
+      return { ...prev, stockInfo: { ...prev.stockInfo, group_name: autoName } }
+    })
+    setSeriesNameSource('auto')
+  }, [])
+
   const confirmSave = () => {
+    const trimmedName = state.stockInfo.group_name.trim()
+    if (!trimmedName) {
+      setSaveError('กรุณาระบุชื่อ Series ก่อนบันทึก')
+      setTimeout(() => setSaveError(''), 5000)
+      return
+    }
     const pnrsToCheck = state.pnrs.map(p => ({ pnr_code: p.pnr_code, dummy_pnr: p.dummy_pnr }))
     const dupCheck = checkPNRDuplicatesInSystem(pnrsToCheck)
     if (dupCheck.hasConflicts) {
@@ -653,7 +717,7 @@ function AddStockPageInner() {
         error={errors._}
         saving={saving}
         isLastStep={step === 4}
-        confirmDisabled={hasDuplicatePNRs}
+        confirmDisabled={hasDuplicatePNRs || !state.stockInfo.group_name.trim()}
         nextDisabled={nextDisabled}
         onBack={goBack}
         onNext={goNext}
@@ -724,7 +788,16 @@ function AddStockPageInner() {
             defaultPriceFormat={initialConfig?.priceType}
           />
         )}
-        {step === 4 && <Step5Review state={state} onGoToStep={s => setStep(s)} />}
+        {step === 4 && (
+          <Step5Review
+            state={state}
+            onGoToStep={s => setStep(s)}
+            seriesName={state.stockInfo.group_name}
+            seriesNameSource={seriesNameSource}
+            onSeriesNameChange={handleSeriesNameChange}
+            onRegenerateName={handleRegenerateName}
+          />
+        )}
       </WizardLayout>
 
       {pnrImpact && (
