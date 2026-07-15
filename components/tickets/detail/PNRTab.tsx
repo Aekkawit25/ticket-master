@@ -2049,6 +2049,11 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
             dayOffset:      s.dayOffset,
             depAirportCode: s.depAirportCode,
             arrAirportCode: s.arrAirportCode,
+            depTime:        s.depTime,
+            arrTime:        s.arrTime,
+            arrDayOffset:   s.arrDayOffset,
+            airlineCode:    s.airlineCode,
+            flightNo:       s.flightNo,
           })),
         }))
         const builderConditions: BulkPnrCondition[] = liveStock.conditions

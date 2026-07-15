@@ -25,6 +25,8 @@ export interface BulkPnrSector {
   depTime?: string
   arrTime?: string
   arrDayOffset?: number
+  airlineCode?: string
+  flightNo?: string
 }
 
 export interface BulkPnrFlightSet {
@@ -451,6 +453,27 @@ function buildFsRoute(sectors: BulkPnrSector[]): string {
   return dep && arr ? `${dep} – ${arr}` : ''
 }
 
+function buildFsLabel(fs: BulkPnrFlightSet): string {
+  const route = buildFsRoute(fs.sectors)
+  const n     = fs.sectors.length
+  const days  = fs.sectors.length ? Math.max(...fs.sectors.map(s => s.dayOffset), 1) : 1
+  const parts = [fs.flightSetName]
+  if (route) parts.push(route)
+  if (n)     parts.push(`${n} Sectors`)
+  if (days > 1) parts.push(`${days} วัน`)
+  return parts.join(' · ')
+}
+
+function buildFsFlightSummary(sectors: BulkPnrSector[]): string[] {
+  return sectors
+    .map(s => {
+      const code  = [(s.airlineCode || ''), (s.flightNo || '')].join('').trim()
+      const route = [s.depAirportCode, s.arrAirportCode].filter(Boolean).join('–')
+      return [code, route].filter(Boolean).join(' ')
+    })
+    .filter(Boolean)
+}
+
 // ─── Day-of-week helper ───────────────────────────────────────────────────────
 
 const DOW_LABELS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'] as const
@@ -521,6 +544,7 @@ export function BulkPnrBuilder({
   const [saving,  setSaving]  = useState(false)
   const [formErr, setFormErr] = useState('')
   const [condTtlConfirm, setCondTtlConfirm] = useState<{ pendingCode: string } | null>(null)
+  const [fsChangeConfirm, setFsChangeConfirm] = useState<{ toFsId: string } | null>(null)
 
   // Bulk toolbar
   const [bSeat, setBSeat]   = useState('')
@@ -528,12 +552,12 @@ export function BulkPnrBuilder({
 
   // (Preview table UI state is now internal to PNRSeatsTable)
 
-  // Auto-select FS when modal opens
+  // Auto-select FS when modal opens — only when exactly 1 FS (multiple FS: user must choose)
   useEffect(() => {
     if (!open || !flightSets?.length) return
-    if (shared.flightSetId && flightSets.some(fs => fs.flightSetId === shared.flightSetId)) return
-    const defaultFs = flightSets.find(fs => fs.flightSetId === 'fset-default' || fs.flightSetName === 'Default')
-    setShared(s => ({ ...s, flightSetId: (defaultFs ?? flightSets[0]).flightSetId }))
+    if (flightSets.length === 1) {
+      setShared(s => ({ ...s, flightSetId: flightSets[0].flightSetId }))
+    }
   }, [open, flightSets]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Computed ──────────────────────────────────────────────────────────────
@@ -580,6 +604,12 @@ export function BulkPnrBuilder({
 
   const hasSummaryData = shared.seatTotal > 0 || computedTotal > 0
 
+  const hasAnyFormData = !!(
+    countCfg.startDate || wdCfg.startDate || calItems.length ||
+    Number(shared.fare) > 0 || Number(shared.yq) > 0 ||
+    Number(shared.tax) > 0 || Number(shared.allIn) > 0
+  )
+
   // First travel date — used for TTL preview text
   const firstTravelDate = useMemo(() => {
     if (method === 'count' && countCfg.startDate) return countCfg.startDate
@@ -609,7 +639,11 @@ export function BulkPnrBuilder({
     method === 'count'   ? !!countCfg.startDate :
     method === 'weekday' ? (!!wdCfg.startDate && !!wdCfg.endDate && wdCfg.weekdays.size > 0) :
     calItems.length > 0
-  const canPreview = hasDateInput && shared.seatTotal > 0
+
+  // FS requirement: when FS field is shown (add_to_existing OR flightSets provided), a FS must be selected
+  const fsFieldShown = mode === 'add_to_existing' || !!flightSets?.length
+  const fsOk         = !fsFieldShown || !flightSets?.length || !!shared.flightSetId
+  const canPreview   = hasDateInput && shared.seatTotal > 0 && fsOk
 
   const applyConditionCode = (code: string, cond?: BulkPnrCondition) => {
     const patch: Partial<SharedCfg> = { conditionCode: code, ttlUserModified: false }
@@ -1187,44 +1221,113 @@ export function BulkPnrBuilder({
                   {/* Fields — compact 2-col grid */}
                   <div className="grid grid-cols-2 gap-x-3 gap-y-3">
 
-                    {/* Row 1: Seat | Flight Set (or Travel Days) */}
+                    {/* Row 0: Flight Set — always visible when FS data available OR in add_to_existing mode */}
+                    {(mode === 'add_to_existing' || !!flightSets?.length) && (() => {
+                      const hasFs  = !!flightSets?.length
+                      const selFs  = hasFs ? flightSets!.find(f => f.flightSetId === shared.flightSetId) : undefined
+                      const route  = selFs ? buildFsRoute(selFs.sectors) : ''
+                      const flightSummary = selFs ? buildFsFlightSummary(selFs.sectors) : []
+
+                      return (
+                        <div className="col-span-2 space-y-2">
+                          <label className="block text-xs font-medium text-slate-700">
+                            Flight Set<span className="ml-0.5 text-red-500">*</span>
+                          </label>
+
+                          {/* No FS available */}
+                          {!hasFs && (
+                            <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5">
+                              <span className="text-xs text-red-600 font-medium">
+                                ยังไม่มี Flight Set กรุณาสร้าง Flight Set ก่อนเพิ่ม PNR
+                              </span>
+                            </div>
+                          )}
+
+                          {/* Single FS: read-only */}
+                          {hasFs && flightSets!.length === 1 && (
+                            <div className={cn(iCls, 'flex items-center gap-2 bg-slate-50 cursor-default select-none')}>
+                              <span className="font-medium text-slate-800 truncate flex-1">{flightSets![0].flightSetName}</span>
+                              <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">{travelDays} วัน</span>
+                              <span className="shrink-0 text-[10px] text-slate-400">อ่านอย่างเดียว</span>
+                            </div>
+                          )}
+
+                          {/* Multiple FS: dropdown */}
+                          {hasFs && flightSets!.length > 1 && (
+                            <>
+                              <select
+                                value={shared.flightSetId}
+                                onChange={e => {
+                                  const toFsId = e.target.value
+                                  if (hasAnyFormData && toFsId && toFsId !== shared.flightSetId) {
+                                    setFsChangeConfirm({ toFsId })
+                                  } else {
+                                    setShared(s => ({ ...s, flightSetId: toFsId }))
+                                  }
+                                }}
+                                className={cn(iCls, !shared.flightSetId ? 'border-amber-400 ring-1 ring-amber-300' : '')}>
+                                <option value="">— เลือก Flight Set —</option>
+                                {flightSets!.map(fs => (
+                                  <option key={fs.flightSetId} value={fs.flightSetId}>
+                                    {buildFsLabel(fs)}
+                                  </option>
+                                ))}
+                              </select>
+                              {!shared.flightSetId && (
+                                <p className="text-[10px] text-amber-600">กรุณาเลือก Flight Set ก่อนดำเนินการ</p>
+                              )}
+                            </>
+                          )}
+
+                          {/* FS summary detail card */}
+                          {selFs && (
+                            <div className="rounded-lg border border-slate-200 bg-slate-50 p-2.5 space-y-1.5">
+                              {/* Header chips */}
+                              <div className="flex flex-wrap gap-1.5">
+                                {route && (
+                                  <span className="rounded bg-white border border-slate-200 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700">{route}</span>
+                                )}
+                                <span className="rounded bg-white border border-slate-200 px-1.5 py-0.5 text-[10px] text-slate-600">{selFs.sectors.length} Sectors</span>
+                                <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">{travelDays} วัน</span>
+                              </div>
+                              {/* Per-sector rows */}
+                              {selFs.sectors.map((s, i) => {
+                                const flightCode = [(s.airlineCode || ''), (s.flightNo || '')].join('').trim()
+                                const sRoute = [s.depAirportCode, s.arrAirportCode].filter(Boolean).join('→')
+                                const plusDay = (s.arrDayOffset ?? 0) > 0 ? `+${s.arrDayOffset}` : ''
+                                return (
+                                  <div key={i} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-slate-600 border-t border-slate-200 pt-1.5">
+                                    <span className="font-semibold text-slate-500 w-3">{i + 1}.</span>
+                                    <span className={`rounded px-1 py-0.5 text-[9px] font-medium ${s.sectorType === 'Departure' ? 'bg-blue-100 text-blue-700' : s.sectorType === 'Arrival' ? 'bg-purple-100 text-purple-700' : 'bg-slate-200 text-slate-600'}`}>
+                                      {s.sectorType}
+                                    </span>
+                                    {flightCode && <span className="font-semibold text-slate-800">{flightCode}</span>}
+                                    {sRoute && <span>{sRoute}</span>}
+                                    {s.depTime && <span className="text-slate-500">{s.depTime}{s.arrTime ? ` → ${s.arrTime}` : ''}{plusDay && <span className="ml-0.5 text-amber-600 font-medium">{plusDay}</span>}</span>}
+                                    <span className="text-slate-400">Day {s.dayOffset}</span>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })()}
+
+                    {/* Row 1: Seat | ระยะเวลาเดินทาง */}
                     <FL label="ที่นั่ง / PNR" required>
                       <input type="number" min={1} value={shared.seatTotal}
                         onChange={e => setShared(s => ({ ...s, seatTotal: Math.max(1, Number(e.target.value) || 1) }))}
                         className={cn(iCls, 'text-center font-semibold')} />
                     </FL>
-                    {flightSets && flightSets.length > 0 ? (
-                      <FL label="Flight Set" required>
-                        <select value={shared.flightSetId}
-                          onChange={e => setShared(s => ({ ...s, flightSetId: e.target.value }))}
-                          className={cn(iCls, !shared.flightSetId ? 'border-amber-400 ring-1 ring-amber-300' : '')}>
-                          <option value="">— เลือก —</option>
-                          {flightSets.map(fs => (
-                            <option key={fs.flightSetId} value={fs.flightSetId}>
-                              {fs.flightSetName}{fs.sectors.length ? ` · ${fs.sectors.length}s` : ''}
-                            </option>
-                          ))}
-                        </select>
-                        {(() => {
-                          const selFs = flightSets.find(f => f.flightSetId === shared.flightSetId)
-                          if (!selFs?.sectors.length) return null
-                          const route = buildFsRoute(selFs.sectors)
-                          return (
-                            <div className="mt-1 flex flex-wrap gap-1">
-                              {route && <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">{route}</span>}
-                              <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">{travelDays} วัน</span>
-                            </div>
-                          )
-                        })()}
-                      </FL>
-                    ) : (
-                      <FL label="วันเดินทาง">
-                        <div className={cn(iCls, 'flex items-center text-slate-600 bg-slate-50 cursor-default select-none gap-1.5')}>
-                          <span>{travelDays} วัน</span>
-                          {effectiveSectors.length > 0 && <span className="text-[10px] text-slate-400">(Sectors)</span>}
-                        </div>
-                      </FL>
-                    )}
+                    <FL label="ระยะเวลาเดินทาง">
+                      <div className={cn(iCls, 'flex items-center text-slate-600 bg-slate-50 cursor-default select-none gap-1.5')}>
+                        <span>{travelDays} วัน</span>
+                        {effectiveSectors.length > 0 && (
+                          <span className="text-[10px] text-slate-400">({effectiveSectors.length} Sectors)</span>
+                        )}
+                      </div>
+                    </FL>
 
                     {/* Price Format Section */}
                     <div className="col-span-2 space-y-3">
@@ -1574,6 +1677,33 @@ export function BulkPnrBuilder({
             </div>
           )}
         </div>
+
+        {/* Flight Set change confirmation dialog */}
+        {fsChangeConfirm && (
+          <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/40 rounded-2xl">
+            <div className="bg-white rounded-2xl shadow-2xl w-80 p-6 mx-4">
+              <h3 className="text-sm font-semibold text-slate-900 mb-2">เปลี่ยน Flight Set?</h3>
+              <p className="text-xs text-slate-600 mb-5">
+                คุณได้กรอกข้อมูลไปแล้ว การเปลี่ยน Flight Set จะอัปเดตระยะเวลาและ Sector ของทุก PNR ในชุดนี้
+              </p>
+              <div className="flex justify-end gap-3">
+                <button type="button"
+                  onClick={() => setFsChangeConfirm(null)}
+                  className="px-4 py-2 text-sm text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">
+                  ยกเลิก
+                </button>
+                <button type="button"
+                  onClick={() => {
+                    setShared(s => ({ ...s, flightSetId: fsChangeConfirm.toFsId }))
+                    setFsChangeConfirm(null)
+                  }}
+                  className="px-4 py-2 text-sm font-semibold bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors">
+                  เปลี่ยน Flight Set
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Condition–TTL confirmation dialog */}
         {condTtlConfirm && (

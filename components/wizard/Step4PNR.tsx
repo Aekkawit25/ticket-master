@@ -5,7 +5,7 @@ import { PlusCircle, Info, CalendarDays, FileUp, Download, AlertTriangle, Refres
 import { cn, formatTravelDate, formatDateThai, formatDateTimeThai, calcTravelEndFromSectors, calcSectorDate } from '@/lib/utils'
 import { hasTtl } from '@/lib/ttl-utils'
 import { BulkPnrBuilder } from '@/components/shared/BulkPnrBuilder'
-import type { BulkPnrRow, BulkPnrSector, BulkPnrCondition } from '@/components/shared/BulkPnrBuilder'
+import type { BulkPnrRow, BulkPnrSector, BulkPnrFlightSet, BulkPnrCondition } from '@/components/shared/BulkPnrBuilder'
 import type { FlightPNRFormData, FlightSectorFormData, FlightScheduleFormData, PNRStatus, TaxType } from '@/types'
 import type { AppCondition } from '@/lib/condition-schema'
 import { TimeInput } from '@/components/ui/time-input'
@@ -317,14 +317,34 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
   }
 
   const builderSectors: BulkPnrSector[] = sectors.map(s => ({
-    sectorType: s.sector_type,
-    dayOffset: s.day_offset,
+    sectorType:     s.sector_type,
+    dayOffset:      s.day_offset,
     depAirportCode: s.dep_airport_code,
     arrAirportCode: s.arr_airport_code,
-    depTime: s.dep_time || undefined,
-    arrTime: s.arr_time || undefined,
-    arrDayOffset: s.arr_day_offset ?? 0,
+    depTime:        s.dep_time || undefined,
+    arrTime:        s.arr_time || undefined,
+    arrDayOffset:   s.arr_day_offset ?? 0,
+    airlineCode:    s.airline_code || undefined,
+    flightNo:       s.flight_no || undefined,
   }))
+
+  // Build FlightSets from schedules so BulkPnrBuilder shows FS selector
+  const builderFlightSets: BulkPnrFlightSet[] = schedules.map(sch => ({
+    flightSetId:   sch.scheduleId,
+    flightSetName: sch.scheduleName || (sch.isMain ? 'Main Schedule' : sch.scheduleId),
+    sectors: sch.sectors.map(s => ({
+      sectorType:     s.sector_type,
+      dayOffset:      s.day_offset,
+      depAirportCode: s.dep_airport_code,
+      arrAirportCode: s.arr_airport_code,
+      depTime:        s.dep_time || undefined,
+      arrTime:        s.arr_time || undefined,
+      arrDayOffset:   s.arr_day_offset ?? 0,
+      airlineCode:    s.airline_code || undefined,
+      flightNo:       s.flight_no || undefined,
+    })),
+  }))
+
   const builderConditions: BulkPnrCondition[] = conditions.map(c => ({
     code: c.conditionId, name: c.conditionName,
     stages: c.stages.map(st => ({ paymentBaseDate: st.dueType === 'TRAVEL_MINUS_DAYS' ? 'Travel Start' : 'Created Date', paymentDueDaysBefore: st.dueDays, paymentDueTime: st.dueTime })),
@@ -669,6 +689,7 @@ export default function Step4PNR({ pnrs, schedules, conditions, currency, onChan
         open={bulkOpen}
         onClose={() => setBulkOpen(false)}
         mode="create_stock"
+        flightSets={builderFlightSets.length > 0 ? builderFlightSets : undefined}
         sectors={builderSectors}
         conditions={builderConditions}
         currency={currency}
