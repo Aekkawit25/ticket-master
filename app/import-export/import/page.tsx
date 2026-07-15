@@ -42,7 +42,7 @@ export default function ImportStockPage() {
         success: true,
         imported: 3,
         errors: [
-          { row: 5, message: 'PNR List: Travel Start ว่าง — ต้องกรอกวันเดินทาง' },
+          { row: 5, message: 'PNR List: วันเดินทางเริ่มต้น ว่าง — ต้องกรอกวันเดินทาง' },
           { row: 8, message: 'Flight Segments: Sector แรกต้องเป็น Departure' },
         ],
       })
@@ -101,7 +101,7 @@ export default function ImportStockPage() {
               <li>Group / Ticket + Land ต้องมี Sector อย่างน้อย 2 รายการ (Departure + Arrival)</li>
               <li>FIT ต้องมี Sector อย่างน้อย 1 รายการ</li>
               <li>Sector แรกต้องเป็น Departure เสมอ</li>
-              <li>PNR ต้องมี Travel Start และ Seat Total (Travel End คำนวณจาก Sector Travel Day)</li>
+              <li>PNR ต้องมี วันเดินทางเริ่มต้น และ Seat Total (Travel End คำนวณจาก Sector Travel Day)</li>
               <li>ไม่ต้อง Import Duration / Used / Bal. / Travel End — ระบบคำนวณให้</li>
               <li>Condition Code ใน PNR ต้องตรงกับ Conditions ที่ Import</li>
               <li>วันที่ต้องอยู่ในรูปแบบ DD MMM YY เช่น 25 Feb 26</li>

@@ -6,6 +6,8 @@ import { cn, formatTravelDate, formatDateThai, formatDateTimeThai, calcTravelEnd
 import { hasTtl } from '@/lib/ttl-utils'
 import { BulkPnrBuilder } from '@/components/shared/BulkPnrBuilder'
 import type { BulkPnrRow, BulkPnrSector, BulkPnrFlightSet, BulkPnrCondition } from '@/components/shared/BulkPnrBuilder'
+import { SinglePnrModal } from '@/components/shared/SinglePnrModal'
+import type { PnrFormValues, PnrModalFlightSet, PnrModalCondition } from '@/lib/pnr-shared-utils'
 import type { FlightPNRFormData, FlightSectorFormData, FlightScheduleFormData, PNRStatus, TaxType } from '@/types'
 import type { AppCondition } from '@/lib/condition-schema'
 import { TimeInput } from '@/components/ui/time-input'
@@ -243,6 +245,97 @@ export default function Step4PNR({
     onChange([...pnrs.slice(0, idx + 1), { ...src, id: undefined, pnr_code: '', dummy_pnr: '' }, ...pnrs.slice(idx + 1)])
   }
 
+  // ─── SinglePnrModal helpers ───────────────────────────────────────────────
+  const [showSinglePnrModal, setShowSinglePnrModal] = useState(false)
+
+  const pnrFlightSets: PnrModalFlightSet[] = useMemo(() =>
+    schedules.map(s => ({
+      flightSetId: s.scheduleId,
+      flightSetName: s.scheduleName || (s.isMain ? 'Main' : s.scheduleId),
+      sectors: s.sectors.map((sec, i) => ({
+        sectorId: sec.id || `S${i}`,
+        seq: sec.seq,
+        sectorType: sec.sector_type,
+        airlineCode: sec.airline_code || null,
+        flightNo: sec.flight_no || null,
+        depAirportCode: sec.dep_airport_code || null,
+        arrAirportCode: sec.arr_airport_code || null,
+        depTime: sec.dep_time || null,
+        arrTime: sec.arr_time || null,
+        dayOffset: sec.day_offset,
+        arrDayOffset: sec.arr_day_offset ?? null,
+      })),
+    }))
+  , [schedules])
+
+  const pnrConditions: PnrModalCondition[] = useMemo(() =>
+    conditions.filter(c => c.status === 'Active').map(c => ({
+      code: c.conditionCode,
+      name: c.conditionName,
+      ttlRule: c.ttlRule.calcType === 'NOT_SET' ? undefined : {
+        calcType: (c.ttlRule.calcType === 'TRAVEL_MINUS_DAYS' ? 'TRAVEL_MINUS_DAYS'
+          : c.ttlRule.calcType === 'MANUAL_DATE' ? 'FIXED_DATE' : 'NONE') as 'TRAVEL_MINUS_DAYS' | 'FIXED_DATE' | 'NONE',
+        daysBefore: c.ttlRule.daysBefore || null,
+        fixedDate: c.ttlRule.fixedDate || null,
+        time: c.ttlRule.time || null,
+      },
+    }))
+  , [conditions])
+
+  const handleSinglePnrConfirm = async (values: PnrFormValues) => {
+    const sch   = schedules.find(s => s.scheduleId === values.flightSetId) ?? schedules.find(s => s.isMain) ?? schedules[0]
+    const sects = sch?.sectors ?? sectors
+    const fare  = Number(values.fare) || 0
+    const yq    = Number(values.yq)   || 0
+    const tax   = Number(values.tax)  || 0
+    const allIn = Number(values.allIn) || 0
+    const total = values.priceFormat === 'ALL_IN' ? allIn
+      : values.priceFormat === 'FARE_YQ' ? fare + yq
+      : fare + yq + tax
+    const sectorDates = sects.map(s => {
+      const dep = values.travelStart ? (calcSectorDate(values.travelStart, s.day_offset) ?? '') : ''
+      const arr = dep ? addDaysToDate(dep, s.arr_day_offset ?? 0) : ''
+      return { sector_type: s.sector_type, day_offset: s.day_offset, travel_date: dep,
+        arr_date: arr, dep_manual: false as const, arr_manual: false as const,
+        dep_time: s.dep_time ?? '', arr_time: s.arr_time ?? '', time_override: false as const }
+    })
+    let ttlDate: string | null = null, ttlTime: string | null = null
+    if (values.ttlType === 'FIXED_DATE') {
+      ttlDate = values.ttlDate || null; ttlTime = values.ttlTime || null
+    } else if (values.ttlType === 'DAYS_BEFORE' && values.ttlDaysBefore && values.travelStart) {
+      const days = parseInt(values.ttlDaysBefore, 10)
+      if (!isNaN(days)) { ttlDate = subtractDaysFromDate(values.travelStart, days); ttlTime = values.ttlTime || null }
+    }
+    const newPnr: FlightPNRFormData = {
+      pnr_code:            values.pnrCode,
+      dummy_pnr:           '',
+      travel_start:        values.travelStart,
+      travel_end:          sectorDates[sectorDates.length - 1]?.arr_date || values.travelStart,
+      seat_total:          Number(values.seatTotal) || (defaultSeatsPerPnr ?? 40),
+      price_format:        values.priceFormat,
+      fare:                values.priceFormat === 'ALL_IN' ? allIn : fare,
+      yq:                  values.priceFormat !== 'FARE' ? (yq || null) : null,
+      tax_type:            values.priceFormat === 'ALL_IN' ? 'included' : 'separate',
+      tax:                 values.priceFormat === 'FARE' ? (tax || null) : null,
+      total_amount:        total,
+      currency,
+      condition_id:        values.conditionCode,
+      status:              'Pending',
+      pnr_status:          'PENDING',
+      confirmation_status: 'PENDING_CONFIRMATION',
+      remark:              values.remark,
+      sector_dates:        sectorDates,
+      ttl_status:          ttlDate ? 'SET' : 'UNSET',
+      ttl_date:            ttlDate,
+      ttl_time:            ttlTime,
+      ttl_remark:          '',
+      ttl_type:            values.ttlType,
+      ttl_days_before:     values.ttlType === 'DAYS_BEFORE' ? (parseInt(values.ttlDaysBefore, 10) || null) : null,
+      schedule_id:         values.flightSetId || undefined,
+    }
+    onChange([...pnrs, newPnr])
+  }
+
   // ─── UI state ─────────────────────────────────────────────────────────────
   const [bulkOpen,        setBulkOpen]        = useState(false)
   const [importOpen,      setImportOpen]      = useState(false)
@@ -465,7 +558,7 @@ export default function Step4PNR({
         </div>
         <div className="flex items-center gap-1 shrink-0">
           {([
-            { label: '+ เพิ่ม PNR', onClick: addRow, cls: 'text-white bg-[#05a94f] hover:bg-[#048f43] border-[#05a94f]' },
+            { label: '+ เพิ่ม PNR', onClick: () => setShowSinglePnrModal(true), cls: 'text-white bg-[#05a94f] hover:bg-[#048f43] border-[#05a94f]' },
             { label: 'Import', onClick: () => setImportOpen(true), cls: 'text-blue-600 border-blue-300 hover:bg-blue-50', icon: <FileUp size={11} /> },
             { label: 'Template', onClick: () => downloadPnrTemplate(sectors), cls: 'text-slate-600 border-slate-300 hover:bg-slate-100', icon: <Download size={11} /> },
             { label: 'หลาย PNR', onClick: () => setBulkOpen(true), cls: 'text-[#05a94f] border-[#05a94f] hover:bg-green-50', icon: <CalendarDays size={11} /> },
@@ -694,6 +787,19 @@ export default function Step4PNR({
         onConfirm={addPastedPNRs}
         existingPnrCodes={pnrs.map(p => p.pnr_code).filter(Boolean)}
         sectors={mainSectors}
+      />
+
+      {/* ── Single PNR Modal ── */}
+      <SinglePnrModal
+        open={showSinglePnrModal}
+        onClose={() => setShowSinglePnrModal(false)}
+        mode="create_stock"
+        flightSets={pnrFlightSets}
+        conditions={pnrConditions}
+        currency={currency}
+        defaultSeatTotal={defaultSeatsPerPnr}
+        defaultFlightSetId={pnrFlightSets[0]?.flightSetId}
+        onConfirm={handleSinglePnrConfirm}
       />
 
       {/* ── BulkPnrBuilder ── */}

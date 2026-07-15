@@ -1408,7 +1408,7 @@ function ViewDrawer({
                     { label: 'Series Name', value: row.groupName },
                     { label: 'Airline', value: row.airlineCode || '—' },
                     { label: 'Route', value: row.routeText || '—' },
-                    { label: 'Travel Start', value: row.travelStart ? formatDate(row.travelStart) : '—' },
+                    { label: 'วันเดินทางเริ่มต้น', value: row.travelStart ? formatDate(row.travelStart) : '—' },
                     { label: 'Travel End', value: row.travelEnd ? formatDate(row.travelEnd) : '—' },
                     { label: 'Remark', value: row.remark || '—' },
                   ].map(({ label, value }) => (

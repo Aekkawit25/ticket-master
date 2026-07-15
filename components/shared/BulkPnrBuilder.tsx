@@ -9,6 +9,7 @@ import { ChevronLeft, ChevronRight, X, Trash2, AlertTriangle, Info, CheckCircle2
 import { cn, formatDate, formatDateTime, formatDateThai, formatDateTimeThai, calculatePlusDay, calcTTLDatetime } from '@/lib/utils'
 import { TimeInput } from '@/components/ui/time-input'
 import { calculateStockSummary, saveDemoStock, checkPNRDuplicatesInSystem } from '@/lib/demo-storage'
+import { generateDummyPnrCode, calcTravelEndFromFlightSet } from '@/lib/pnr-shared-utils'
 import type { DemoStock, DemoPNR, DemoLog } from '@/lib/demo-storage'
 import { PNRSeatsTable } from '@/components/shared/PNRSeatsTable'
 import type { PNRRecord, PNRSectorRecord, ScheduleTemplate } from '@/lib/pnr-record'
@@ -162,17 +163,6 @@ function calcTtlDateFromTravel(travelStart: string, daysBefore: number): string 
 
 // ─── Internal Helpers ─────────────────────────────────────────────────────────
 
-/** Mirror of calcTravelEndFromSectors using BulkPnrSector format */
-function calcTravelEnd(travelStart: string, sectors: BulkPnrSector[]): string {
-  if (!travelStart) return ''
-  if (!sectors.length) return travelStart
-  const returns = sectors.filter(s => s.sectorType === 'Arrival')
-  const target  = returns.length ? returns[returns.length - 1] : sectors[sectors.length - 1]
-  try {
-    const d = addDays(parseISO(travelStart), target.dayOffset - 1)
-    return fnsIsValid(d) ? fnsFormat(d, 'yyyy-MM-dd') : travelStart
-  } catch { return travelStart }
-}
 
 function calcPaymentDue(
   travelStart: string,
@@ -198,20 +188,6 @@ function calcPaymentDue(
 }
 
 
-function genDummyPnr(travelStart: string, stock: DemoStock, usedSet: Set<string>): string {
-  const typeMap: Record<string, string> = { Group: 'GRP', FIT: 'FIT', 'Ticket + Land': 'TNL' }
-  const typeCode = typeMap[stock.ticketType] ?? 'UNK'
-  const airline  = (stock.airlineCode || 'XX').toUpperCase()
-  const yymm     = travelStart.length >= 7 ? travelStart.slice(2, 4) + travelStart.slice(5, 7) : '0000'
-  const key      = `${typeCode}${airline}${yymm}`
-  const pat      = new RegExp(`^DMY-${key}-(\\d{4})$`)
-  let max        = 0
-  for (const p of stock.pnrs) {
-    if (p.dummyPnr) { const m = p.dummyPnr.match(pat); if (m) max = Math.max(max, parseInt(m[1], 10)) }
-  }
-  for (const u of usedSet) { const m = u.match(pat); if (m) max = Math.max(max, parseInt(m[1], 10)) }
-  return `DMY-${key}-${String(max + 1).padStart(4, '0')}`
-}
 
 function buildInternalRows(
   method: CreationMethod,
@@ -274,8 +250,8 @@ function buildInternalRows(
   const usedSet = new Set<string>()
 
   return starts.map((s, i) => {
-    const travelEnd = calcTravelEnd(s, sectors)
-    const dummy     = stock ? genDummyPnr(s, stock, usedSet) : ''
+    const travelEnd = calcTravelEndFromFlightSet(s, sectors)
+    const dummy     = stock ? generateDummyPnrCode(s, stock, usedSet) : ''
     if (dummy) usedSet.add(dummy)
     return {
       rowId: newId('R'), seq: i + 1,
@@ -325,7 +301,7 @@ function validateInternalRows(
     if (row.taxType === 'separate' && row.tax < 0) errors.push('Tax ต้องไม่ติดลบ')
 
     if (seenStart.has(row.travelStart)) {
-      errors.push(`Travel Start ซ้ำกับรายการ #${(seenStart.get(row.travelStart)! + 1)}`)
+      errors.push(`วันเดินทางเริ่มต้น ซ้ำกับรายการ #${(seenStart.get(row.travelStart)! + 1)}`)
     } else { seenStart.set(row.travelStart, idx) }
 
     if (mode === 'add_to_existing' && row.pnrCode.trim()) {
@@ -709,7 +685,7 @@ export function BulkPnrBuilder({
       m.total  = f + (tt === 'separate' ? tx : 0)
       // Recompute travelEnd + payment due when travelStart changes
       if (patch.travelStart) {
-        m.travelEnd = calcTravelEnd(m.travelStart, effectiveSectors)
+        m.travelEnd = calcTravelEndFromFlightSet(m.travelStart, effectiveSectors)
         const cond = conditions.find(c => c.code === m.conditionCode)
         m.paymentDueDate = calcPaymentDue(m.travelStart, m.travelEnd, cond)
       }
@@ -982,12 +958,14 @@ export function BulkPnrBuilder({
         fareIncludesTax: r.taxType === 'included',
         taxStatus:      r.taxType === 'included' ? 'included' : r.taxType === 'pending' ? 'pending' : 'completed',
         total:          r.total,
-        conditionCode:  r.conditionCode,
+        conditionCode:       r.conditionCode,
         ttlDate,
         ttlTime,
         ttlDateTime,
-        status:         r.status,
-        remark:         r.remark,
+        status:              r.status,
+        pnrStatus:           'PENDING' as const,
+        confirmationStatus:  'PENDING_CONFIRMATION' as const,
+        remark:              r.remark,
       } as DemoPNR
     })
 

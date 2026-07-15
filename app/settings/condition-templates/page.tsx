@@ -123,7 +123,7 @@ export default function ConditionTemplatesPage() {
                           : 'ส่วนที่เหลือ'}
                       </span>
                       <span className="text-slate-400">
-                        Payment Due: Travel Start − {s.payment_due_days_before} วัน เวลา {s.payment_due_time}
+                        Payment Due: วันเดินทางเริ่มต้น − {s.payment_due_days_before} วัน เวลา {s.payment_due_time}
                       </span>
                     </div>
                   ))}

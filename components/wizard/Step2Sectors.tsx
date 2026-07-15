@@ -865,7 +865,7 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
                 </th>
                 <th
                   className="border border-slate-300 px-2 py-2 text-center text-slate-600 font-semibold whitespace-nowrap"
-                  title="Travel Day = ลำดับวันเดินทาง (Day 1 = Travel Start, Day 2 = วันถัดไป)"
+                  title="Travel Day = ลำดับวันเดินทาง (Day 1 = วันเดินทางเริ่มต้น, Day 2 = วันถัดไป)"
                 >
                   Travel Day
                 </th>
@@ -1032,7 +1032,7 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
                               if (!n || n < 1) update(idx, { day_offset: 1 })
                             }}
                             min={1}
-                            title="Travel Day — ลำดับวันเดินทาง (Day 1 = Travel Start)"
+                            title="Travel Day — ลำดับวันเดินทาง (Day 1 = วันเดินทางเริ่มต้น)"
                             className={cn(
                               'w-full text-center px-1 py-[5px] text-xs bg-transparent outline-none focus:bg-blue-50',
                               (!s.day_offset || s.day_offset < 1) ? 'text-red-500' : ''
@@ -1104,7 +1104,7 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
             </span>
             <span>
               <span className="font-medium text-blue-600">Travel Day</span>
-              {' '}เริ่มจาก 1 เสมอ โดย Day 1 คือวันเดียวกับ Travel Start · สูตร: <strong>Sector Date = Travel Start + (Travel Day − 1)</strong>
+              {' '}เริ่มจาก 1 เสมอ โดย Day 1 คือวันเดียวกับวันเดินทางเริ่มต้น · สูตร: <strong>Sector Date = วันเดินทางเริ่มต้น + (Travel Day − 1)</strong>
             </span>
           </div>
         </div>
@@ -1198,7 +1198,7 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
           <Info size={13} className="shrink-0 mt-0.5" />
           <span>
             Sector เป็น <strong>แม่แบบเส้นทางบิน</strong> — ไม่ต้องใส่วันที่เดินทาง
-            · วันเดินทางจริงกำหนดที่ PNR ใน Step 4 โดย <strong>Sector Date = Travel Start + (Travel Day − 1)</strong>
+            · วันเดินทางจริงกำหนดที่ PNR ใน Step 4 โดย <strong>Sector Date = วันเดินทางเริ่มต้น + (Travel Day − 1)</strong>
             · Route แสดงอัตโนมัติจาก From/To
           </span>
         </div>

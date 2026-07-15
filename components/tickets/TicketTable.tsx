@@ -403,7 +403,7 @@ export default function TicketTable({ tickets, filterType, filterGroupType, filt
             if (seenInFile.has(upper)) errors.push('PNR ซ้ำในไฟล์ Excel')
             seenInFile.add(upper)
           }
-          if (!travelStart)   errors.push('Travel Start ว่าง')
+          if (!travelStart)   errors.push('วันเดินทางเริ่มต้น ว่าง')
           if (seatTotal <= 0) errors.push('Seat Total ต้องมากกว่า 0')
           if (fare <= 0)      errors.push('Fare ต้องมากกว่า 0')
 
@@ -852,7 +852,7 @@ export default function TicketTable({ tickets, filterType, filterGroupType, filt
                 <table className="w-full text-xs border-collapse">
                   <thead>
                     <tr className="bg-slate-50 text-slate-600">
-                      {['แถว', 'PNR Code', 'Travel Start', 'Seat', 'Fare', 'Tax', 'Total', 'Condition', 'ข้อผิดพลาด'].map(h => (
+                      {['แถว', 'PNR Code', 'วันเดินทางเริ่มต้น', 'Seat', 'Fare', 'Tax', 'Total', 'Condition', 'ข้อผิดพลาด'].map(h => (
                         <th key={h} className="border-b border-slate-200 px-2 py-1.5 text-left font-medium">{h}</th>
                       ))}
                     </tr>
@@ -876,7 +876,7 @@ export default function TicketTable({ tickets, filterType, filterGroupType, filt
               </div>
             )}
             <p className="text-xs text-slate-400">
-              รูปแบบคอลัมน์: <span className="font-mono">PNR Code, Travel Start, Seat Total, Fare, Tax Type (included/separate/pending), Tax Amount, Condition Code, Remark</span>
+              รูปแบบคอลัมน์: <span className="font-mono">PNR Code, Travel Start (YYYY-MM-DD), Seat Total, Fare, Tax Type (included/separate/pending), Tax Amount, Condition Code, Remark</span>
             </p>
           </div>
         </Modal>,
