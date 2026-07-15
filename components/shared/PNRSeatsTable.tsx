@@ -30,7 +30,7 @@ export const PNR_COLS = [
   { key: 'pnr',        label: 'PNR',            width: 92,  align: 'left'   },
   { key: 'flightSet',  label: 'Flight Set',     width: 110, align: 'left'   },
   { key: 'sector',     label: 'Sector',          width: 55,  align: 'center' },
-  { key: 'day',        label: 'Day',             width: 68,  align: 'center' },
+  { key: 'day',        label: 'วัน',             width: 52,  align: 'center' },
   { key: 'depDate',    label: 'Dep Date',        width: 115, align: 'center' },
   { key: 'depTime',    label: 'Dep Time',        width: 78,  align: 'center' },
   { key: 'arrDate',    label: 'Arr Date',        width: 115, align: 'center' },
@@ -632,17 +632,9 @@ export function PNRSeatsTable({
                           </span>
                         </td>
 
-                        {/* Day — Travel Day number (from Flight Set) + weekday derived from dep date */}
-                        <td className={cn(TD_SEC_C, 'text-[11px] font-medium', rowBorderB)} style={{ backgroundColor: hvSec }}>
-                          {s?.dayOffset ? (
-                            <span className="inline-flex items-center gap-0.5 leading-none">
-                              <span className="text-[10px] font-bold text-slate-500">D{s.dayOffset}</span>
-                              <span className="text-slate-300 text-[9px] select-none">·</span>
-                              <span className="text-slate-500">{getDayLabel(displayDep)}</span>
-                            </span>
-                          ) : (
-                            <span className="text-slate-500">{getDayLabel(displayDep)}</span>
-                          )}
+                        {/* วัน — weekday derived from dep date (Travel Day stays in data model only) */}
+                        <td className={cn(TD_SEC_C, 'text-[11px] text-slate-500 font-medium', rowBorderB)} style={{ backgroundColor: hvSec }}>
+                          {getDayLabel(displayDep)}
                         </td>
 
                         {/* Dep Date */}
