@@ -35,8 +35,13 @@ export const PNR_COLS = [
   { key: 'depTime',    label: 'Dep Time',        width: 78,  align: 'center' },
   { key: 'arrDate',    label: 'Arr Date',        width: 115, align: 'center' },
   { key: 'arrTime',    label: 'Arr Time',        width: 92,  align: 'center' },
-  { key: 'seat',       label: 'Seat',            width: 62,  align: 'center' },
-  { key: 'priceDetail',label: 'รายละเอียดราคา',  width: 165, align: 'left'   },
+  { key: 'seat',       label: 'Seat',             width: 62,  align: 'center' },
+  { key: 'priceType',  label: 'ประเภทราคา',      width: 72,  align: 'center' },
+  { key: 'colFare',    label: 'Fare',             width: 68,  align: 'right'  },
+  { key: 'colTax',     label: 'Tax',              width: 62,  align: 'right'  },
+  { key: 'colYq',      label: 'YQ',               width: 58,  align: 'right'  },
+  { key: 'colAllIn',   label: 'All In',           width: 68,  align: 'right'  },
+  { key: 'colTotal',   label: 'Total',            width: 72,  align: 'right'  },
   { key: 'condition',  label: 'Condition',        width: 115, align: 'left'   },
   { key: 'ttl',        label: 'NAME DL',         width: 145, align: 'left'   },
   { key: 'remark',     label: 'Remark',          width: 90,  align: 'left'   },
@@ -347,18 +352,21 @@ export function PNRSeatsTable({
   }
   const commitPriceTypeChange = (idx: number, newFmt: 'FARE' | 'FARE_YQ' | 'ALL_IN') => {
     const r = records[idx]
-    const newTax = newFmt === 'FARE' ? r.tax : null
-    const newYq  = newFmt !== 'ALL_IN' ? r.yq ?? null : null
-    update(idx, { priceFormat: newFmt, tax: newTax, yq: newYq, totalAmount: calcPnrTotal(newFmt, r.fare, newTax, newYq) })
+    const newTax   = newFmt === 'FARE' ? r.tax : null
+    const newYq    = newFmt !== 'ALL_IN' ? r.yq ?? null : null
+    const newFare  = newFmt === 'ALL_IN' ? 0 : r.fare
+    const newAllIn = newFmt === 'ALL_IN' ? r.allInAmount : null
+    update(idx, { priceFormat: newFmt, fare: newFare, tax: newTax, yq: newYq, allInAmount: newAllIn,
+                  totalAmount: calcPnrTotal(newFmt, newFare, newTax, newYq, newAllIn) })
   }
   const commitPriceTypeKeep = (idx: number, newFmt: 'FARE' | 'FARE_YQ' | 'ALL_IN') => {
     const r = records[idx]
-    update(idx, { priceFormat: newFmt, totalAmount: calcPnrTotal(newFmt, r.fare, r.tax ?? null, r.yq ?? null) })
+    update(idx, { priceFormat: newFmt, totalAmount: calcPnrTotal(newFmt, r.fare, r.tax ?? null, r.yq ?? null, r.allInAmount) })
   }
 
   const handleCurrencyChange = (idx: number, code: string) => {
     const r = records[idx]
-    if ((r.fare > 0) || ((r.yq ?? 0) > 0)) { setCurrencyConfirm({ idx, newCurrency: code }); return }
+    if ((r.fare > 0) || ((r.yq ?? 0) > 0) || ((r.allInAmount ?? 0) > 0)) { setCurrencyConfirm({ idx, newCurrency: code }); return }
     update(idx, { currency: code })
   }
 
@@ -467,7 +475,12 @@ export function PNRSeatsTable({
               <th className={cn(TH_C, 'bg-[#EDF5FF]')}>Arr Date</th>
               <th className={cn(TH_C, 'bg-[#EDF5FF]')} style={{ width: 92, minWidth: 92, maxWidth: 92, paddingLeft: 0, paddingRight: 0 }}>Arr Time</th>
               <th className={TH_C}>Seat</th>
-              <th className={TH_L}>รายละเอียดราคา</th>
+              <th className={TH_C}>ประเภทราคา</th>
+              <th className={cn(TH, 'text-right')}>Fare</th>
+              <th className={cn(TH, 'text-right')}>Tax</th>
+              <th className={cn(TH, 'text-right')}>YQ</th>
+              <th className={cn(TH, 'text-right')}>All In</th>
+              <th className={cn(TH, 'text-right')}>Total</th>
               <th className={TH_L}>Condition</th>
               <th className={TH_L}>NAME DL</th>
               <th className={TH_L}>Remark</th>
@@ -493,7 +506,9 @@ export function PNRSeatsTable({
               const isDupPnr = !!r.pnrCode.trim() && records.some((o, oi) => oi !== pnrIdx && o.pnrCode.trim() === r.pnrCode.trim())
               const pnrErr = touched && isDupPnr
               const missingSeat = touched && (!r.seatTotal || r.seatTotal <= 0)
-              const fareErr = touched && !(r.fare > 0)
+              const fareErr = touched && (
+                fmt === 'ALL_IN' ? !((r.allInAmount ?? 0) > 0) : !(r.fare > 0)
+              )
               const taxErr  = touched && fmt === 'FARE' && r.tax == null
               const yqErr   = touched && (fmt === 'FARE' || fmt === 'FARE_YQ') && r.yq == null
               const isNewlyAdded = newHighlight !== null && newHighlight !== undefined && pnrIdx >= newHighlight.start && pnrIdx < newHighlight.start + newHighlight.count
@@ -748,89 +763,110 @@ export function PNRSeatsTable({
                               )}
                             </td>
 
-                            {/* รายละเอียดราคา */}
+                            {/* ประเภทราคา */}
                             <td rowSpan={sectorCount}
-                              className={cn('border-r border-[#E5EAF0] align-top overflow-hidden box-border', pnrBorderB)}
-                              style={{ backgroundColor: hvBg, transition: 'background-color 1.2s ease' }}>
+                              className={cn(TD_C, pnrBorderB)}
+                              style={{ backgroundColor: hvBg }}>
                               {readOnly ? (
-                                <div className="flex flex-col py-1">
-                                  <div className="flex items-center justify-between px-1 pb-0.5 mb-0.5 border-b border-[#E5EAF0]">
-                                    <span className={cn('text-[11px] font-bold', fmt === 'FARE_YQ' ? 'text-amber-700' : fmt === 'ALL_IN' ? 'text-blue-700' : 'text-slate-600')}>
-                                      {fmt === 'FARE_YQ' ? 'FARE+YQ' : fmt === 'ALL_IN' ? 'ALL IN' : 'FARE'}
-                                    </span>
-                                    <span className="text-[11px] font-mono text-slate-500">{r.currency || currency}</span>
-                                  </div>
-                                  <div className="flex items-center h-[18px] px-1">
-                                    <span className="w-[26px] shrink-0 text-[10px] text-slate-500 leading-none">{fmt === 'ALL_IN' ? 'AllIn' : 'Fare'}</span>
-                                    <span className="flex-1 text-right text-[11px] font-medium text-slate-800 tabular-nums pr-0.5">{r.fare > 0 ? r.fare.toLocaleString() : '—'}</span>
-                                  </div>
-                                  {!taxDisabled && (
-                                    <div className="flex items-center h-[18px] px-1">
-                                      <span className="w-[26px] shrink-0 text-[10px] text-slate-500 leading-none">Tax</span>
-                                      <span className={cn('flex-1 text-right text-[11px] tabular-nums pr-0.5', r.tax == null ? 'text-slate-300 italic text-[10px]' : 'text-slate-700')}>{r.tax != null ? r.tax.toLocaleString() : 'ยังไม่ระบุ'}</span>
-                                    </div>
-                                  )}
-                                  {!yqDisabled && (
-                                    <div className="flex items-center h-[18px] px-1">
-                                      <span className="w-[26px] shrink-0 text-[10px] text-slate-500 leading-none">YQ</span>
-                                      <span className={cn('flex-1 text-right text-[11px] tabular-nums pr-0.5', r.yq == null ? 'text-slate-300 italic text-[10px]' : 'text-slate-700')}>{r.yq != null ? r.yq.toLocaleString() : 'ยังไม่ระบุ'}</span>
-                                    </div>
-                                  )}
-                                  <div className="flex items-center h-[18px] px-1 border-t border-[#E5EAF0] mt-0.5">
-                                    <span className="w-[26px] shrink-0 text-[10px] text-slate-400 leading-none">Total</span>
-                                    <span className="flex-1 text-right text-[11px] font-bold text-[#05a94f] tabular-nums pr-0.5">{r.totalAmount > 0 ? r.totalAmount.toLocaleString() : '—'}</span>
-                                  </div>
+                                <div className="flex flex-col items-center gap-0.5 py-0.5">
+                                  <span className={cn('text-[11px] font-bold leading-none',
+                                    fmt === 'FARE_YQ' ? 'text-amber-700' : fmt === 'ALL_IN' ? 'text-blue-700' : 'text-slate-600')}>
+                                    {fmt === 'FARE_YQ' ? 'FARE+YQ' : fmt === 'ALL_IN' ? 'ALL IN' : 'FARE'}
+                                  </span>
+                                  <span className="text-[9px] font-mono text-slate-400">{r.currency || currency}</span>
                                 </div>
                               ) : (
-                                <div className="flex flex-col py-1">
-                                  <div className="flex items-center justify-between px-1 pb-0.5 mb-0.5 border-b border-[#E5EAF0]">
-                                    <select value={fmt}
-                                      onChange={e => handlePriceTypeChange(pnrIdx, e.target.value as 'FARE' | 'FARE_YQ' | 'ALL_IN')}
-                                      className={cn('h-[22px] text-[11px] font-bold cursor-pointer focus:outline-none border-0 bg-transparent rounded py-0 pl-0 pr-3 min-w-0',
-                                        fmt === 'FARE_YQ' ? 'text-amber-700' : fmt === 'ALL_IN' ? 'text-blue-700' : 'text-slate-600')}>
-                                      <option value="FARE">FARE</option>
-                                      <option value="FARE_YQ">FARE+YQ</option>
-                                      <option value="ALL_IN">ALL IN</option>
-                                    </select>
-                                    <CurrencyCombobox variant="inline" value={r.currency || currency} stockDefault={currency}
-                                      currencies={currencyOptions} onChange={code => handleCurrencyChange(pnrIdx, code)}
-                                      className="w-[38px]" />
-                                  </div>
-                                  {/* Fare / AllIn */}
-                                  <div className={cn('flex items-center h-[18px] px-1', fareErr ? 'bg-red-50/60 rounded' : '')}>
-                                    <span className="w-[26px] shrink-0 text-[10px] text-slate-500 leading-none">{fmt === 'ALL_IN' ? 'AllIn' : 'Fare'}</span>
-                                    <div className="flex-1 min-w-0">
-                                      <PriceInput value={r.fare > 0 ? r.fare : null} compact hasError={fareErr}
-                                        onChange={v => { const f = v ?? 0; update(pnrIdx, { fare: f, totalAmount: calcPnrTotal(fmt, f, r.tax ?? null, r.yq ?? null) }) }}
-                                        onBlur={() => markTouched(pnrIdx)} />
-                                    </div>
-                                  </div>
-                                  {/* Tax */}
-                                  <div className={cn('flex items-center h-[18px] px-1', !taxDisabled && taxErr ? 'bg-red-50/60 rounded' : '')}>
-                                    <span className={cn('w-[26px] shrink-0 text-[10px] leading-none', taxDisabled ? 'text-slate-300' : 'text-slate-500')}>Tax</span>
-                                    <div className="flex-1 min-w-0">
-                                      {taxDisabled
-                                        ? <span className="block w-full text-right text-[10px] text-slate-300 pr-0.5">ไม่ใช้</span>
-                                        : <PriceInput value={r.tax ?? null} compact nullable hasError={taxErr}
-                                            onChange={v => update(pnrIdx, { tax: v, totalAmount: calcPnrTotal(fmt, r.fare, v, r.yq ?? null) })}
-                                            onBlur={() => markTouched(pnrIdx)} />
-                                      }
-                                    </div>
-                                  </div>
-                                  {/* YQ */}
-                                  <div className={cn('flex items-center h-[18px] px-1', !yqDisabled && yqErr ? 'bg-red-50/60 rounded' : '')}>
-                                    <span className={cn('w-[26px] shrink-0 text-[10px] leading-none', yqDisabled ? 'text-slate-300' : 'text-slate-500')}>YQ</span>
-                                    <div className="flex-1 min-w-0">
-                                      {yqDisabled
-                                        ? <span className="block w-full text-right text-[10px] text-slate-300 pr-0.5">ไม่ใช้</span>
-                                        : <PriceInput value={r.yq ?? null} compact nullable hasError={yqErr}
-                                            onChange={v => update(pnrIdx, { yq: v, totalAmount: calcPnrTotal(fmt, r.fare, r.tax, v) })}
-                                            onBlur={() => markTouched(pnrIdx)} />
-                                      }
-                                    </div>
-                                  </div>
+                                <div className="flex flex-col items-center gap-0.5 py-0.5">
+                                  <select value={fmt}
+                                    onChange={e => handlePriceTypeChange(pnrIdx, e.target.value as 'FARE' | 'FARE_YQ' | 'ALL_IN')}
+                                    className={cn('h-[22px] text-[11px] font-bold cursor-pointer focus:outline-none border-0 bg-transparent rounded py-0 px-0.5 text-center',
+                                      fmt === 'FARE_YQ' ? 'text-amber-700' : fmt === 'ALL_IN' ? 'text-blue-700' : 'text-slate-600')}>
+                                    <option value="FARE">FARE</option>
+                                    <option value="FARE_YQ">FARE+YQ</option>
+                                    <option value="ALL_IN">ALL IN</option>
+                                  </select>
+                                  <CurrencyCombobox variant="inline" value={r.currency || currency} stockDefault={currency}
+                                    currencies={currencyOptions} onChange={code => handleCurrencyChange(pnrIdx, code)}
+                                    className="w-[50px]" />
                                 </div>
                               )}
+                            </td>
+
+                            {/* Fare */}
+                            <td rowSpan={sectorCount}
+                              className={cn('border-r border-[#E5EAF0] text-right align-middle px-1.5', pnrBorderB, fareErr && fmt !== 'ALL_IN' ? 'bg-red-50' : '')}
+                              style={{ backgroundColor: (fareErr && fmt !== 'ALL_IN') ? undefined : hvBg }}>
+                              {fmt === 'ALL_IN' ? (
+                                <span title="ไม่ใช้กับประเภทราคานี้" className="text-slate-300 text-[11px] select-none">—</span>
+                              ) : readOnly ? (
+                                <span className="text-[12px] text-slate-800 tabular-nums font-medium">
+                                  {r.fare > 0 ? r.fare.toLocaleString() : r.fare === 0 ? '0' : '—'}
+                                </span>
+                              ) : (
+                                <PriceInput value={r.fare > 0 ? r.fare : null} compact hasError={fareErr}
+                                  onChange={v => { const f = v ?? 0; update(pnrIdx, { fare: f, totalAmount: calcPnrTotal(r.priceFormat, f, r.tax ?? null, r.yq ?? null, r.allInAmount) }) }}
+                                  onBlur={() => markTouched(pnrIdx)} />
+                              )}
+                            </td>
+
+                            {/* Tax */}
+                            <td rowSpan={sectorCount}
+                              className={cn('border-r border-[#E5EAF0] text-right align-middle px-1.5', pnrBorderB, !taxDisabled && taxErr ? 'bg-red-50' : '')}
+                              style={{ backgroundColor: (!taxDisabled && taxErr) ? undefined : hvBg }}>
+                              {taxDisabled ? (
+                                <span title="ไม่ใช้กับประเภทราคานี้" className="text-slate-300 text-[11px] select-none">—</span>
+                              ) : readOnly ? (
+                                <span className={cn('text-[12px] tabular-nums', r.tax != null ? 'text-slate-800 font-medium' : 'text-slate-300 text-[10px] italic')}>
+                                  {r.tax != null ? r.tax.toLocaleString() : '—'}
+                                </span>
+                              ) : (
+                                <PriceInput value={r.tax ?? null} compact nullable hasError={taxErr}
+                                  onChange={v => update(pnrIdx, { tax: v, totalAmount: calcPnrTotal(fmt, r.fare, v, r.yq ?? null, r.allInAmount) })}
+                                  onBlur={() => markTouched(pnrIdx)} />
+                              )}
+                            </td>
+
+                            {/* YQ */}
+                            <td rowSpan={sectorCount}
+                              className={cn('border-r border-[#E5EAF0] text-right align-middle px-1.5', pnrBorderB, !yqDisabled && yqErr ? 'bg-red-50' : '')}
+                              style={{ backgroundColor: (!yqDisabled && yqErr) ? undefined : hvBg }}>
+                              {yqDisabled ? (
+                                <span title="ไม่ใช้กับประเภทราคานี้" className="text-slate-300 text-[11px] select-none">—</span>
+                              ) : readOnly ? (
+                                <span className={cn('text-[12px] tabular-nums', r.yq != null ? 'text-slate-800 font-medium' : 'text-slate-300 text-[10px] italic')}>
+                                  {r.yq != null ? r.yq.toLocaleString() : '—'}
+                                </span>
+                              ) : (
+                                <PriceInput value={r.yq ?? null} compact nullable hasError={yqErr}
+                                  onChange={v => update(pnrIdx, { yq: v, totalAmount: calcPnrTotal(fmt, r.fare, r.tax, v, r.allInAmount) })}
+                                  onBlur={() => markTouched(pnrIdx)} />
+                              )}
+                            </td>
+
+                            {/* All In */}
+                            <td rowSpan={sectorCount}
+                              className={cn('border-r border-[#E5EAF0] text-right align-middle px-1.5', pnrBorderB, fareErr && fmt === 'ALL_IN' ? 'bg-red-50' : '')}
+                              style={{ backgroundColor: (fareErr && fmt === 'ALL_IN') ? undefined : hvBg }}>
+                              {fmt !== 'ALL_IN' ? (
+                                <span title="ไม่ใช้กับประเภทราคานี้" className="text-slate-300 text-[11px] select-none">—</span>
+                              ) : readOnly ? (
+                                <span className="text-[12px] text-slate-800 tabular-nums font-medium">
+                                  {(r.allInAmount ?? 0) > 0 ? r.allInAmount!.toLocaleString() : '—'}
+                                </span>
+                              ) : (
+                                <PriceInput value={(r.allInAmount ?? 0) > 0 ? r.allInAmount! : null} compact hasError={fareErr && fmt === 'ALL_IN'}
+                                  onChange={v => { const a = v ?? 0; update(pnrIdx, { allInAmount: a, totalAmount: calcPnrTotal(fmt, r.fare, r.tax ?? null, r.yq ?? null, a) }) }}
+                                  onBlur={() => markTouched(pnrIdx)} />
+                              )}
+                            </td>
+
+                            {/* Total (per seat, read-only computed) */}
+                            <td rowSpan={sectorCount}
+                              className={cn('border-r border-[#E5EAF0] text-right align-middle px-1.5', pnrBorderB)}
+                              style={{ backgroundColor: hvBg }}>
+                              <span className={cn('text-[12px] font-bold tabular-nums', r.totalAmount > 0 ? 'text-[#05a94f]' : 'text-slate-300')}>
+                                {r.totalAmount > 0 ? r.totalAmount.toLocaleString() : '—'}
+                              </span>
                             </td>
 
                             {/* Condition */}

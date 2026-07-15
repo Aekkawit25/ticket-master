@@ -37,8 +37,8 @@ function emptyPNR(
   }
 }
 
-function calcPnrTotal(fmt: string, fare: number, tax: number | null, yq: number | null): number {
-  if (fmt === 'ALL_IN') return fare
+function calcPnrTotal(fmt: string, fare: number, tax: number | null, yq: number | null, allInAmount?: number | null): number {
+  if (fmt === 'ALL_IN') return allInAmount ?? fare
   if (fmt === 'FARE_YQ') return fare + (yq ?? 0)
   return fare + (tax ?? 0) + (yq ?? 0)
 }
@@ -154,10 +154,12 @@ export default function Step4PNR({
       activeScheduleId: p.schedule_id,
       seatTotal:       p.seat_total,
       priceFormat:     (p.price_format ?? 'FARE') as 'FARE' | 'FARE_YQ' | 'ALL_IN',
-      fare:            p.fare,
+      fare:            (p.price_format === 'ALL_IN') ? 0 : p.fare,
       yq:              p.yq ?? null,
       tax:             p.tax ?? null,
       taxType:         (p.tax_type ?? 'separate') as 'separate' | 'included' | 'pending',
+      // normalize: old data stored ALL_IN amount in fare; new data uses all_in_amount
+      allInAmount:     (p.price_format === 'ALL_IN') ? (p.all_in_amount ?? (p.fare || null)) : null,
       totalAmount:     p.total_amount,
       currency:        p.currency || currency,
       conditionId:     p.condition_id || '',
@@ -197,10 +199,11 @@ export default function Step4PNR({
       schedule_id:    rec.activeScheduleId,
       seat_total:     rec.seatTotal,
       price_format:   rec.priceFormat,
-      fare:           rec.fare,
+      fare:           rec.priceFormat === 'ALL_IN' ? 0 : rec.fare,
       yq:             rec.yq,
       tax:            rec.tax,
       tax_type:       rec.taxType as TaxType,
+      all_in_amount:  rec.priceFormat === 'ALL_IN' ? (rec.allInAmount ?? null) : null,
       total_amount:   rec.totalAmount,
       currency:       rec.currency,
       condition_id:   rec.conditionId,
@@ -313,10 +316,11 @@ export default function Step4PNR({
       travel_end:          sectorDates[sectorDates.length - 1]?.arr_date || values.travelStart,
       seat_total:          Number(values.seatTotal) || (defaultSeatsPerPnr ?? 40),
       price_format:        values.priceFormat,
-      fare:                values.priceFormat === 'ALL_IN' ? allIn : fare,
+      fare:                values.priceFormat === 'ALL_IN' ? 0 : fare,
       yq:                  values.priceFormat !== 'FARE' ? (yq || null) : null,
       tax_type:            values.priceFormat === 'ALL_IN' ? 'included' : 'separate',
       tax:                 values.priceFormat === 'FARE' ? (tax || null) : null,
+      all_in_amount:       values.priceFormat === 'ALL_IN' ? allIn : null,
       total_amount:        total,
       currency,
       condition_id:        values.conditionCode,
@@ -383,9 +387,10 @@ export default function Step4PNR({
           dep_time: s.dep_time ?? '', arr_time: s.arr_time ?? '', time_override: false as const }
       })
       pnr.seat_total = row.seatTotal; pnr.price_format = row.priceFormat as 'FARE' | 'FARE_YQ' | 'ALL_IN'
-      pnr.fare = row.fare; pnr.tax_type = row.taxType as TaxType
+      pnr.fare = row.priceFormat === 'ALL_IN' ? 0 : row.fare; pnr.tax_type = row.taxType as TaxType
       pnr.tax = row.priceFormat === 'FARE' ? (row.tax ?? null) : null
       pnr.yq = row.priceFormat !== 'ALL_IN' ? (row.yq ?? null) : null
+      pnr.all_in_amount = row.priceFormat === 'ALL_IN' ? row.total : null
       pnr.total_amount = row.total; pnr.condition_id = row.conditionCode
       pnr.status = (row.status || 'Pending') as PNRStatus; pnr.remark = row.remark
       pnr.ttl_type = row.ttlType; pnr.ttl_days_before = row.ttlDaysBefore

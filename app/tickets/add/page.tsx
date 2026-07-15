@@ -76,7 +76,9 @@ function normalizeForReview(state: WizardState): WizardState {
         : p.sector_dates ?? [],
       total_amount: (() => {
         const f = p.fare || 0; const fmt = p.price_format ?? 'FARE'
-        return fmt === 'ALL_IN' ? f : fmt === 'FARE_YQ' ? f + (p.yq ?? 0) : f + (p.tax ?? 0) + (p.yq ?? 0)
+        if (fmt === 'ALL_IN') return p.all_in_amount ?? f  // backward compat: old data has allIn in fare
+        if (fmt === 'FARE_YQ') return f + (p.yq ?? 0)
+        return f + (p.tax ?? 0) + (p.yq ?? 0)
       })(),
     }
   })

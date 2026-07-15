@@ -50,6 +50,7 @@ export interface PNRRecord {
   yq:             number | null
   tax:            number | null
   taxType:        TaxType
+  allInAmount:    number | null
   totalAmount:    number
   currency:       string
   conditionId:    string
@@ -75,8 +76,14 @@ function addDaysStr(dateStr: string, days: number): string {
   } catch { return dateStr }
 }
 
-export function calcPnrTotal(fmt: PriceFormat, fare: number, tax: number | null, yq: number | null): number {
-  if (fmt === 'ALL_IN') return fare
+export function calcPnrTotal(
+  fmt: PriceFormat,
+  fare: number,
+  tax: number | null,
+  yq: number | null,
+  allInAmount?: number | null,
+): number {
+  if (fmt === 'ALL_IN') return allInAmount ?? fare  // backward-compat: old data stored allIn in fare
   if (fmt === 'FARE_YQ') return fare + (yq ?? 0)
   return fare + (tax ?? 0) + (yq ?? 0)
 }

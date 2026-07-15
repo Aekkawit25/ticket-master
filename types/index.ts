@@ -230,6 +230,8 @@ export interface FlightPNRFormData {
   price_format?: 'FARE' | 'FARE_YQ' | 'ALL_IN'
   /** null = ยังไม่ระบุ (แสดง —), 0 = ระบุแล้วว่าเป็น 0 */
   yq?: number | null
+  /** ราคารวมสำหรับ ALL_IN — แยกจาก fare เพื่อไม่ให้สับสน */
+  all_in_amount?: number | null
   breakdown?: boolean
   condition_id: string
   status: PNRStatus
