@@ -195,10 +195,14 @@ export const MASTER_AIRPORTS: MasterAirport[] = [
   { code: 'BAH', name: 'Bahrain International Airport',                 city: 'Manama',            countryCode: 'BHR' },
   { code: 'CAI', name: 'Cairo International Airport',                   city: 'Cairo',             countryCode: 'EGY' },
   { code: 'AMM', name: 'Queen Alia International Airport',              city: 'Amman',             countryCode: 'JOR' },
-  // ── Central Asia / Russia / Mongolia ─────────────────────────
+  // ── Central Asia / Caucasus / Russia / Mongolia ──────────────
   { code: 'ALA', name: 'Almaty International Airport',                  city: 'Almaty',            countryCode: 'KAZ' },
   { code: 'ULN', name: 'Chinggis Khaan International Airport',          city: 'Ulaanbaatar',       countryCode: 'MNG' },
   { code: 'SVO', name: 'Sheremetyevo International Airport',            city: 'Moscow',            countryCode: 'RUS' },
+  // ── Georgia ───────────────────────────────────────────────────
+  { code: 'TBS', name: 'Tbilisi International Airport',                 city: 'Tbilisi',           countryCode: 'GEO' },
+  { code: 'BUS', name: 'Batumi International Airport',                  city: 'Batumi',            countryCode: 'GEO' },
+  { code: 'KUT', name: 'David the Builder Kutaisi International Airport', city: 'Kutaisi',         countryCode: 'GEO' },
   // ── Europe ────────────────────────────────────────────────────
   { code: 'LHR', name: 'London Heathrow Airport',                       city: 'London',            countryCode: 'GBR' },
   { code: 'CDG', name: 'Paris Charles de Gaulle Airport',               city: 'Paris',             countryCode: 'FRA' },
