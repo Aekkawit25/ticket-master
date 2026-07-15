@@ -13,7 +13,7 @@ import StockInitialConfigModal, { type StockInitialConfig, PRICE_TYPE_LABEL } fr
 import { validateSectors, generateStockCode, getStockCodePrefix, generateDummyPnrs, calcTravelEndFromSectors, calcSectorDate } from '@/lib/utils'
 import { isValidHHmm, sameAirport } from '@/lib/time-utils'
 import { MASTER_AIRLINE_CODE_SET } from '@/lib/master-data'
-import { getStockTypeConfig, getStockTypeConfigSafe, STOCK_TYPE_CONFIG, type StockType } from '@/lib/stock-type-config'
+import { getStockTypeConfig, getStockTypeConfigSafe, getStockTypeKey, STOCK_TYPE_CONFIG, type StockType } from '@/lib/stock-type-config'
 import { wizardStateToDemoStock, saveDemoStock, getDemoStocks, checkPNRDuplicatesInSystem, formatPNRConflictMessage } from '@/lib/demo-storage'
 import { getDefaultCurrencyCode } from '@/lib/currency-storage'
 import type { WizardState, FlightSeriesFormData, FlightSectorFormData, FlightScheduleFormData, TicketType, GroupType, TripType } from '@/types'
@@ -132,12 +132,16 @@ function AddStockPageInner() {
   } | null>(null)
 
   // ── Initial Config ────────────────────────────────────────────────────────────
-  const [initialConfig, setInitialConfig]         = useState<StockInitialConfig | null>(null)
-  const [configOpen, setConfigOpen]               = useState(true)
-  const [editConfigOpen, setEditConfigOpen]       = useState(false)
-  const [travelDaysConfirm, setTravelDaysConfirm] = useState<{
+  const [initialConfig, setInitialConfig]               = useState<StockInitialConfig | null>(null)
+  const [configOpen, setConfigOpen]                     = useState(true)
+  const [editConfigOpen, setEditConfigOpen]             = useState(false)
+  const [travelDaysConfirm, setTravelDaysConfirm]       = useState<{
     config: StockInitialConfig
     oldDays: number
+  } | null>(null)
+  const [stockTypeChangeConfirm, setStockTypeChangeConfirm] = useState<{
+    config: StockInitialConfig
+    oldStockType: StockType
   } | null>(null)
 
   // Snapshot of schedules taken when going back from PNR step to Sectors step.
@@ -232,33 +236,72 @@ function AddStockPageInner() {
   const handleInitialConfigConfirm = (config: StockInitialConfig) => {
     setInitialConfig(config)
     setConfigOpen(false)
-    setState(prev => ({
-      ...prev,
-      stockInfo: {
-        ...prev.stockInfo,
-        airline_code: config.airlineCode,
-        currency: config.currencyCode,
-      },
-      schedules: [getDefaultSchedule(prev.stockInfo.ticket_type, config.airlineCode, config.travelDurationDays)],
-    }))
+    setTypeConfirmed(true)
+
+    const stCfg       = STOCK_TYPE_CONFIG[config.stockType]
+    const newTicket   = stCfg.ticketType
+    const newGroup    = stCfg.groupType as GroupType | undefined
+    const newTrip: TripType = newTicket === 'FIT' ? 'One-way' : 'Round-trip'
+    const prefix      = getStockCodePrefix(newTicket, newGroup)
+    const existingCodes = getDemoStocks().map(s => s.stockCode)
+
+    setState(prev => {
+      const currentKey  = getStockTypeKey(prev.stockInfo.ticket_type, prev.stockInfo.group_type)
+      const needsNewCode = config.stockType !== currentKey
+      return {
+        ...prev,
+        stockInfo: {
+          ...prev.stockInfo,
+          ticket_type:  newTicket,
+          group_type:   newGroup,
+          trip_type:    newTrip,
+          stock_code:   needsNewCode ? generateStockCode(prefix, existingCodes) : prev.stockInfo.stock_code,
+          airline_code: config.airlineCode,
+          currency:     config.currencyCode,
+        },
+        schedules: [getDefaultSchedule(newTicket, config.airlineCode, config.travelDurationDays)],
+      }
+    })
   }
 
   const applyEditConfig = (config: StockInitialConfig) => {
     const prev = initialConfig
     setInitialConfig(config)
+
     const needsCurrencyConfirm = !!(prev && config.currencyCode !== prev.currencyCode && state.pnrs.length > 0)
-    setState(s => ({
-      ...s,
-      stockInfo: {
-        ...s.stockInfo,
-        airline_code: config.airlineCode,
-        ...(needsCurrencyConfirm ? {} : { currency: config.currencyCode }),
-      },
-      schedules: s.schedules.map(sch => ({
-        ...sch,
-        sectors: sch.sectors.map(sec => ({ ...sec, airline_code: config.airlineCode })),
-      })),
-    }))
+    const needsTypeChange      = !!(prev && config.stockType !== prev.stockType)
+
+    const stCfg      = STOCK_TYPE_CONFIG[config.stockType]
+    const newTicket  = stCfg.ticketType
+    const newGroup   = stCfg.groupType as GroupType | undefined
+    const newTrip: TripType = newTicket === 'FIT' ? 'One-way' : 'Round-trip'
+    const prefix     = getStockCodePrefix(newTicket, newGroup)
+
+    setState(s => {
+      const existingCodes = getDemoStocks().map(sc => sc.stockCode)
+      return {
+        ...s,
+        stockInfo: {
+          ...s.stockInfo,
+          airline_code: config.airlineCode,
+          ticket_type:  newTicket,
+          group_type:   newGroup,
+          ...(needsTypeChange ? {
+            trip_type:  newTrip,
+            stock_code: generateStockCode(prefix, existingCodes),
+          } : {}),
+          ...(needsCurrencyConfirm ? {} : { currency: config.currencyCode }),
+        },
+        schedules: needsTypeChange
+          ? [getDefaultSchedule(newTicket, config.airlineCode, config.travelDurationDays)]
+          : s.schedules.map(sch => ({
+              ...sch,
+              sectors: sch.sectors.map(sec => ({ ...sec, airline_code: config.airlineCode })),
+            })),
+        pnrs: needsTypeChange ? [] : s.pnrs,
+      }
+    })
+
     if (needsCurrencyConfirm) {
       setCurrencyChangeConfirm({ oldCurrency: prev!.currencyCode, newCurrency: config.currencyCode })
     }
@@ -266,22 +309,32 @@ function AddStockPageInner() {
 
   const handleEditConfigConfirm = (config: StockInitialConfig) => {
     setEditConfigOpen(false)
+
+    // stockType change is most disruptive — confirm first
+    if (initialConfig && config.stockType !== initialConfig.stockType) {
+      setStockTypeChangeConfirm({ config, oldStockType: initialConfig.stockType })
+      return
+    }
+
+    // Travel days change — confirm before applying
     const prevDays = initialConfig?.travelDurationDays ?? config.travelDurationDays
     if (config.travelDurationDays !== prevDays) {
       setTravelDaysConfirm({ config, oldDays: prevDays })
       return
     }
+
     applyEditConfig(config)
   }
 
   const configLabel = initialConfig
     ? [
+        STOCK_TYPE_CONFIG[initialConfig.stockType]?.displayName,
         initialConfig.airlineCode,
         initialConfig.currencyCode,
         `${initialConfig.seatsPerPnr} ที่นั่ง/PNR`,
         `${initialConfig.travelDurationDays} วัน`,
         PRICE_TYPE_LABEL[initialConfig.priceType] ?? initialConfig.priceType,
-      ].join(' · ')
+      ].filter(Boolean).join(' · ')
     : undefined
 
   const handleCurrencyUpdateAll = () => {
@@ -643,6 +696,7 @@ function AddStockPageInner() {
         onClose={() => router.back()}
         onConfirm={handleInitialConfigConfirm}
         mode="create"
+        lockedStockType={lockedStockType}
       />
 
       {/* ── Edit Config Modal ── */}
@@ -653,7 +707,48 @@ function AddStockPageInner() {
           onConfirm={handleEditConfigConfirm}
           initial={initialConfig}
           mode="edit"
+          lockedStockType={lockedStockType}
         />
+      )}
+
+      {/* ── Stock Type Change Confirmation ── */}
+      {stockTypeChangeConfirm && (
+        <Modal
+          open={true}
+          onClose={() => setStockTypeChangeConfirm(null)}
+          title="เปลี่ยนประเภท Stock"
+          size="sm"
+        >
+          <div className="space-y-3">
+            <p className="text-sm text-slate-600">
+              เปลี่ยนประเภทจาก{' '}
+              <strong>{STOCK_TYPE_CONFIG[stockTypeChangeConfirm.oldStockType].displayName}</strong>{' '}
+              เป็น{' '}
+              <strong>{STOCK_TYPE_CONFIG[stockTypeChangeConfirm.config.stockType].displayName}</strong>
+            </p>
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              การเปลี่ยนประเภท Stock จะ Reset ข้อมูล Sectors และ PNR ทั้งหมดที่มีอยู่
+            </p>
+            <div className="flex flex-col gap-2">
+              <Button
+                className="w-full"
+                onClick={() => {
+                  applyEditConfig(stockTypeChangeConfirm.config)
+                  setStockTypeChangeConfirm(null)
+                }}
+              >
+                เปลี่ยนประเภทและตั้งค่าข้อมูลที่เกี่ยวข้องใหม่
+              </Button>
+              <Button
+                className="w-full"
+                variant="ghost"
+                onClick={() => setStockTypeChangeConfirm(null)}
+              >
+                ยกเลิก (คงประเภทเดิมไว้)
+              </Button>
+            </div>
+          </div>
+        </Modal>
       )}
 
       {/* ── Travel Days Change Confirmation ── */}
