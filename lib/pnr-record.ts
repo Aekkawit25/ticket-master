@@ -114,6 +114,55 @@ export function getDayLabel(dateStr: string): string {
   } catch { return '—' }
 }
 
+/**
+ * Recalculate all sector dep/arr dates from travelStart + Flight Set dayOffset.
+ * Formula: depDate = travelStart + (dayOffset - 1), arrDate = depDate + arrDayOffset
+ * Pass skipManualDep/skipManualArr to preserve manually-edited dates.
+ */
+export function recalcSectorDates(
+  travelStart: string,
+  tmpl: SectorTemplate[],
+  existing: PNRSectorRecord[] = [],
+  opts: { skipManualDep?: boolean; skipManualArr?: boolean } = {},
+): PNRSectorRecord[] {
+  return tmpl.map((s, i) => {
+    const sd = existing[i]
+    const skipDep = !!(opts.skipManualDep && sd?.depManual)
+    const dep = skipDep
+      ? (sd?.depDate || '')
+      : calcSectorDepDate(travelStart, s.dayOffset)
+    const skipArr = !!(opts.skipManualArr && sd?.arrManual)
+    const arr = skipArr
+      ? (sd?.arrDate || '')
+      : autoAdjustArrDate(dep, sd?.depTime ?? s.depTime, sd?.arrTime ?? s.arrTime, s.arrDayOffset).arrDate
+    if (!sd) {
+      return {
+        sectorType: s.sectorType, dayOffset: s.dayOffset, arrDayOffset: s.arrDayOffset,
+        depAirportCode: s.depAirportCode, arrAirportCode: s.arrAirportCode,
+        depDate: dep, depTime: s.depTime, arrDate: arr, arrTime: s.arrTime,
+        depManual: false, arrManual: false, timeOverride: false,
+        tmplDepTime: s.depTime, tmplArrTime: s.arrTime,
+      }
+    }
+    return {
+      ...sd,
+      sectorType:     s.sectorType,
+      dayOffset:      s.dayOffset,
+      arrDayOffset:   s.arrDayOffset,
+      depAirportCode: s.depAirportCode,
+      arrAirportCode: s.arrAirportCode,
+      depDate:        dep,
+      arrDate:        arr,
+      depTime:        sd.depTime !== undefined ? sd.depTime : s.depTime,
+      arrTime:        sd.arrTime !== undefined ? sd.arrTime : s.arrTime,
+      depManual:      skipDep ? sd.depManual : false,
+      arrManual:      skipArr ? sd.arrManual : false,
+      tmplDepTime:    s.depTime,
+      tmplArrTime:    s.arrTime,
+    }
+  })
+}
+
 export function buildSectorsFromTemplate(
   travelStart: string,
   tmpl: SectorTemplate[],

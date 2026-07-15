@@ -228,9 +228,11 @@ export function calcTravelEnd(travelStart: string | null, durationDays: number |
 export function calcSectorDate(travelStart: string | null, dayOffset: number | null | undefined): string | null {
   if (!travelStart) return null
   try {
-    const start = parseISO(travelStart)
-    if (!isValid(start)) return null
-    return format(addDays(start, Math.max(0, (dayOffset ?? 1) - 1)), 'yyyy-MM-dd')
+    // Use local noon to avoid UTC-midnight timezone shift (same approach as calcSectorDepDate in pnr-record.ts)
+    const d = new Date(travelStart + 'T12:00:00')
+    if (isNaN(d.getTime())) return null
+    d.setDate(d.getDate() + Math.max(0, (dayOffset ?? 1) - 1))
+    return d.toISOString().split('T')[0]
   } catch {
     return null
   }

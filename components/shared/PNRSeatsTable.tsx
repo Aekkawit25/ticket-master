@@ -19,6 +19,7 @@ import {
   autoAdjustArrDate,
   calcSectorDepDate,
   getDayLabel,
+  recalcSectorDates,
 } from '@/lib/pnr-record'
 import { getCurrencyOptions } from '@/lib/currency-storage'
 
@@ -191,29 +192,30 @@ export function PNRSeatsTable({
   const getSectors = (r: PNRRecord) => {
     const sch = getSchedule(r)
     const tmpl = sch.sectors
-    if (r.sectors.length === tmpl.length) {
-      return r.sectors.map((sd, i) => {
-        const s = tmpl[i]
-        if (!s) return sd
-        const dep = !sd.depManual && r.sectors[0]?.depDate
-          ? (sd.depDate || calcSectorDepDate(r.sectors[0].depDate, s.dayOffset - (tmpl[0]?.dayOffset ?? 1) + 1))
-          : sd.depDate
-        const arr = sd.arrManual ? sd.arrDate : (dep ? addDaysToDate(dep, s.arrDayOffset) : '')
-        return { ...sd, depDate: dep, arrDate: arr,
-          depTime: sd.depTime !== undefined ? sd.depTime : s.depTime,
-          arrTime: sd.arrTime !== undefined ? sd.arrTime : s.arrTime }
-      })
-    }
+    // travelStart = sector 0 dep date (single source of truth)
+    const travelStart = r.sectors[0]?.depDate || ''
     return tmpl.map((s, i) => {
-      const existing = r.sectors[i]
-      const dep = existing?.depDate || calcSectorDepDate(r.sectors[0]?.depDate || '', s.dayOffset - (tmpl[0]?.dayOffset ?? 1) + 1) || ''
-      return existing ?? {
-        sectorType: s.sectorType, dayOffset: s.dayOffset, arrDayOffset: s.arrDayOffset,
-        depAirportCode: s.depAirportCode, arrAirportCode: s.arrAirportCode,
-        depDate: dep, depTime: s.depTime, arrDate: dep ? addDaysToDate(dep, s.arrDayOffset) : '',
-        arrTime: s.arrTime, depManual: false, arrManual: false, timeOverride: false,
-        tmplDepTime: s.depTime, tmplArrTime: s.arrTime,
+      const sd = r.sectors[i]
+      // Dep: derive from travelStart + dayOffset unless manually edited
+      const dep = sd?.depManual
+        ? (sd.depDate || '')
+        : (travelStart ? calcSectorDepDate(travelStart, s.dayOffset) : (sd?.depDate || ''))
+      // Arr: derive from dep + arrDayOffset unless manually edited
+      const arr = sd?.arrManual
+        ? (sd?.arrDate || '')
+        : (dep ? addDaysToDate(dep, s.arrDayOffset) : '')
+      if (!sd) {
+        return {
+          sectorType: s.sectorType, dayOffset: s.dayOffset, arrDayOffset: s.arrDayOffset,
+          depAirportCode: s.depAirportCode, arrAirportCode: s.arrAirportCode,
+          depDate: dep, depTime: s.depTime, arrDate: arr, arrTime: s.arrTime,
+          depManual: false, arrManual: false, timeOverride: false,
+          tmplDepTime: s.depTime, tmplArrTime: s.arrTime,
+        }
       }
+      return { ...sd, depDate: dep, arrDate: arr,
+        depTime: sd.depTime !== undefined ? sd.depTime : s.depTime,
+        arrTime: sd.arrTime !== undefined ? sd.arrTime : s.arrTime }
     })
   }
 
@@ -222,15 +224,11 @@ export function PNRSeatsTable({
     const r = records[idx]; const sectors = getSectors(r); const sch = getSchedule(r)
     const cur = sectors[sIdx]?.depDate ?? ''
     if (sIdx === 0) {
+      // If a date already exists, defer to shiftConfirm — do NOT update any cells yet
       if (cur && newDep !== cur) { setShiftConfirm({ idx, origDep: cur, newDep }); return }
-      const newSects = sch.sectors.map((s, i) => {
-        const dep = newDep ? calcSectorDepDate(newDep, s.dayOffset - (sch.sectors[0]?.dayOffset ?? 1) + 1) : ''
-        return { ...(sectors[i] ?? {}), ...s, depDate: dep,
-          arrDate: dep ? addDaysToDate(dep, s.arrDayOffset) : '', depManual: false as const, arrManual: false as const }
-      })
-      markTouched(idx)
-      update(idx, { sectors: newSects })
-      return
+      // Initial set (cur empty): recalculate all sectors atomically
+      const newSects = recalcSectorDates(newDep, sch.sectors, r.sectors)
+      markTouched(idx); update(idx, { sectors: newSects }); return
     }
     const s = sch.sectors[sIdx]
     const newSects = sectors.map((sd, i) => {
@@ -291,10 +289,11 @@ export function PNRSeatsTable({
 
   const handleResetSector = (idx: number, sIdx: number) => {
     const r = records[idx]; const sch = getSchedule(r); const s = sch.sectors[sIdx]
-    const sectors = getSectors(r); const ref0 = sectors[0]?.depDate || ''
     if (!s) return
-    const dep = ref0 ? calcSectorDepDate(ref0, s.dayOffset - (sch.sectors[0]?.dayOffset ?? 1) + 1) : ''
+    const travelStart = r.sectors[0]?.depDate || ''
+    const dep = travelStart ? calcSectorDepDate(travelStart, s.dayOffset) : ''
     const arr = dep ? addDaysToDate(dep, s.arrDayOffset) : ''
+    const sectors = getSectors(r)
     const newSects = sectors.map((sd, i) => i === sIdx
       ? { ...sd, depDate: dep, arrDate: arr, depManual: false as const, arrManual: false as const,
           depTime: s.depTime, arrTime: s.arrTime, timeOverride: false as const,
@@ -304,52 +303,31 @@ export function PNRSeatsTable({
   }
 
   const handleResetAllSectors = (idx: number) => {
-    const r = records[idx]; const sch = getSchedule(r); const sectors = getSectors(r)
-    const ref0 = sectors[0]?.depDate || ''
-    const newSects = sch.sectors.map((s, i) => {
-      const dep = ref0 ? calcSectorDepDate(ref0, s.dayOffset - (sch.sectors[0]?.dayOffset ?? 1) + 1) : ''
-      return { ...(sectors[i] ?? {}), ...s, depDate: dep,
-        arrDate: dep ? addDaysToDate(dep, s.arrDayOffset) : '', depManual: false as const, arrManual: false as const,
-        timeOverride: false as const, tmplDepTime: s.depTime, tmplArrTime: s.arrTime }
-    })
+    const r = records[idx]; const sch = getSchedule(r)
+    const travelStart = r.sectors[0]?.depDate || ''
+    const newSects = recalcSectorDates(travelStart, sch.sectors, r.sectors)
     markTouched(idx); update(idx, { sectors: newSects })
   }
 
-  // ─── Shift confirm ──────────────────────────────────────────────────────────
+  // ─── Shift confirm — atomic updates, no partial state ──────────────────────
   const confirmRecalcAll = () => {
     if (!shiftConfirm) return
-    const { idx, newDep } = shiftConfirm; const r = records[idx]; const sch = getSchedule(r)
-    const sectors = getSectors(r)
-    const newSects = sch.sectors.map((s, i) => {
-      const dep = calcSectorDepDate(newDep, s.dayOffset - (sch.sectors[0]?.dayOffset ?? 1) + 1)
-      const sd = sectors[i]; const dT = sd?.depTime ?? s.depTime; const aT = sd?.arrTime ?? s.arrTime
-      return { ...(sd ?? {}), ...s, depDate: dep,
-        arrDate: dep ? autoAdjustArrDate(dep, dT, aT, s.arrDayOffset).arrDate : '',
-        depManual: false as const, arrManual: false as const, depTime: dT, arrTime: aT }
-    })
+    const { idx, newDep } = shiftConfirm
+    const r = records[idx]; const sch = getSchedule(r)
+    // Recalculate ALL sectors atomically from newDep (clears all manual flags)
+    const newSects = recalcSectorDates(newDep, sch.sectors, r.sectors)
     markTouched(idx); update(idx, { sectors: newSects }); setShiftConfirm(null)
   }
   const confirmRecalcNonManual = () => {
     if (!shiftConfirm) return
-    const { idx, newDep } = shiftConfirm; const r = records[idx]; const sch = getSchedule(r)
-    const sectors = getSectors(r)
-    const newSects = sch.sectors.map((s, i) => {
-      const sd = sectors[i]
-      if (sd?.depManual) {
-        return { ...(sd ?? {}), arrDate: sd.arrManual ? sd.arrDate : (sd.depDate ? addDaysToDate(sd.depDate, s.arrDayOffset) : '') }
-      }
-      const dep = calcSectorDepDate(newDep, s.dayOffset - (sch.sectors[0]?.dayOffset ?? 1) + 1)
-      return { ...(sd ?? {}), ...s, depDate: dep,
-        arrDate: dep ? addDaysToDate(dep, s.arrDayOffset) : '', depManual: false as const, arrManual: false as const }
-    })
+    const { idx, newDep } = shiftConfirm
+    const r = records[idx]; const sch = getSchedule(r)
+    // Recalculate only sectors that have NOT been manually edited
+    const newSects = recalcSectorDates(newDep, sch.sectors, r.sectors, { skipManualDep: true, skipManualArr: true })
     markTouched(idx); update(idx, { sectors: newSects }); setShiftConfirm(null)
   }
-  const confirmKeepManual = () => {
-    if (!shiftConfirm) return
-    const { idx, newDep } = shiftConfirm; const sectors = getSectors(records[idx])
-    const newSects = sectors.map((sd, i) => i === 0 ? { ...sd, depDate: newDep, depManual: false as const } : sd)
-    markTouched(idx); update(idx, { sectors: newSects }); setShiftConfirm(null)
-  }
+  // "คงค่าเดิม" — cancel: revert input to original, leave ALL sectors unchanged
+  const cancelShiftConfirm = () => setShiftConfirm(null)
 
   // ─── Price handlers ─────────────────────────────────────────────────────────
   const handlePriceTypeChange = (idx: number, newFmt: 'FARE' | 'FARE_YQ' | 'ALL_IN') => {
@@ -411,8 +389,8 @@ export function PNRSeatsTable({
           <span className="flex-1 min-w-0">Travel Start เปลี่ยนเป็น <strong>{formatTravelDate(shiftConfirm.newDep)}</strong> — คำนวณวันที่ Sector อื่นใหม่อย่างไร?</span>
           <button type="button" onClick={confirmRecalcAll} className="px-2 py-0.5 bg-blue-600 text-white rounded text-[10px] font-semibold hover:bg-blue-700 whitespace-nowrap shrink-0">คำนวณใหม่ทุก Sector</button>
           <button type="button" onClick={confirmRecalcNonManual} className="px-2 py-0.5 bg-white border border-blue-300 text-blue-700 rounded text-[10px] hover:bg-blue-50 whitespace-nowrap shrink-0">เฉพาะที่ไม่ได้แก้เอง</button>
-          <button type="button" onClick={confirmKeepManual} className="px-2 py-0.5 bg-white border border-slate-300 text-slate-600 rounded text-[10px] hover:bg-slate-50 whitespace-nowrap shrink-0">คงค่าที่แก้เอง</button>
-          <button type="button" onClick={() => setShiftConfirm(null)} className="text-slate-400 hover:text-slate-600 text-[10px] whitespace-nowrap shrink-0 px-1">ยกเลิก</button>
+          <button type="button" onClick={cancelShiftConfirm} className="px-2 py-0.5 bg-white border border-slate-300 text-slate-600 rounded text-[10px] hover:bg-slate-50 whitespace-nowrap shrink-0">คงค่าเดิม</button>
+          <button type="button" onClick={cancelShiftConfirm} className="text-slate-400 hover:text-slate-600 text-[10px] whitespace-nowrap shrink-0 px-1">ยกเลิก</button>
         </div>
       )}
       {!readOnly && priceTypeConfirm && (() => {
@@ -536,11 +514,14 @@ export function PNRSeatsTable({
                     const isLastSector = sIdx === sectorDates.length - 1
                     const s = sch.sectors[sIdx]
                     const sectorErr = sectorErrors[sIdx]
-                    const expectedDep = s ? calcSectorDepDate(sectorDates[0]?.depDate || '', s.dayOffset - (sch.sectors[0]?.dayOffset ?? 1) + 1) : ''
+                    // Use same formula as getSectors: depDate = travelStart + (dayOffset - 1)
+                    const travelStartDisplay = sectorDates[0]?.depDate || ''
+                    const expectedDep = s && travelStartDisplay ? calcSectorDepDate(travelStartDisplay, s.dayOffset) : ''
                     const expectedArr = expectedDep && s ? addDaysToDate(expectedDep, s.arrDayOffset) : ''
                     const isDepManual = sd.depManual || !!(sd.depDate && expectedDep && sd.depDate !== expectedDep)
                     const isArrManual = sd.arrManual || !!(sd.arrDate && expectedArr && sd.arrDate !== expectedArr)
-                    const displayDep = shiftConfirm?.idx === pnrIdx && sIdx === 0 ? shiftConfirm.newDep : (sd.depDate || '')
+                    // During shiftConfirm pending, show original dates everywhere — no partial preview
+                    const displayDep = sd.depDate || ''
                     const displayArr = sd.arrDate || ''
                     const rowBorderB = isLastSector ? pnrBorderB : 'border-b border-b-[#E5EAF0]'
 
@@ -615,7 +596,17 @@ export function PNRSeatsTable({
                               <span className="text-[12px] text-slate-600 block overflow-hidden text-ellipsis whitespace-nowrap" title={fsName}>{fsName}</span>
                             ) : scheduleTemplates.length > 1 ? (
                               <select value={r.activeScheduleId ?? sch.scheduleId}
-                                onChange={e => { update(pnrIdx, { activeScheduleId: e.target.value || undefined }); markTouched(pnrIdx) }}
+                                onChange={e => {
+                                  const newSchId = e.target.value || undefined
+                                  const newSch = scheduleTemplates.find(t => t.scheduleId === newSchId)
+                                    ?? scheduleTemplates.find(t => t.isMain)
+                                    ?? scheduleTemplates[0]
+                                  const travelStart = r.sectors[0]?.depDate || ''
+                                  // Recalculate all sector dates using the new Flight Set's dayOffset values
+                                  const newSects = recalcSectorDates(travelStart, newSch.sectors, r.sectors)
+                                  update(pnrIdx, { activeScheduleId: newSchId, sectors: newSects })
+                                  markTouched(pnrIdx)
+                                }}
                                 className="w-full min-w-0 h-7 text-[12px] bg-transparent border-0 focus:outline-none cursor-pointer text-slate-700 truncate">
                                 {scheduleTemplates.map(t => <option key={t.scheduleId} value={t.scheduleId}>{t.scheduleName}{t.isMain ? ' ★' : ''}</option>)}
                               </select>
