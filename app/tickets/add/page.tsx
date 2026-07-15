@@ -83,10 +83,64 @@ function normalizeForReview(state: WizardState): WizardState {
   return { ...state, pnrs: generateDummyPnrs(normalizedPNRs, stockInfo, systemDummies) }
 }
 
-function getDefaultSchedule(ticketType: TicketType, airlineCode: string, travelDays = 1): FlightScheduleFormData {
+function getDefaultSchedule(ticketType: TicketType, airlineCode: string, travelDays = 1, sectorCount = 2): FlightScheduleFormData {
   const dep: FlightSectorFormData = { seq: 1, sector_type: 'Departure', airline_code: airlineCode, flight_no: '', dep_airport_code: 'BKK', arr_airport_code: '', dep_time: '08:00', arr_time: '16:00', arr_day_offset: 0, day_offset: 1, remark: '' }
   const arr: FlightSectorFormData = { seq: 2, sector_type: 'Arrival', airline_code: airlineCode, flight_no: '', dep_airport_code: '', arr_airport_code: 'BKK', dep_time: '17:00', arr_time: '22:00', arr_day_offset: 0, day_offset: travelDays, remark: '' }
-  return { scheduleId: 'SCH-A', scheduleName: 'ชุดเที่ยวบินหลัก', isMain: true, remark: '', sectors: ticketType === 'FIT' ? [dep] : [dep, arr] }
+  // FIT one-way: only Departure sector(s); count=1 → single sector
+  if (ticketType === 'FIT' && sectorCount <= 1) {
+    return { scheduleId: 'SCH-A', scheduleName: 'ชุดเที่ยวบินหลัก', isMain: true, remark: '', sectors: [dep] }
+  }
+  const count = Math.max(2, sectorCount)
+  if (count === 2) {
+    return { scheduleId: 'SCH-A', scheduleName: 'ชุดเที่ยวบินหลัก', isMain: true, remark: '', sectors: [dep, { ...arr, seq: 2 }] }
+  }
+  // count > 2: insert (count-2) Transit sectors between Departure and Arrival
+  // Default Travel Day: all Transit = Day 1; Arrival = travelDays
+  const transits: FlightSectorFormData[] = Array.from({ length: count - 2 }, (_, i) => ({
+    seq: i + 2, sector_type: 'Transit', airline_code: airlineCode,
+    flight_no: '', dep_airport_code: '', arr_airport_code: '',
+    dep_time: '08:00', arr_time: '16:00', arr_day_offset: 0, day_offset: 1, remark: '',
+  }))
+  const sectors = [dep, ...transits, { ...arr, seq: count }].map((s, i) => ({ ...s, seq: i + 1 }))
+  return { scheduleId: 'SCH-A', scheduleName: 'ชุดเที่ยวบินหลัก', isMain: true, remark: '', sectors }
+}
+
+// Adjusts sector count on an existing schedule set (used when user edits sectorCount in config).
+// Keeps the first (Departure) and last (Arrival) sectors intact; adds/removes Transit sectors.
+function adjustSectorCount(
+  schedules: FlightScheduleFormData[],
+  newCount: number,
+  airlineCode: string,
+  travelDays: number,
+): FlightScheduleFormData[] {
+  return schedules.map(sch => {
+    const secs = sch.sectors
+    if (secs.length === newCount) {
+      return { ...sch, sectors: secs.map(s => ({ ...s, airline_code: airlineCode })) }
+    }
+    const first = { ...secs[0], airline_code: airlineCode }
+    const last  = { ...secs[secs.length - 1], airline_code: airlineCode, day_offset: travelDays }
+    if (newCount < 2) {
+      return { ...sch, sectors: [{ ...first, seq: 1 }, { ...last, seq: 2 }].slice(0, newCount).map((s, i) => ({ ...s, seq: i + 1 })) }
+    }
+    const currentMids = secs.slice(1, -1)
+    const targetMidCount = newCount - 2
+    let newMids: FlightSectorFormData[]
+    if (targetMidCount <= 0) {
+      newMids = []
+    } else if (targetMidCount <= currentMids.length) {
+      newMids = currentMids.slice(0, targetMidCount).map(s => ({ ...s, airline_code: airlineCode }))
+    } else {
+      const extras: FlightSectorFormData[] = Array.from({ length: targetMidCount - currentMids.length }, () => ({
+        seq: 0, sector_type: 'Transit', airline_code: airlineCode,
+        flight_no: '', dep_airport_code: '', arr_airport_code: '',
+        dep_time: '08:00', arr_time: '16:00', arr_day_offset: 0, day_offset: 1, remark: '',
+      }))
+      newMids = [...currentMids.map(s => ({ ...s, airline_code: airlineCode })), ...extras]
+    }
+    const newSectors = [first, ...newMids, last].map((s, i) => ({ ...s, seq: i + 1 }))
+    return { ...sch, sectors: newSectors }
+  })
 }
 
 function getPageTitle(ticketType: TicketType, groupType?: GroupType | null, typeConfirmed = true): string {
@@ -138,6 +192,10 @@ function AddStockPageInner() {
   const [travelDaysConfirm, setTravelDaysConfirm]       = useState<{
     config: StockInitialConfig
     oldDays: number
+  } | null>(null)
+  const [sectorCountConfirm, setSectorCountConfirm]     = useState<{
+    config: StockInitialConfig
+    oldCount: number
   } | null>(null)
   const [stockTypeChangeConfirm, setStockTypeChangeConfirm] = useState<{
     config: StockInitialConfig
@@ -259,7 +317,7 @@ function AddStockPageInner() {
           airline_code: config.airlineCode,
           currency:     config.currencyCode,
         },
-        schedules: [getDefaultSchedule(newTicket, config.airlineCode, config.travelDurationDays)],
+        schedules: [getDefaultSchedule(newTicket, config.airlineCode, config.travelDurationDays, config.sectorCount)],
       }
     })
   }
@@ -270,6 +328,8 @@ function AddStockPageInner() {
 
     const needsCurrencyConfirm = !!(prev && config.currencyCode !== prev.currencyCode && state.pnrs.length > 0)
     const needsTypeChange      = !!(prev && config.stockType !== prev.stockType)
+    const prevSectorCount      = prev?.sectorCount ?? config.sectorCount
+    const sectorCountChanged   = !needsTypeChange && config.sectorCount !== prevSectorCount
 
     const stCfg      = STOCK_TYPE_CONFIG[config.stockType]
     const newTicket  = stCfg.ticketType
@@ -293,11 +353,13 @@ function AddStockPageInner() {
           ...(needsCurrencyConfirm ? {} : { currency: config.currencyCode }),
         },
         schedules: needsTypeChange
-          ? [getDefaultSchedule(newTicket, config.airlineCode, config.travelDurationDays)]
-          : s.schedules.map(sch => ({
-              ...sch,
-              sectors: sch.sectors.map(sec => ({ ...sec, airline_code: config.airlineCode })),
-            })),
+          ? [getDefaultSchedule(newTicket, config.airlineCode, config.travelDurationDays, config.sectorCount)]
+          : sectorCountChanged
+            ? adjustSectorCount(s.schedules, config.sectorCount, config.airlineCode, config.travelDurationDays)
+            : s.schedules.map(sch => ({
+                ...sch,
+                sectors: sch.sectors.map(sec => ({ ...sec, airline_code: config.airlineCode })),
+              })),
         pnrs: needsTypeChange ? [] : s.pnrs,
       }
     })
@@ -323,8 +385,23 @@ function AddStockPageInner() {
       return
     }
 
+    // Sector count change with existing Flight Segment data — confirm before applying
+    const prevCount = initialConfig?.sectorCount ?? config.sectorCount
+    if (config.sectorCount !== prevCount) {
+      const mainSch = state.schedules.find(s => s.isMain) ?? state.schedules[0]
+      const hasFlightData = mainSch?.sectors.some(s => s.flight_no?.trim())
+      if (hasFlightData) {
+        setSectorCountConfirm({ config, oldCount: prevCount })
+        return
+      }
+    }
+
     applyEditConfig(config)
   }
+
+  // sectorCount reflects actual main schedule sector count (kept in sync with Step 2)
+  const liveSectorCount = (state.schedules.find(s => s.isMain) ?? state.schedules[0])?.sectors.length
+                          ?? initialConfig?.sectorCount ?? 2
 
   const configLabel = initialConfig
     ? [
@@ -333,6 +410,7 @@ function AddStockPageInner() {
         initialConfig.currencyCode,
         `${initialConfig.seatsPerPnr} ที่นั่ง/PNR`,
         `${initialConfig.travelDurationDays} วัน`,
+        `${liveSectorCount} Sectors`,
         PRICE_TYPE_LABEL[initialConfig.priceType] ?? initialConfig.priceType,
       ].filter(Boolean).join(' · ')
     : undefined
@@ -619,7 +697,12 @@ function AddStockPageInner() {
         {step === 2 && (
           <Step2Sectors
             schedules={state.schedules}
-            onChange={schedules => setState(prev => ({ ...prev, schedules }))}
+            onChange={schedules => {
+              setState(prev => ({ ...prev, schedules }))
+              // Sync sectorCount with the actual number of rows in the main schedule
+              const mainCount = (schedules.find(s => s.isMain) ?? schedules[0])?.sectors.length ?? 2
+              setInitialConfig(prev => prev ? { ...prev, sectorCount: mainCount } : prev)
+            }}
             ticketType={state.stockInfo.ticket_type}
             tripType={state.stockInfo.trip_type}
             airlineCode={state.stockInfo.airline_code}
@@ -745,6 +828,46 @@ function AddStockPageInner() {
                 onClick={() => setStockTypeChangeConfirm(null)}
               >
                 ยกเลิก (คงประเภทเดิมไว้)
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* ── Sector Count Change Confirmation ── */}
+      {sectorCountConfirm && (
+        <Modal
+          open={true}
+          onClose={() => setSectorCountConfirm(null)}
+          title="เปลี่ยนจำนวน Sector"
+          size="sm"
+        >
+          <div className="space-y-3">
+            <p className="text-sm text-slate-600">
+              เปลี่ยนจำนวน Sector จาก{' '}
+              <strong>{sectorCountConfirm.oldCount} Sectors</strong>{' '}
+              เป็น{' '}
+              <strong>{sectorCountConfirm.config.sectorCount} Sectors</strong>
+            </p>
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              การเปลี่ยนจำนวน Sector จะเพิ่มหรือลบรายการเที่ยวบิน และอาจกระทบข้อมูลที่กรอกไว้ ต้องการดำเนินการต่อหรือไม่
+            </p>
+            <div className="flex flex-col gap-2">
+              <Button
+                className="w-full"
+                onClick={() => {
+                  applyEditConfig(sectorCountConfirm.config)
+                  setSectorCountConfirm(null)
+                }}
+              >
+                ปรับจำนวน Sector
+              </Button>
+              <Button
+                className="w-full"
+                variant="ghost"
+                onClick={() => setSectorCountConfirm(null)}
+              >
+                ยกเลิก
               </Button>
             </div>
           </div>

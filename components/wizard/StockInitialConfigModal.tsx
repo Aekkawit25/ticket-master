@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Plane, CreditCard, Users, Calendar, Tag, Lock, Check, ListChecks, Globe } from 'lucide-react'
+import { Plane, CreditCard, Users, Calendar, Tag, Lock, Check, ListChecks, Globe, Layers } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
@@ -20,6 +20,7 @@ export interface StockInitialConfig {
   currencyCode: string
   seatsPerPnr: number
   travelDurationDays: number
+  sectorCount: number
   priceType: 'FARE' | 'FARE_YQ' | 'ALL_IN'
 }
 
@@ -30,6 +31,7 @@ interface ModalForm {
   currencyCode: string
   seatsPerPnr: number
   travelDurationDays: number
+  sectorCount: number
   priceType: 'FARE' | 'FARE_YQ' | 'ALL_IN'
 }
 
@@ -116,6 +118,7 @@ function mkDefaultForm(lockedStockType?: StockType | null): ModalForm {
     currencyCode:       getDefaultCurrencyCode(),
     seatsPerPnr:        40,
     travelDurationDays: 7,
+    sectorCount:        2,
     priceType:          'FARE',
   }
 }
@@ -147,6 +150,7 @@ export default function StockInitialConfigModal({
     if (!form.currencyCode)                  e.currencyCode       = 'กรุณาเลือกสกุลเงิน'
     if ((form.seatsPerPnr ?? 0) < 1)         e.seatsPerPnr        = 'ขั้นต่ำ 1 ที่นั่ง'
     if ((form.travelDurationDays ?? 0) < 1)  e.travelDurationDays = 'ขั้นต่ำ 1 วัน'
+    if ((form.sectorCount ?? 0) < 1)         e.sectorCount        = 'ขั้นต่ำ 1 Sector'
     setErrors(e)
     return !Object.keys(e).length
   }
@@ -169,6 +173,12 @@ export default function StockInitialConfigModal({
 
   const inputClsDays = (err?: string) => cn(
     'h-10 w-full rounded-lg border pl-3 pr-10 text-sm outline-none transition',
+    'hover:border-slate-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15',
+    err ? 'border-red-400 bg-red-50' : 'border-slate-300 bg-white',
+  )
+
+  const inputClsSectors = (err?: string) => cn(
+    'h-10 w-full rounded-lg border pl-3 pr-[68px] text-sm outline-none transition',
     'hover:border-slate-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/15',
     err ? 'border-red-400 bg-red-50' : 'border-slate-300 bg-white',
   )
@@ -253,13 +263,13 @@ export default function StockInitialConfigModal({
           </div>
         )}
 
-        {/* ── 4-column row: Airline | Currency | Seats | Travel Days ── */}
+        {/* ── 5-column row: Airline | Currency | Seats | Travel Days | Sector Count ── */}
         <div
           className="grid gap-3"
-          style={{ gridTemplateColumns: 'minmax(260px, 1.5fr) minmax(190px, 1fr) minmax(190px, 1fr) minmax(190px, 1fr)' }}
+          style={{ gridTemplateColumns: 'minmax(200px, 1.5fr) minmax(115px, 1fr) minmax(115px, 1fr) minmax(148px, 1fr) minmax(138px, 1fr)' }}
         >
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+            <label className="block text-sm font-medium text-slate-700 mb-1.5 whitespace-nowrap">
               สายการบินหลัก <span className="text-red-500">*</span>
             </label>
             <SearchableSelect
@@ -272,7 +282,7 @@ export default function StockInitialConfigModal({
             {errTxt(errors.airlineCode)}
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+            <label className="block text-sm font-medium text-slate-700 mb-1.5 whitespace-nowrap">
               สกุลเงิน <span className="text-red-500">*</span>
             </label>
             <CurrencyCombobox
@@ -282,7 +292,7 @@ export default function StockInitialConfigModal({
             {errTxt(errors.currencyCode)}
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+            <label className="block text-sm font-medium text-slate-700 mb-1.5 whitespace-nowrap">
               ที่นั่ง / PNR <span className="text-red-500">*</span>
             </label>
             <input
@@ -294,7 +304,7 @@ export default function StockInitialConfigModal({
             {errTxt(errors.seatsPerPnr)}
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+            <label className="block text-sm font-medium text-slate-700 mb-1.5 whitespace-nowrap">
               จำนวนวันเดินทาง <span className="text-red-500">*</span>
             </label>
             <div className="relative">
@@ -309,6 +319,23 @@ export default function StockInitialConfigModal({
               </span>
             </div>
             {errTxt(errors.travelDurationDays)}
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5 whitespace-nowrap">
+              จำนวน Sector <span className="text-red-500">*</span>
+            </label>
+            <div className="relative">
+              <input
+                type="number" min={1}
+                value={form.sectorCount}
+                onChange={e => setForm(f => ({ ...f, sectorCount: Math.max(1, Number(e.target.value) || 1) }))}
+                className={inputClsSectors(errors.sectorCount)}
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 pointer-events-none select-none">
+                Sectors
+              </span>
+            </div>
+            {errTxt(errors.sectorCount)}
           </div>
         </div>
 
@@ -368,6 +395,10 @@ export default function StockInitialConfigModal({
               <span className="flex items-center gap-1.5">
                 <Calendar size={13} className="text-[#05a94f]" />
                 {form.travelDurationDays} วัน
+              </span>
+              <span className="flex items-center gap-1.5">
+                <Layers size={13} className="text-[#05a94f]" />
+                {form.sectorCount} Sectors
               </span>
               <span className="flex items-center gap-1.5">
                 <Tag size={13} className="text-[#05a94f]" />
