@@ -1071,6 +1071,14 @@ export function wizardStateToDemoStock(state: WizardState): DemoStock {
     })),
   }))
 
+  // Build FlightSets from schedules — each schedule becomes one FlightSet so
+  // getStockFlightSets() can serve them without falling back to fset-default.
+  const demoFlightSets: DemoFlightSet[] = demoSchedules.map(sch => ({
+    flightSetId: sch.scheduleId,
+    flightSetName: sch.scheduleName,
+    sectors: sch.sectors,
+  }))
+
   // Convert conditions — AppCondition[] → AppStockCondition[]
   const demoConditions: AppStockCondition[] = conditions.map(c => ({
     source: 'custom' as const,
@@ -1154,9 +1162,12 @@ export function wizardStateToDemoStock(state: WizardState): DemoStock {
     }))
 
     // Full per-sector schedule (Phase 1: Data Foundation)
-    // Uses demoSectors (main FlightSet) as the authoritative reference so that
-    // sectorSchedules[i].flightSetSectorId matches the stored FlightSet after read.
-    const sectorSchedules: PnrSectorSchedule[] = demoSectors.map((sec, i) => {
+    // Use the PNR's assigned schedule; fall back to the main schedule.
+    const pnrSchedule = (p.schedule_id ? scheduleMap[p.schedule_id] : null)
+      ?? demoSchedules.find(s => s.isMain)
+      ?? demoSchedules[0]
+    const pnrSectors = pnrSchedule?.sectors ?? demoSectors
+    const sectorSchedules: PnrSectorSchedule[] = pnrSectors.map((sec, i) => {
       const sd = (p.sector_dates ?? [])[i]
       const depDate = sd?.travel_date ?? ''
 
@@ -1213,6 +1224,7 @@ export function wizardStateToDemoStock(state: WizardState): DemoStock {
       travelStart: p.travel_start ?? '',
       travelEnd: p.travel_end ?? '',
       scheduleId: p.schedule_id,
+      flightSetId: p.schedule_id ?? demoFlightSets[0]?.flightSetId ?? 'fset-default',
       sectorDates,
       sectorSchedules,
       seatTotal: p.seat_total,
@@ -1298,6 +1310,7 @@ export function wizardStateToDemoStock(state: WizardState): DemoStock {
     updatedAt: now,
     sectors: demoSectors,
     schedules: demoSchedules,
+    flightSets: demoFlightSets,
     conditions: demoConditions,
     pnrs: demoPNRs,
     summary,

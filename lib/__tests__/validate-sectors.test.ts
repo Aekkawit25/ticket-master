@@ -10,7 +10,7 @@ function mkSector(overrides: Partial<FlightSector> = {}): FlightSector {
     sector_type: 'Departure', airline_code: 'TG', flight_no: '703',
     dep_airport_code: 'BKK', arr_airport_code: 'NRT',
     dep_time: '08:00', arr_time: '15:00',
-    relative_day_type: 'Departure', relative_day_no: 1,
+    relative_day_type: 'Travel Start', relative_day_no: 1,
     day_offset: 1, remark: null, status: 'Active',
     created_at: '', updated_at: '',
     ...overrides,
