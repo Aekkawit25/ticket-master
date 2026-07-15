@@ -58,8 +58,8 @@ export function TtlEditor({ pnrCode, travelDate, ttlType, ttlDaysBefore, ttlDate
     }
     if (type === 'DAYS_BEFORE') {
       if (!daysValid) { setError('กรุณาระบุจำนวนวัน (0 ขึ้นไป)'); return }
-      if (!travelDate) { setError('ไม่สามารถคำนวณ TTL ได้ เนื่องจากยังไม่มีวันเดินทาง'); return }
-      if (!computedDate) { setError('ไม่สามารถคำนวณวันที่ TTL ได้'); return }
+      if (!travelDate) { setError('ไม่สามารถคำนวณ NAME DL ได้ เนื่องจากยังไม่มีวันเดินทาง'); return }
+      if (!computedDate) { setError('ไม่สามารถคำนวณวันที่ NAME DL ได้'); return }
       onSave({ ttlType: 'DAYS_BEFORE', ttlDaysBefore: daysNum, ttlDate: computedDate, ttlTime: time || null })
       return
     }

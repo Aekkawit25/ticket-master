@@ -466,7 +466,7 @@ export function SinglePnrModal({
 
           {values.ttlType === 'FIXED_DATE' && (
             <div className="grid grid-cols-2 gap-3">
-              <Field label="วันที่ TTL" required error={errors.ttlDate}>
+              <Field label="วันที่ NAME DL" required error={errors.ttlDate}>
                 <input type="date" value={values.ttlDate} onChange={e => patch({ ttlDate: e.target.value })} className={cls('ttlDate')} />
               </Field>
               <Field label="เวลา (ไม่บังคับ)">

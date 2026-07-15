@@ -831,7 +831,7 @@ function ImportReviewInner() {
                 <Th>Type</Th>
                 <Th className="text-right">Amount ({stockInfo.currency})</Th>
                 <Th>Due Date</Th>
-                <Th>TTL Date/Time</Th>
+                <Th>NAME DL (Deadline)</Th>
                 <Th>Status</Th>
               </tr>
             </TableHead>

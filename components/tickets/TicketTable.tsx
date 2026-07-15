@@ -481,13 +481,13 @@ export default function TicketTable({ tickets, filterType, filterGroupType, filt
         ['Seat Total',  ticket.seat_total  ?? 0],
         ['Seat Used',   ticket.seat_used   ?? 0],
         ['Seat Balance', ticket.seat_balance ?? 0],
-        ['TTL Date',    ticket.nearest_ttl ? formatDateTime(ticket.nearest_ttl) : ''],
+        ['NAME DL',     ticket.nearest_ttl ? formatDateTime(ticket.nearest_ttl) : ''],
       ]), 'Stock Info')
 
       if (stock) {
         // Sheet 2: PNRs
         XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
-          ['PNR Code', 'Travel Start', 'Travel End', 'Seat Total', 'Seat Used', 'Seat Balance', 'Fare', 'Tax Type', 'Tax', 'Total', 'Condition', 'TTL DateTime', 'Status', 'Remark'],
+          ['PNR Code', 'Travel Start', 'Travel End', 'Seat Total', 'Seat Used', 'Seat Balance', 'Fare', 'Tax Type', 'Tax', 'Total', 'Condition', 'NAME DL', 'Status', 'Remark'],
           ...stock.pnrs.map(p => [
             p.pnrDisplay || p.pnrCode, p.travelStart, p.travelEnd,
             p.seatTotal, p.seatUsed, p.seatBalance,
@@ -652,7 +652,7 @@ export default function TicketTable({ tickets, filterType, filterGroupType, filt
             <Th className="hidden lg:table-cell" title="ช่วงวันเดินทาง คำนวณจาก Dep Date แรกสุดถึง Dep Date ท้ายสุดของ PNR">Period</Th>
             <Th className="hidden sm:table-cell">PNR</Th>
             <Th>Seat (Bal/Total)</Th>
-            <Th className="hidden xl:table-cell">TTL Date</Th>
+            <Th className="hidden xl:table-cell">NAME DL</Th>
             <Th>Action</Th>
           </tr>
         </TableHead>

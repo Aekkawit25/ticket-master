@@ -418,7 +418,7 @@ export default function TicketDetailPage() {
                           <Th>ประเภท</Th>
                           <Th className="text-right">ยอด ({stock.currency})</Th>
                           <Th>Due Date</Th>
-                          <Th>TTL Date/Time</Th>
+                          <Th>NAME DL (Deadline)</Th>
                           <Th className="text-right">ชำระแล้ว</Th>
                           <Th>สถานะ</Th>
                         </tr>

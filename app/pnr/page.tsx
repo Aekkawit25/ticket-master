@@ -3123,7 +3123,7 @@ export default function ListPNRPage() {
       'Seat Total': r.seatTotal,
       'Available': r.available,
       'Condition': r.conditionCode,
-      'TTL Date': r.ttlDateTime ? formatDateTime(r.ttlDateTime) : '',
+      'NAME DL': r.ttlDateTime ? formatDateTime(r.ttlDateTime) : '',
       'Program Count': r.programCount,
       'Mapping Status': r.mappingStatus,
       'PNR Status': r.status,
@@ -3360,7 +3360,7 @@ export default function ListPNRPage() {
                 <Th className="hidden xl:table-cell">Travel Period</Th>
                 <Th className="text-center">Seat Used/Total</Th>
                 <Th className="text-center hidden sm:table-cell">Available</Th>
-                <Th className="hidden xl:table-cell">TTL Date</Th>
+                <Th className="hidden xl:table-cell">NAME DL</Th>
                 <Th className="hidden xl:table-cell">Payment</Th>
                 <Th className="hidden 2xl:table-cell text-center">Program</Th>
                 <Th className="hidden xl:table-cell">Mapping</Th>

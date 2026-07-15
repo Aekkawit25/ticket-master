@@ -254,7 +254,7 @@ export function validatePnrFormValues(
     const d = parseInt(v.ttlDaysBefore, 10)
     if (v.ttlDaysBefore === '' || isNaN(d) || d < 0) e.ttlDaysBefore = 'กรุณากรอกจำนวนวัน (≥ 0)'
   }
-  if (v.ttlType === 'FIXED_DATE' && !v.ttlDate) e.ttlDate = 'กรุณากรอกวันที่ TTL'
+  if (v.ttlType === 'FIXED_DATE' && !v.ttlDate) e.ttlDate = 'กรุณากรอกวันที่ NAME DL'
 
   if (v.pnrCode.trim() && ctx.stock) {
     const dup = ctx.stock.pnrs.find(p =>

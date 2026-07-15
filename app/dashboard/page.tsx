@@ -115,7 +115,7 @@ export default function DashboardPage() {
                   <Th>PNR</Th>
                   <Th>Stock</Th>
                   <Th>Dep Date</Th>
-                  <Th>TTL Date</Th>
+                  <Th>NAME DL</Th>
                   <Th>เหลือ</Th>
                   <Th>Status</Th>
                 </tr>

@@ -769,7 +769,7 @@ function CreateRequisitionInner() {
                   <Th>Payment Type</Th>
                   <Th>Payment Stage</Th>
                   <Th>Due Date</Th>
-                  <Th>TTL Date</Th>
+                  <Th>NAME DL</Th>
                   <Th>Currency</Th>
                   <Th></Th>
                 </tr>
