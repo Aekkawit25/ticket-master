@@ -448,13 +448,19 @@ export function validateSectors(sectors: FlightSector[], ticketType: string, tri
   if (sectors[0]?.sector_type !== 'Departure') return 'Sector แรกต้องเป็น Departure'
 
   if (tripType === 'One-way') {
-    if (sectors.length !== 1) return 'One-way ต้องมี 1 Sector (Departure) เท่านั้น'
+    // One-way: min 1 sector; multi-sector requires Arrival as last
+    if (sectors.length === 1) return null
+    if (sectors[sectors.length - 1]?.sector_type !== 'Arrival') return 'One-way Sector สุดท้ายต้องเป็น Arrival'
     return null
   }
 
   if (tripType === 'Round-trip') {
-    if (sectors.length !== 2) return 'Round-trip ต้องมีพอดี 2 Sector (Departure + Arrival)'
-    if (sectors[1]?.sector_type !== 'Arrival') return 'Round-trip Sector ที่ 2 ต้องเป็น Arrival'
+    if (sectors.length < 2) return 'Round-trip ต้องมีอย่างน้อย 2 Sectors'
+    if (sectors[sectors.length - 1]?.sector_type !== 'Arrival') return 'Round-trip Sector สุดท้ายต้องเป็น Arrival'
+    const firstFrom = sectors[0]?.dep_airport_code
+    const lastTo    = sectors[sectors.length - 1]?.arr_airport_code
+    if (firstFrom && lastTo && firstFrom !== lastTo)
+      return `Round-trip ต้องกลับมาสิ้นสุดที่ ${firstFrom} แต่ Sector สุดท้ายสิ้นสุดที่ ${lastTo}`
     return null
   }
 

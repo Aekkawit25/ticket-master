@@ -446,59 +446,79 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
   const isValid = (() => {
     if (!sectors.length) return false
     if (sectors[0].sector_type !== 'Departure') return false
-    if (tripType === 'One-way') return sectors.length === 1
-    if (tripType === 'Round-trip') return sectors.length === 2 && sectors[1].sector_type === 'Arrival'
+    if (tripType === 'One-way') {
+      if (sectors.length === 1) return true
+      return sectors[sectors.length - 1].sector_type === 'Arrival'
+    }
+    // Round-trip and Multi-city: min 2 sectors, last must be Arrival
     return sectors.length >= 2 && sectors[sectors.length - 1].sector_type === 'Arrival'
   })()
 
   // ── Row state helpers ─────────────────────────────────────────────────────────
   const isTypeLocked = (idx: number) => {
-    if (idx === 0) return true
-    if (tripType !== 'Multi-city') return true
-    return idx === sectors.length - 1
+    if (idx === 0) return true                                        // Departure — always locked
+    if (sectors.length > 1 && idx === sectors.length - 1) return true // Arrival — always locked
+    if (tripType === 'One-way' && sectors.length <= 1) return true    // 1-sector One-way has no middle
+    return false                                                       // Transit — dropdown (Transit only)
   }
 
   const canDeleteRow = (idx: number) =>
-    tripType === 'Multi-city' && idx > 0 && idx < sectors.length - 1 && sectors.length > 2
+    tripType !== 'One-way' && idx > 0 && idx < sectors.length - 1 && sectors.length > 2
 
-  const canAdd = tripType === 'Multi-city'
+  const canAdd = tripType === 'Round-trip' || tripType === 'Multi-city'
 
   // ── Trip Type change ──────────────────────────────────────────────────────────
   const handleTripTypeChange = (newType: TripType) => {
     if (newType === tripType) return
-    // Clear Open Jaw flag — trip type change rebuilds the sector structure
+    // Reset Open Jaw tracking when trip type changes
     arrFromManualRef.current.delete(schedule?.scheduleId ?? '')
 
     if (newType === 'One-way') {
-      if (sectors.length > 1 && !window.confirm(`เปลี่ยนเป็น One-way จะลบ ${sectors.length - 1} Sector ที่เหลือออก ยืนยันหรือไม่?`)) return
-      updateSectors([{ ...sectors[0], sector_type: 'Departure', seq: 1 }])
+      // Keep all sectors; relabel first=Departure, last=Arrival (if >1), middle=Transit
+      const base = sectors.length ? [...sectors] : [blankSector(1, 'Departure', airlineCode)]
+      const n = base.length
+      const normalized = base.map((s, i) => ({
+        ...s, seq: i + 1,
+        sector_type: (i === 0 ? 'Departure' : n > 1 && i === n - 1 ? 'Arrival' : 'Transit') as SectorType,
+      }))
+      updateSectors(normalized)
       onTripTypeChange(newType)
       return
     }
 
     if (newType === 'Round-trip') {
-      const middleCount = sectors.length - 2
-      if (middleCount > 0 && !window.confirm(`เปลี่ยนเป็น Round-trip จะลบ ${middleCount} Sector กลางออก ยืนยันหรือไม่?`)) return
-      const first: FlightSectorFormData = { ...sectors[0], sector_type: 'Departure', seq: 1 }
-      const last: FlightSectorFormData = sectors.length >= 2
-        ? { ...sectors[sectors.length - 1], sector_type: 'Arrival', seq: 2 }
-        : { seq: 2, sector_type: 'Arrival', airline_code: airlineCode, flight_no: '', dep_airport_code: first.arr_airport_code || '', arr_airport_code: first.dep_airport_code || '', dep_time: '17:00', arr_time: '22:00', arr_day_offset: 0, day_offset: 1, remark: '' }
-      updateSectors([first, last])
+      // Keep all sectors; relabel first=Departure, last=Arrival, middle=Transit
+      // If only 1 sector exists, append a blank Arrival
+      const base = sectors.length ? [...sectors] : [blankSector(1, 'Departure', airlineCode)]
+      if (base.length === 1) {
+        base.push({
+          seq: 2, sector_type: 'Arrival', airline_code: airlineCode, flight_no: '',
+          dep_airport_code: base[0].arr_airport_code || '', arr_airport_code: base[0].dep_airport_code || '',
+          dep_time: '17:00', arr_time: '22:00', arr_day_offset: 0, day_offset: 1, remark: '',
+        })
+      }
+      const n = base.length
+      const normalized = base.map((s, i) => ({
+        ...s, seq: i + 1,
+        sector_type: (i === 0 ? 'Departure' : i === n - 1 ? 'Arrival' : 'Transit') as SectorType,
+      }))
+      updateSectors(normalized)
       onTripTypeChange(newType)
       return
     }
 
-    // Multi-city
-    let updated = [...sectors]
-    if (updated.length === 0) {
-      updated = [blankSector(1, 'Departure', airlineCode, 'BKK'), blankSector(2, 'Arrival', airlineCode)]
-    } else if (updated.length === 1) {
-      const prev = updated[0]
-      updated.push({ seq: 2, sector_type: 'Arrival', airline_code: airlineCode, flight_no: '', dep_airport_code: prev.arr_airport_code || '', arr_airport_code: prev.dep_airport_code || '', dep_time: '17:00', arr_time: '22:00', arr_day_offset: 0, day_offset: 0, remark: '' })
+    // Multi-city — keep all sectors; relabel first/last, normalize middle
+    const base = sectors.length ? [...sectors] : [blankSector(1, 'Departure', airlineCode, 'BKK')]
+    if (base.length === 1) {
+      const prev = base[0]
+      base.push({ seq: 2, sector_type: 'Arrival', airline_code: airlineCode, flight_no: '', dep_airport_code: prev.arr_airport_code || '', arr_airport_code: prev.dep_airport_code || '', dep_time: '17:00', arr_time: '22:00', arr_day_offset: 0, day_offset: 1, remark: '' })
     }
-    updated[0] = { ...updated[0], sector_type: 'Departure', seq: 1 }
-    updated[updated.length - 1] = { ...updated[updated.length - 1], sector_type: 'Arrival', seq: updated.length }
-    updateSectors(updated.map((s, i) => ({ ...s, seq: i + 1 })))
+    const n = base.length
+    const normalized = base.map((s, i) => ({
+      ...s, seq: i + 1,
+      sector_type: (i === 0 ? 'Departure' : i === n - 1 ? 'Arrival' : 'Transit') as SectorType,
+    }))
+    updateSectors(normalized)
     onTripTypeChange(newType)
   }
 
@@ -751,8 +771,8 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
             </div>
 
             <span className="text-xs text-slate-400 flex-1 min-w-0">
-              {tripType === 'One-way' && <span className="text-blue-600 font-medium">1 Sector เท่านั้น (Departure)</span>}
-              {tripType === 'Round-trip' && 'กำหนด 2 Sector: Departure และ Arrival'}
+              {tripType === 'One-way' && 'Departure แรก · Transit ระหว่างทาง (ถ้ามี) · Arrival สุดท้าย'}
+              {tripType === 'Round-trip' && 'อย่างน้อย 2 Sectors · Departure → Transit (ถ้ามี) → Arrival · ปลายทางต้องกลับต้นทาง'}
               {tripType === 'Multi-city' && 'สามารถเพิ่ม Sector ระหว่าง Departure และ Arrival ได้'}
             </span>
 
@@ -760,7 +780,7 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
               type="button"
               onClick={addSector}
               disabled={!canAdd}
-              title={!canAdd ? 'เพิ่ม Sector ได้เฉพาะ Multi-city' : 'แทรก Sector ก่อน Arrival'}
+              title={!canAdd ? 'เพิ่ม Sector ได้เฉพาะ Round-trip และ Multi-city' : 'แทรก Sector ก่อน Arrival'}
               className={cn(
                 'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all shrink-0',
                 canAdd
@@ -790,9 +810,9 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
               'text-xs px-3 py-1.5 rounded-lg shrink-0 font-medium',
               isValid ? 'bg-slate-50 text-slate-500' : 'bg-red-50 text-red-600'
             )}>
-              {sectors.length} Sector
-              {tripType === 'One-way'    && ' (เฉพาะ 1)'}
-              {tripType === 'Round-trip' && ' (เฉพาะ 2)'}
+              {sectors.length} Sector{sectors.length !== 1 ? 's' : ''}
+              {tripType === 'One-way'    && ' (≥ 1)'}
+              {tripType === 'Round-trip' && ' (≥ 2)'}
               {tripType === 'Multi-city' && ' (≥ 2)'}
             </div>
           </div>
@@ -1038,7 +1058,7 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
                           onClick={() => deleteRow(idx)}
                           disabled={!deletable}
                           title={!deletable
-                            ? (locked ? 'ไม่สามารถลบ Departure หรือ Arrival' : 'ลบได้เฉพาะ Multi-city')
+                            ? (locked ? 'ไม่สามารถลบ Departure หรือ Arrival' : 'ลบได้เฉพาะ Round-trip และ Multi-city')
                             : 'ลบ Sector นี้'
                           }
                           className={cn(
@@ -1095,8 +1115,8 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
         <div className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700">
           <AlertTriangle size={13} className="shrink-0" />
           <span>
-            {tripType === 'One-way'    && 'One-way ต้องมี 1 Sector (Departure) เท่านั้น'}
-            {tripType === 'Round-trip' && 'Round-trip ต้องมีพอดี 2 Sector — Departure (แรก) + Arrival (สุดท้าย)'}
+            {tripType === 'One-way'    && (sectors.length > 1 ? 'One-way Sector สุดท้ายต้องเป็น Arrival' : 'One-way ต้องมี Departure อย่างน้อย 1 Sector')}
+            {tripType === 'Round-trip' && (sectors.length < 2 ? 'Round-trip ต้องมีอย่างน้อย 2 Sectors' : 'Round-trip Sector สุดท้ายต้องเป็น Arrival')}
             {tripType === 'Multi-city' && 'Multi-city ต้องมีอย่างน้อย 2 Sector — Departure (แรก) + Arrival (สุดท้าย)'}
           </span>
         </div>
