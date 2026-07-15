@@ -71,7 +71,7 @@ export function TtlField({ ttlType, ttlDaysBefore, ttlDate, ttlTime, travelDate,
     <div className="rounded-xl border border-slate-200 p-3 space-y-3 bg-white">
       {/* Header */}
       <div className="flex items-center justify-between gap-2">
-        <label className="text-xs font-semibold text-slate-700">กำหนดส่ง NAME (TTL)</label>
+        <label className="text-xs font-semibold text-slate-700">NAME DL (Deadline)</label>
         {conditionInfo && condTtlLabel && onApplyCondition && (
           <button
             type="button"
@@ -128,17 +128,17 @@ export function TtlField({ ttlType, ttlDaysBefore, ttlDate, ttlTime, travelDate,
             />
           </div>
           {!travelDate && (
-            <p className="text-[11px] text-amber-600">กรุณาระบุวันเดินทางก่อนคำนวณ TTL</p>
+            <p className="text-[11px] text-amber-600">กรุณาระบุวันเดินทางก่อนกำหนด NAME DL</p>
           )}
           {travelDate && previewDate && (
             <p className="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-2.5 py-1.5">
-              กำหนดส่ง NAME วันที่ {formatTravelDate(previewDate)}{ttlTime ? ` เวลา ${ttlTime}` : ''}
+              วันที่ NAME DL {formatTravelDate(previewDate)}{ttlTime ? ` เวลา ${ttlTime}` : ''}
             </p>
           )}
           {travelDate && ttlDaysBefore !== '' && !previewDate && (
             <p className="text-[11px] text-slate-400 italic">ไม่สามารถคำนวณวันที่ได้</p>
           )}
-          <p className="text-[10px] text-slate-400">ไม่ระบุเวลาได้ ระบบจะบันทึกเฉพาะวันที่ TTL</p>
+          <p className="text-[10px] text-slate-400">ไม่ระบุเวลาได้ ระบบจะบันทึกเฉพาะวันที่ NAME DL</p>
         </div>
       )}
 
@@ -165,10 +165,10 @@ export function TtlField({ ttlType, ttlDaysBefore, ttlDate, ttlTime, travelDate,
           </div>
           {previewText && (
             <p className="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-2.5 py-1.5">
-              กำหนดส่ง NAME วันที่ {formatTravelDate(ttlDate)}{ttlTime ? ` เวลา ${ttlTime}` : ''}
+              วันที่ NAME DL {formatTravelDate(ttlDate)}{ttlTime ? ` เวลา ${ttlTime}` : ''}
             </p>
           )}
-          <p className="text-[10px] text-slate-400">ไม่ระบุเวลาได้ ระบบจะบันทึกเฉพาะวันที่ TTL</p>
+          <p className="text-[10px] text-slate-400">ไม่ระบุเวลาได้ ระบบจะบันทึกเฉพาะวันที่ NAME DL</p>
         </div>
       )}
 

@@ -99,7 +99,7 @@ export function validateTab(key: TabKey, v: AppCondition, conditionMode: Conditi
       if (ttl.calcType === 'TRAVEL_MINUS_DAYS' && !ttl.daysBefore)
         errs.push('TTL: กรุณาระบุจำนวนวัน')
       if (ttl.calcType === 'MANUAL_DATE' && !ttl.fixedDate)
-        errs.push('TTL: กรุณาระบุวันที่กำหนดส่ง NAME')
+        errs.push('NAME DL: กรุณาระบุวันที่กำหนดส่ง')
       return errs
     }
     case 'baggage': {
@@ -1576,7 +1576,7 @@ export function PaymentSection({ value, onChange, readOnly, currency, errors = [
         <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-200 bg-white">
           <Clock size={14} className="text-slate-500" />
           <div className="flex-1">
-            <p className="text-xs font-semibold text-slate-700">กำหนดส่ง NAME (TTL)</p>
+            <p className="text-xs font-semibold text-slate-700">NAME DL (Deadline)</p>
             <p className="text-[10px] text-slate-400">วันส่งรายชื่อผู้โดยสาร — แยกจากวันครบกำหนดชำระ (Due Date)</p>
           </div>
           <span className="text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium shrink-0">
@@ -1611,7 +1611,7 @@ export function PaymentSection({ value, onChange, readOnly, currency, errors = [
           {ttlNeedsDate && (
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label required>วันที่กำหนดส่ง NAME</Label>
+                <Label required>วันที่กำหนดส่ง NAME DL</Label>
                 <FInput type="date" value={ttlRule.fixedDate} onChange={v => setTtl('fixedDate', v)} disabled={readOnly} />
               </div>
               <div>

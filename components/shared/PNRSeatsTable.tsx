@@ -38,7 +38,7 @@ export const PNR_COLS = [
   { key: 'seat',       label: 'Seat',            width: 62,  align: 'center' },
   { key: 'priceDetail',label: 'รายละเอียดราคา',  width: 165, align: 'left'   },
   { key: 'condition',  label: 'Condition',        width: 115, align: 'left'   },
-  { key: 'ttl',        label: 'NAME TTL',        width: 145, align: 'left'   },
+  { key: 'ttl',        label: 'NAME DL',         width: 145, align: 'left'   },
   { key: 'remark',     label: 'Remark',          width: 90,  align: 'left'   },
   { key: 'action',     label: 'Action',          width: 46,  align: 'center' },
 ]
@@ -469,7 +469,7 @@ export function PNRSeatsTable({
               <th className={TH_C}>Seat</th>
               <th className={TH_L}>รายละเอียดราคา</th>
               <th className={TH_L}>Condition</th>
-              <th className={TH_L}>NAME TTL</th>
+              <th className={TH_L}>NAME DL</th>
               <th className={TH_L}>Remark</th>
               {showAction && <th className={cn(TH_C, 'border-r-0')}>Action</th>}
             </tr>
@@ -878,7 +878,7 @@ export function PNRSeatsTable({
                                   <button type="button"
                                     title={hasTtlFn(r) && r.ttlDate
                                       ? `${formatDateTimeThai(r.ttlDate, r.ttlTime ?? null)}${r.ttlType === 'DAYS_BEFORE' ? ` · ก่อนเดินทาง ${r.ttlDaysBefore} วัน` : ' · วันที่กำหนดเอง'}`
-                                      : 'ยังไม่ได้กำหนด NAME TTL — คลิกเพื่อตั้งค่า'}
+                                      : 'ยังไม่มี NAME DL — คลิกเพื่อตั้งค่า'}
                                     className={cn('group w-full h-full min-h-[28px] flex flex-col items-start justify-center gap-0 px-2 py-0.5 rounded text-left transition-colors',
                                       ttlSt === 'past' ? 'text-red-600 hover:bg-red-50' :
                                       ttlSt === 'near' ? 'text-amber-700 hover:bg-amber-50' :

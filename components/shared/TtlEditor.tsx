@@ -81,7 +81,7 @@ export function TtlEditor({ pnrCode, travelDate, ttlType, ttlDaysBefore, ttlDate
       {/* ── Header ── */}
       <div className="px-4 py-3 border-b border-slate-100 flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-xs font-bold text-slate-800 leading-snug">กำหนดส่งชื่อผู้โดยสาร (NAME TTL)</p>
+          <p className="text-xs font-bold text-slate-800 leading-snug">NAME DL (Deadline)</p>
           {pnrCode && (
             <p className="text-[11px] text-slate-400 mt-0.5">PNR: <span className="font-mono">{pnrCode}</span></p>
           )}
@@ -109,7 +109,7 @@ export function TtlEditor({ pnrCode, travelDate, ttlType, ttlDaysBefore, ttlDate
         {/* ── Section 2a: NONE ── */}
         {type === 'NONE' && (
           <p className="text-xs text-slate-400 bg-slate-50 rounded-lg px-3 py-2.5">
-            PNR รายการนี้จะไม่มีการกำหนดส่ง NAME
+            PNR รายการนี้ไม่มีการกำหนดวันส่งรายชื่อผู้โดยสาร
           </p>
         )}
 
@@ -126,7 +126,7 @@ export function TtlEditor({ pnrCode, travelDate, ttlType, ttlDaysBefore, ttlDate
                 </div>
               ) : (
                 <div className="bg-amber-50 rounded-lg px-3 py-2 border border-amber-100">
-                  <p className="text-xs text-amber-700">กรุณาระบุวันเดินทางของ Sector แรกก่อนกำหนด NAME TTL</p>
+                  <p className="text-xs text-amber-700">กรุณาระบุวันเดินทางของ Sector แรกก่อนกำหนด NAME DL</p>
                 </div>
               )}
             </div>
@@ -199,7 +199,7 @@ export function TtlEditor({ pnrCode, travelDate, ttlType, ttlDaysBefore, ttlDate
             <label className={LABEL}>ผลลัพธ์</label>
             {resultDisplay ? (
               <div className="bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2.5">
-                <p className="text-[10px] text-emerald-600 font-semibold uppercase tracking-wide mb-0.5">กำหนดส่ง NAME</p>
+                <p className="text-[10px] text-emerald-600 font-semibold uppercase tracking-wide mb-0.5">กำหนดส่ง NAME DL</p>
                 <p className="text-base font-bold text-emerald-800 leading-tight">{resultDisplay}</p>
                 {type === 'DAYS_BEFORE' && daysValid && (
                   <p className="text-[10px] text-emerald-600 mt-0.5">ก่อนวันเดินทาง {daysNum} วัน</p>

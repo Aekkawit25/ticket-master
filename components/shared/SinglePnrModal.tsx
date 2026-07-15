@@ -419,7 +419,7 @@ export function SinglePnrModal({
 
         {/* TTL */}
         <div className="space-y-2">
-          <label className="block text-xs font-medium text-slate-700">TTL (Name Deadline)</label>
+          <label className="block text-xs font-medium text-slate-700">NAME DL (Deadline)</label>
           <div className="flex gap-2 flex-wrap">
             {(['NONE', 'DAYS_BEFORE', 'FIXED_DATE'] as TtlType[]).map(t => (
               <button

@@ -866,7 +866,7 @@ export function BulkPnrBuilder({
       if (d < 0) { setFormErr('จำนวนวันก่อนเดินทางต้องไม่ติดลบ'); return }
     }
     if (shared.ttlType === 'FIXED_DATE' && !shared.ttlDate) {
-      setFormErr('กรุณาเลือกวันที่กำหนดส่ง NAME (TTL)'); return
+      setFormErr('กรุณาเลือกวันที่กำหนดส่ง NAME DL'); return
     }
 
     const calDates = [...calItems].sort((a, b) => a.date.localeCompare(b.date)).map(it => it.date)
@@ -1471,7 +1471,7 @@ export function BulkPnrBuilder({
                     <div className="col-span-2 rounded-xl border border-slate-200 bg-white p-3.5 space-y-3">
                       {/* Type selector */}
                       <div>
-                        <label className="mb-1.5 block text-xs font-medium text-slate-700">กำหนดส่ง NAME (TTL)</label>
+                        <label className="mb-1.5 block text-xs font-medium text-slate-700">NAME DL (Deadline)</label>
                         <select
                           value={shared.ttlType}
                           onChange={e => {
@@ -1523,12 +1523,12 @@ export function BulkPnrBuilder({
                                 className={cn(ttlInlineCls, 'w-[112px] min-w-0')} />
                             </div>
                           </div>
-                          <p className="text-[10px] text-slate-400">ไม่ระบุเวลาได้ ระบบจะบันทึกเฉพาะวันที่ TTL</p>
+                          <p className="text-[10px] text-slate-400">ไม่ระบุเวลาได้ ระบบจะบันทึกเฉพาะวันที่ NAME DL</p>
                           {previewTtlDate && (
                             <p className="text-xs text-slate-500">
                               {pnrCount > 1
-                                ? <>ระบบจะคำนวณ TTL แยกตามวันเดินทางของแต่ละ PNR · เช่น PNR แรก: <strong className="text-slate-700">{formatDate(previewTtlDate)}{shared.ttlTime ? ` เวลา ${shared.ttlTime}` : ''}</strong></>
-                                : <>กำหนดส่ง NAME วันที่ <strong className="text-slate-700">{formatDate(previewTtlDate)}{shared.ttlTime ? ` เวลา ${shared.ttlTime}` : ''}</strong></>
+                                ? <>ระบบจะคำนวณ NAME DL แยกตามวันเดินทางของแต่ละ PNR · เช่น PNR แรก: <strong className="text-slate-700">{formatDate(previewTtlDate)}{shared.ttlTime ? ` เวลา ${shared.ttlTime}` : ''}</strong></>
+                                : <>วันที่ NAME DL <strong className="text-slate-700">{formatDate(previewTtlDate)}{shared.ttlTime ? ` เวลา ${shared.ttlTime}` : ''}</strong></>
                               }
                             </p>
                           )}
@@ -1541,13 +1541,13 @@ export function BulkPnrBuilder({
                           <div className="flex flex-wrap items-center gap-2 min-w-0 w-full xl:grid xl:grid-cols-[max-content_150px_max-content_112px]">
                             <div className="flex items-center gap-2 shrink-0 xl:contents">
                               <span className="text-xs text-slate-600 whitespace-nowrap">
-                                วันที่กำหนดส่ง NAME <span className="text-red-400">*</span>
+                                วันที่ NAME DL <span className="text-red-400">*</span>
                               </span>
                               <input
                                 type="date"
                                 value={shared.ttlDate}
                                 onChange={e => setShared(s => ({ ...s, ttlDate: e.target.value, ttlUserModified: true }))}
-                                aria-label="วันที่กำหนดส่ง NAME"
+                                aria-label="วันที่ NAME DL"
                                 className={cn(ttlInlineCls, 'w-[150px] min-w-0')} />
                             </div>
                             <div className="flex items-center gap-2 shrink-0 xl:contents">
@@ -1559,10 +1559,10 @@ export function BulkPnrBuilder({
                                 className={cn(ttlInlineCls, 'w-[112px] min-w-0')} />
                             </div>
                           </div>
-                          <p className="text-[10px] text-slate-400">ไม่ระบุเวลาได้ ระบบจะบันทึกเฉพาะวันที่ TTL</p>
+                          <p className="text-[10px] text-slate-400">ไม่ระบุเวลาได้ ระบบจะบันทึกเฉพาะวันที่ NAME DL</p>
                           {previewTtlDate && (
                             <p className="text-xs text-slate-500">
-                              กำหนดส่ง NAME วันที่ <strong className="text-slate-700">{formatDate(previewTtlDate)}{shared.ttlTime ? ` เวลา ${shared.ttlTime}` : ''}</strong>
+                              วันที่ NAME DL <strong className="text-slate-700">{formatDate(previewTtlDate)}{shared.ttlTime ? ` เวลา ${shared.ttlTime}` : ''}</strong>
                             </p>
                           )}
                         </div>
@@ -1703,8 +1703,8 @@ export function BulkPnrBuilder({
         {condTtlConfirm && (
           <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/40 rounded-2xl">
             <div className="bg-white rounded-2xl shadow-2xl w-80 p-6 mx-4">
-              <h3 className="text-sm font-semibold text-slate-900 mb-2">เงื่อนไขที่เลือกมีการกำหนด NAME (TTL)</h3>
-              <p className="text-xs text-slate-600 mb-5">ต้องการอัปเดตค่า TTL ตามเงื่อนไขใหม่หรือไม่?</p>
+              <h3 className="text-sm font-semibold text-slate-900 mb-2">เงื่อนไขที่เลือกมีการกำหนด NAME DL (Deadline)</h3>
+              <p className="text-xs text-slate-600 mb-5">ต้องการอัปเดตค่า NAME DL ตามเงื่อนไขใหม่หรือไม่?</p>
               <div className="flex justify-end gap-3">
                 <button type="button"
                   onClick={() => {

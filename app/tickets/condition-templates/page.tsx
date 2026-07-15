@@ -341,7 +341,7 @@ export default function ConditionTemplatesPage() {
                   <div className="px-3 py-2.5 bg-white">
                     <div className="flex items-center gap-1 mb-1">
                       <Clock size={10} className="text-purple-500 shrink-0" />
-                      <span className="text-[10px] text-slate-400 font-medium">TTL / ส่งชื่อ</span>
+                      <span className="text-[10px] text-slate-400 font-medium">NAME DL / ส่งชื่อ</span>
                     </div>
                     <p className={cn(
                       'leading-snug',
@@ -474,7 +474,7 @@ export default function ConditionTemplatesPage() {
                     {/* TTL */}
                     <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
                       <Clock size={12} className="text-purple-400 shrink-0" />
-                      <span className="text-[11px] font-semibold text-slate-500">TTL / กำหนดส่งชื่อ</span>
+                      <span className="text-[11px] font-semibold text-slate-500">NAME DL / กำหนดส่งชื่อ</span>
                       <span className={cn(
                         'text-xs font-medium',
                         c.ttlRule?.calcType === 'NOT_SET' || !c.ttlRule ? 'text-slate-400 italic' : 'text-slate-700'

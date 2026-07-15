@@ -601,7 +601,7 @@ export default function Step4PNR({
           {[
             { label: 'PNR รวม', value: summaryStats.totalPnr, cls: 'text-slate-700' },
             { label: 'Seat รวม', value: summaryStats.totalSeats.toLocaleString('en-US'), cls: 'text-slate-700' },
-            ...(summaryStats.noTtlCount > 0 ? [{ label: 'ยังไม่มี TTL', value: summaryStats.noTtlCount, cls: 'text-slate-400' }] : []),
+            ...(summaryStats.noTtlCount > 0 ? [{ label: 'ยังไม่มี NAME DL', value: summaryStats.noTtlCount, cls: 'text-slate-400' }] : []),
           ].map((item, i) => (
             <Fragment key={item.label}>
               {i > 0 && <span className="text-slate-200 mx-2.5 text-[13px]">|</span>}
@@ -613,7 +613,7 @@ export default function Step4PNR({
       )}
 
       {/* ── Bulk TTL Modal ── */}
-      <Modal open={bulkTtlOpen} onClose={closeBulkTtl} title="ตั้งค่า TTL" size="lg"
+      <Modal open={bulkTtlOpen} onClose={closeBulkTtl} title="ตั้งค่า NAME DL" size="lg"
         footer={
           bulkTtlInnerStep === 'config'
             ? <div className="flex w-full items-center justify-between gap-2"><Button variant="ghost" onClick={closeBulkTtl}>ยกเลิก</Button><Button disabled={!ttlCanApply} onClick={handleBulkTtlConfirm}>ยืนยัน ({ttlTargetIndices.length} PNR)</Button></div>
@@ -622,7 +622,7 @@ export default function Step4PNR({
         {bulkTtlInnerStep === 'config' ? (
           <div className="space-y-5">
             <div>
-              <p className="text-xs font-semibold text-slate-700 mb-2.5">วิธีกำหนด TTL</p>
+              <p className="text-xs font-semibold text-slate-700 mb-2.5">วิธีกำหนด NAME DL</p>
               <div className="flex gap-6">
                 {(['days_before', 'fixed_date'] as const).map(m => (
                   <label key={m} className="flex items-center gap-2 cursor-pointer select-none">
@@ -645,7 +645,7 @@ export default function Step4PNR({
                 </div>
               ) : (
                 <div>
-                  <label className="block text-[11px] font-medium text-slate-500 mb-1">วันที่ TTL <span className="text-red-400">*</span></label>
+                  <label className="block text-[11px] font-medium text-slate-500 mb-1">วันที่ NAME DL <span className="text-red-400">*</span></label>
                   <input type="date" value={bulkTtlFixedDate} onChange={e => setBulkTtlFixedDate(e.target.value)}
                     className="border border-slate-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30 focus:border-[#05a94f]" />
                 </div>
@@ -663,7 +663,7 @@ export default function Step4PNR({
                   <label key={scope} className={cn('flex items-center gap-3 px-3 py-2.5 rounded-lg border cursor-pointer select-none transition-colors',
                     bulkTtlScope === scope ? 'border-[#05a94f] bg-green-50/50' : 'border-slate-200 hover:bg-slate-50')}>
                     <input type="radio" name="ttl_scope" checked={bulkTtlScope === scope} onChange={() => setBulkTtlScope(scope)} className="accent-[#05a94f]" />
-                    <span className="text-sm text-slate-700 flex-1">{scope === 'no_ttl' ? 'เฉพาะ PNR ที่ยังไม่มี TTL' : scope === 'all' ? 'ทุก PNR' : 'เฉพาะ PNR ที่เลือก'}</span>
+                    <span className="text-sm text-slate-700 flex-1">{scope === 'no_ttl' ? 'เฉพาะ PNR ที่ยังไม่มี NAME DL' : scope === 'all' ? 'ทุก PNR' : 'เฉพาะ PNR ที่เลือก'}</span>
                     <span className="text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full font-medium">
                       {scope === 'no_ttl' ? pnrs.filter(p => !hasTtl(p)).length : scope === 'all' ? pnrs.length : bulkTtlSelectedPnrs.size}
                     </span>
@@ -704,7 +704,7 @@ export default function Step4PNR({
             )}
             {ttlTargetIndices.length > 0 && ttlCanApply && (
               <div>
-                <p className="text-xs font-semibold text-slate-700 mb-2">ตัวอย่าง TTL ({ttlTargetIndices.length} PNR)</p>
+                <p className="text-xs font-semibold text-slate-700 mb-2">ตัวอย่าง NAME DL ({ttlTargetIndices.length} PNR)</p>
                 <div className="border border-slate-200 rounded-xl overflow-hidden">
                   <table className="w-full text-xs">
                     <thead className="bg-slate-50">
@@ -712,7 +712,7 @@ export default function Step4PNR({
                         <th className="px-3 py-2 text-left font-medium text-slate-500 border-b border-slate-200">PNR</th>
                         <th className="px-3 py-2 text-center font-medium text-slate-500 border-b border-slate-200">Dep Date</th>
                         {bulkTtlMode === 'days_before' && <th className="px-3 py-2 text-center font-medium text-slate-500 border-b border-slate-200">−{bulkTtlDays} วัน</th>}
-                        <th className="px-3 py-2 text-center font-medium text-slate-500 border-b border-slate-200">TTL ที่จะตั้ง</th>
+                        <th className="px-3 py-2 text-center font-medium text-slate-500 border-b border-slate-200">NAME DL ที่จะตั้ง</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -745,7 +745,7 @@ export default function Step4PNR({
                 {ttlPastWarning && (
                   <div className="mt-2 flex items-start gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg">
                     <AlertTriangle size={12} className="text-red-500 shrink-0 mt-0.5" />
-                    <p className="text-[11px] text-red-700">TTL บางรายการเลยกำหนดแล้ว — ตรวจสอบก่อนบันทึก</p>
+                    <p className="text-[11px] text-red-700">NAME DL บางรายการเลยกำหนดแล้ว — ตรวจสอบก่อนบันทึก</p>
                   </div>
                 )}
               </div>
@@ -756,8 +756,8 @@ export default function Step4PNR({
             <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
               <AlertTriangle size={16} className="text-amber-500 shrink-0 mt-0.5" />
               <div>
-                <p className="text-sm font-semibold text-amber-800 mb-1">มี TTL อยู่แล้ว — ต้องการเขียนทับ?</p>
-                <p className="text-xs text-amber-700">PNR บางรายการมีค่า NAME TTL อยู่แล้ว การดำเนินการนี้จะเขียนทับค่าเดิม</p>
+                <p className="text-sm font-semibold text-amber-800 mb-1">มี NAME DL อยู่แล้ว — ต้องการเขียนทับ?</p>
+                <p className="text-xs text-amber-700">PNR บางรายการมีค่า NAME DL อยู่แล้ว การดำเนินการนี้จะเขียนทับค่าเดิม</p>
               </div>
             </div>
             <div className="flex flex-col gap-2">
@@ -765,14 +765,14 @@ export default function Step4PNR({
                 className="flex items-center justify-between px-4 py-3 rounded-xl border border-amber-300 bg-amber-50 hover:bg-amber-100 text-left transition-colors">
                 <div>
                   <p className="text-sm font-semibold text-amber-800">เขียนทับทั้งหมด</p>
-                  <p className="text-xs text-amber-600 mt-0.5">อัปเดต TTL ของทุก PNR ในขอบเขตที่เลือก</p>
+                  <p className="text-xs text-amber-600 mt-0.5">อัปเดต NAME DL ของทุก PNR ในขอบเขตที่เลือก</p>
                 </div>
               </button>
               <button type="button" onClick={() => commitBulkTtl('skip_existing')}
                 className="flex items-center justify-between px-4 py-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-left transition-colors">
                 <div>
-                  <p className="text-sm font-semibold text-slate-700">เฉพาะที่ยังไม่มี TTL</p>
-                  <p className="text-xs text-slate-500 mt-0.5">ข้าม PNR ที่มีค่า TTL อยู่แล้ว</p>
+                  <p className="text-sm font-semibold text-slate-700">เฉพาะที่ยังไม่มี NAME DL</p>
+                  <p className="text-xs text-slate-500 mt-0.5">ข้าม PNR ที่มีค่า NAME DL อยู่แล้ว</p>
                 </div>
               </button>
             </div>

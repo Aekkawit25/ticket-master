@@ -385,7 +385,7 @@ export default function ConditionTemplateDetailPage({ params }: { params: Promis
                 <div className="mt-3 pt-3 border-t border-slate-100">
                   <div className="flex items-center gap-2 mb-1">
                     <Clock size={12} className="text-slate-400" />
-                    <span className="text-xs font-semibold text-slate-600">กำหนดส่งรายชื่อ (TTL)</span>
+                    <span className="text-xs font-semibold text-slate-600">กำหนดส่งรายชื่อ (NAME DL)</span>
                   </div>
                   <p className="text-xs text-slate-700 pl-5">{formatTtlRule(c.ttlRule)}</p>
                   {c.ttlRule.remark && <p className="text-[10px] text-slate-400 italic pl-5 mt-0.5">{c.ttlRule.remark}</p>}
