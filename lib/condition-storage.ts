@@ -74,6 +74,8 @@ function ensureNewPolicies(cond: AppCondition): AppCondition {
     ...cond,
     stages: cond.stages.map(s => ({ ...s, calcType: migrateCalcType((s as any).calcType), dueType: migrateDueType((s as any).dueType), refundable: migrateRefundable((s as any).refundable) })),
     ttlRule: { ...(cond.ttlRule ?? defaultTtlRule()), calcType: migrateTtlCalcType((cond.ttlRule as any)?.calcType) },
+    issuanceMode: (cond as any).issuanceMode ?? 'SEPARATE',
+    ticketDlRule: { ...((cond as any).ticketDlRule ?? defaultTtlRule()), calcType: migrateTtlCalcType((cond as any).ticketDlRule?.calcType) },
     // § 1 Extended — added 2026-07
     airline:             (cond as any).airline          ?? '',
     currency:            (cond as any).currency         ?? 'THB',

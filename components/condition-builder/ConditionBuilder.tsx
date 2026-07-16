@@ -8,7 +8,7 @@
 import { useState, useRef, useEffect, type ReactNode } from 'react'
 import { Plus, Trash2, Edit2, GripVertical, X, AlertCircle, ChevronDown, Check, Lock, Copy, ArrowUp, ArrowDown, CreditCard, Clock, Info, Package, Briefcase, StickyNote, Layers, Calculator, Receipt, Eye } from 'lucide-react'
 import {
-  AppCondition, CondStage, CondTtlRule, CondBaggagePolicy,
+  AppCondition, CondStage, CondTtlRule, CondIssuanceMode, CondBaggagePolicy,
   CondSeatReductionPolicy, CondSeatReductionRule, CondRefundTerms,
   COND_PAYMENT_TYPE_LABELS, COND_CALC_TYPE_LABELS, COND_DUE_TYPE_LABELS,
   COND_QUANTITY_BASIS_LABELS, COND_REFUNDABLE_LABELS,
@@ -97,9 +97,22 @@ export function validateTab(key: TabKey, v: AppCondition, conditionMode: Conditi
         errs.push('งวด "ชำระยอดคงเหลือ" ต้องเป็นงวดสุดท้าย')
       const ttl = v.ttlRule
       if (ttl.calcType === 'TRAVEL_MINUS_DAYS' && !ttl.daysBefore)
-        errs.push('TTL: กรุณาระบุจำนวนวัน')
+        errs.push('NAME DL: กรุณาระบุจำนวนวัน')
       if (ttl.calcType === 'MANUAL_DATE' && !ttl.fixedDate)
-        errs.push('NAME DL: กรุณาระบุวันที่กำหนดส่ง')
+        errs.push('NAME DL: กรุณาระบุวันที่กำหนดส่งชื่อ')
+      if (v.issuanceMode === 'SEPARATE') {
+        const tkDl = v.ticketDlRule
+        if (tkDl.calcType === 'TRAVEL_MINUS_DAYS' && !tkDl.daysBefore)
+          errs.push('TICKET DL: กรุณาระบุจำนวนวัน')
+        if (tkDl.calcType === 'MANUAL_DATE' && !tkDl.fixedDate)
+          errs.push('TICKET DL: กรุณาระบุวันที่กำหนดออกตั๋ว')
+        // Cross-validate ordering: NAME DL must come before TICKET DL
+        if (ttl.calcType === 'TRAVEL_MINUS_DAYS' && tkDl.calcType === 'TRAVEL_MINUS_DAYS') {
+          // Larger daysBefore = earlier date. TICKET DL (tkDl) must NOT be earlier (larger) than NAME DL
+          if (tkDl.daysBefore > ttl.daysBefore)
+            errs.push('กำหนดออกตั๋วต้องไม่เร็วกว่ากำหนดส่งชื่อ')
+        }
+      }
       return errs
     }
     case 'baggage': {
@@ -436,7 +449,9 @@ export function getTabSummary(key: TabKey, v: AppCondition, currency = 'THB', co
       const stageParts = v.stages.map(s =>
         `${autoStageName(s.paymentType, s.customPaymentName, s.stageNo)}: ${formatStageAmount(s, currency)}`
       )
-      const ttlPart = `TTL: ${formatTtlRule(v.ttlRule)}`
+      const ttlPart = v.issuanceMode === 'SEPARATE'
+        ? `NAME DL: ${formatTtlRule(v.ttlRule)} · TICKET DL: ${formatTtlRule(v.ticketDlRule)}`
+        : `NAME & TICKET DL: ${formatTtlRule(v.ttlRule)}`
       if (stageParts.length === 0) return ttlPart
       return `${v.stages.length} งวด · ${ttlPart}`
     }
@@ -575,6 +590,63 @@ export function ErrorBox({ errors }: { errors: string[] }) {
       <div className="space-y-0.5">
         {errors.map((e, i) => <p key={i} className="text-xs text-red-700">{e}</p>)}
       </div>
+    </div>
+  )
+}
+
+// ─── TTL Rule Form (shared inside § 2 Payment) ───────────────────────────────
+
+function TtlRuleForm({ label, sublabel, rule, setRule, readOnly }: {
+  label: string
+  sublabel?: string
+  rule: CondTtlRule
+  setRule: <K extends keyof CondTtlRule>(k: K, v: CondTtlRule[K]) => void
+  readOnly: boolean
+}) {
+  const needsDays = rule.calcType === 'TRAVEL_MINUS_DAYS'
+  const needsDate = rule.calcType === 'MANUAL_DATE'
+  return (
+    <div className="p-3 rounded-xl border border-slate-200 bg-white space-y-3">
+      <div>
+        <p className="text-[11px] font-bold text-slate-600 uppercase tracking-wide">{label}</p>
+        {sublabel && <p className="text-[10px] text-slate-400 mt-0.5">{sublabel}</p>}
+      </div>
+      <div>
+        <Label>วิธีคำนวณ</Label>
+        <FSelect<CondTtlCalcType>
+          value={rule.calcType}
+          onChange={v => setRule('calcType', v as CondTtlCalcType)}
+          options={[
+            { value: 'TRAVEL_MINUS_DAYS' as const, label: 'ก่อนวันเดินทาง N วัน' },
+            { value: 'MANUAL_DATE'       as const, label: 'วันที่กำหนดเอง' },
+          ]}
+          disabled={readOnly}
+        />
+      </div>
+      {needsDays && (
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <Label>ก่อนเดินทาง (วัน)</Label>
+            <FInput type="number" min={0} value={rule.daysBefore || ''} onChange={v => setRule('daysBefore', Number(v))} disabled={readOnly} placeholder="30" />
+          </div>
+          <div>
+            <Label>เวลา Deadline</Label>
+            <FInput type="time" value={rule.time} onChange={v => setRule('time', v)} disabled={readOnly} />
+          </div>
+        </div>
+      )}
+      {needsDate && (
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <Label required>วันที่กำหนด</Label>
+            <FInput type="date" value={rule.fixedDate} onChange={v => setRule('fixedDate', v)} disabled={readOnly} />
+          </div>
+          <div>
+            <Label>เวลา Deadline</Label>
+            <FInput type="time" value={rule.time} onChange={v => setRule('time', v)} disabled={readOnly} />
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -1285,8 +1357,11 @@ export function PaymentSection({ value, onChange, readOnly, currency, errors = [
   const ttlRule = value.ttlRule
   const setTtl = <K extends keyof CondTtlRule>(k: K, v: CondTtlRule[K]) =>
     onChange({ ...value, ttlRule: { ...ttlRule, [k]: v } })
-  const ttlNeedsDays = ttlRule.calcType === 'TRAVEL_MINUS_DAYS'
-  const ttlNeedsDate = ttlRule.calcType === 'MANUAL_DATE'
+  const issuanceMode = value.issuanceMode
+  const setIssuanceMode = (m: CondIssuanceMode) => onChange({ ...value, issuanceMode: m })
+  const ticketDlRule = value.ticketDlRule
+  const setTicketDl = <K extends keyof CondTtlRule>(k: K, v: CondTtlRule[K]) =>
+    onChange({ ...value, ticketDlRule: { ...ticketDlRule, [k]: v } })
 
   return (
     <div className="space-y-6">
@@ -1340,58 +1415,50 @@ export function PaymentSection({ value, onChange, readOnly, currency, errors = [
         </div>
       </div>
 
-      {/* ── Section 2: TTL ── */}
+      {/* ── Section 2: NAME DL & TICKET DL ── */}
       <div className="rounded-2xl border border-slate-200 bg-slate-50/50 overflow-hidden">
         <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-200 bg-white">
           <Clock size={14} className="text-slate-500" />
           <div className="flex-1">
-            <p className="text-xs font-semibold text-slate-700">NAME DL (Deadline)</p>
-            <p className="text-[10px] text-slate-400">วันส่งรายชื่อผู้โดยสาร — แยกจากวันครบกำหนดชำระ (Due Date)</p>
+            <p className="text-xs font-semibold text-slate-700">NAME DL &amp; TICKET DL</p>
+            <p className="text-[10px] text-slate-400">กำหนดวันส่งรายชื่อผู้โดยสารและวันออกตั๋ว</p>
           </div>
           <span className="text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium shrink-0">
-            {formatTtlRule(ttlRule)}
+            {issuanceMode === 'SIMULTANEOUS' ? `NAME & TICKET DL: ${formatTtlRule(ttlRule)}` : `NAME DL: ${formatTtlRule(ttlRule)}`}
           </span>
         </div>
-        <div className="px-4 py-4 space-y-3">
+        <div className="px-4 py-4 space-y-4">
+          {/* Radio: issuance mode */}
           <div>
-            <Label>วิธีคำนวณ TTL</Label>
-            <FSelect<CondTtlCalcType>
-              value={ttlRule.calcType}
-              onChange={v => setTtl('calcType', v as CondTtlCalcType)}
-              options={[
-                { value: 'TRAVEL_MINUS_DAYS' as const, label: 'ก่อนวันเดินทาง N วัน' },
-                { value: 'MANUAL_DATE'       as const, label: 'วันที่กำหนดเอง' },
-              ]}
-              disabled={readOnly}
-            />
+            <Label>รูปแบบการส่งชื่อและออกตั๋ว</Label>
+            <div className="mt-2 space-y-2.5">
+              {([
+                { value: 'SIMULTANEOUS' as const, title: 'ส่งชื่อพร้อมออกตั๋ว', desc: 'เมื่อถึงกำหนด NAME DL ต้องส่งรายชื่อผู้โดยสารและออกตั๋วภายในกำหนดเดียวกัน' },
+                { value: 'SEPARATE'     as const, title: 'ส่งชื่อก่อน แล้วออกตั๋วภายหลัง', desc: 'กำหนดวันส่งชื่อและวันออกตั๋วแยกจากกัน โดยต้องส่งชื่อก่อนถึงกำหนดออกตั๋ว' },
+              ]).map(opt => (
+                <label key={opt.value} className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${issuanceMode === opt.value ? 'border-[#05a94f] bg-emerald-50' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
+                  <input type="radio" name="issuanceMode" value={opt.value} checked={issuanceMode === opt.value} onChange={() => !readOnly && setIssuanceMode(opt.value)} disabled={readOnly} className="mt-0.5 accent-[#05a94f]" />
+                  <div>
+                    <p className="text-sm font-semibold text-slate-800">{opt.title}</p>
+                    <p className="text-[11px] text-slate-500 mt-0.5">{opt.desc}</p>
+                  </div>
+                </label>
+              ))}
+            </div>
           </div>
-          {ttlNeedsDays && (
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>ก่อนเดินทาง (วัน)</Label>
-                <FInput type="number" min={0} value={ttlRule.daysBefore || ''} onChange={v => setTtl('daysBefore', Number(v))} disabled={readOnly} placeholder="15" />
-              </div>
-              <div>
-                <Label>เวลา TTL</Label>
-                <FInput type="time" value={ttlRule.time} onChange={v => setTtl('time', v)} disabled={readOnly} />
-              </div>
+          {/* Deadline fields */}
+          {issuanceMode === 'SIMULTANEOUS' ? (
+            <TtlRuleForm label="NAME & TICKET DL" sublabel="วันสุดท้ายที่ต้องส่งชื่อและออกตั๋ว" rule={ttlRule} setRule={setTtl} readOnly={readOnly} />
+          ) : (
+            <div className="space-y-3">
+              <TtlRuleForm label="NAME DL" sublabel="วันสุดท้ายที่ต้องส่งรายชื่อผู้โดยสาร" rule={ttlRule} setRule={setTtl} readOnly={readOnly} />
+              <TtlRuleForm label="TICKET DL" sublabel="วันสุดท้ายที่ต้องออกตั๋วหลังจากส่งรายชื่อแล้ว" rule={ticketDlRule} setRule={setTicketDl} readOnly={readOnly} />
             </div>
           )}
-          {ttlNeedsDate && (
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label required>วันที่กำหนดส่ง NAME DL</Label>
-                <FInput type="date" value={ttlRule.fixedDate} onChange={v => setTtl('fixedDate', v)} disabled={readOnly} />
-              </div>
-              <div>
-                <Label>เวลา TTL</Label>
-                <FInput type="time" value={ttlRule.time} onChange={v => setTtl('time', v)} disabled={readOnly} />
-              </div>
-            </div>
-          )}
+          {/* Remark */}
           <div>
-            <Label>หมายเหตุ TTL</Label>
-            <FTextarea value={ttlRule.remark} onChange={v => setTtl('remark', v)} rows={2} disabled={readOnly} placeholder="หมายเหตุเพิ่มเติมสำหรับการส่งรายชื่อ..." />
+            <Label>หมายเหตุ</Label>
+            <FTextarea value={ttlRule.remark} onChange={v => setTtl('remark', v)} rows={2} disabled={readOnly} placeholder="หมายเหตุเพิ่มเติมสำหรับการส่งรายชื่อและออกตั๋ว..." />
           </div>
         </div>
       </div>

@@ -576,6 +576,8 @@ export function getDemoStocks(): DemoStock[] {
               fixedDate: c.ttlRule?.ttlDate ?? c.ttlRule?.fixedDate ?? '',
               remark: c.ttlRule?.remark ?? '',
             },
+            issuanceMode:        'SEPARATE' as const,
+            ticketDlRule:        defaultTtlRule(),
             airline:             '',
             currency:            'THB',
             conditionType:       'Custom' as const,

@@ -378,9 +378,30 @@ export default function ConditionTemplateDetailPage({ params }: { params: Promis
                 <div className="mt-3 pt-3 border-t border-slate-100">
                   <div className="flex items-center gap-2 mb-1">
                     <Clock size={12} className="text-slate-400" />
-                    <span className="text-xs font-semibold text-slate-600">กำหนดส่งรายชื่อ (NAME DL)</span>
+                    {c.issuanceMode === 'SIMULTANEOUS' ? (
+                      <span className="text-xs font-semibold text-slate-600">NAME &amp; TICKET DL</span>
+                    ) : (
+                      <span className="text-xs font-semibold text-slate-600">NAME DL / TICKET DL</span>
+                    )}
                   </div>
-                  <p className="text-xs text-slate-700 pl-5">{formatTtlRule(c.ttlRule)}</p>
+                  {c.issuanceMode === 'SIMULTANEOUS' ? (
+                    <>
+                      <p className="text-[10px] text-emerald-700 pl-5 font-medium mb-0.5">ส่งชื่อพร้อมออกตั๋ว</p>
+                      <p className="text-xs text-slate-700 pl-5">{formatTtlRule(c.ttlRule)}</p>
+                    </>
+                  ) : (
+                    <div className="pl-5 space-y-1">
+                      <p className="text-[10px] text-slate-500 font-medium mb-0.5">ส่งชื่อก่อน แล้วออกตั๋วภายหลัง</p>
+                      <p className="text-xs text-slate-700">
+                        <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mr-1.5">NAME DL</span>
+                        {formatTtlRule(c.ttlRule)}
+                      </p>
+                      <p className="text-xs text-slate-700">
+                        <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mr-1.5">TICKET DL</span>
+                        {formatTtlRule(c.ticketDlRule)}
+                      </p>
+                    </div>
+                  )}
                   {c.ttlRule.remark && <p className="text-[10px] text-slate-400 italic pl-5 mt-0.5">{c.ttlRule.remark}</p>}
                 </div>
               )}

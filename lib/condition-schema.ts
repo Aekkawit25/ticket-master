@@ -135,6 +135,9 @@ export interface CondTtlRule {
   remark: string
 }
 
+/** How name submission and ticket issuance are timed relative to each other */
+export type CondIssuanceMode = 'SIMULTANEOUS' | 'SEPARATE'
+
 // ─── Baggage Policy (Section 3) ───────────────────────────────────────────────
 
 export type CondBaggageStatus = 'UNSPECIFIED' | 'INCLUDED' | 'NOT_INCLUDED'
@@ -490,6 +493,8 @@ export interface AppCondition {
   // § 2 งวดชำระเงิน
   stages: CondStage[]
   ttlRule: CondTtlRule
+  issuanceMode: CondIssuanceMode
+  ticketDlRule: CondTtlRule
 
   // § 3 สัมภาระ
   baggagePolicy: CondBaggagePolicy
@@ -1071,6 +1076,8 @@ export function defaultCondition(partial?: Partial<AppCondition>): AppCondition 
     version:             'V1',
     stages:              [],
     ttlRule:             defaultTtlRule(),
+    issuanceMode:        'SEPARATE',
+    ticketDlRule:        defaultTtlRule(),
     baggagePolicy:       defaultBaggagePolicy(),
     seatReductionPolicy: defaultSeatReductionPolicy(),
     cancelGroupTerms:    defaultCancelGroupTerms(),
@@ -1208,6 +1215,7 @@ export function formatStageAmount(stage: CondStage, currency = 'THB'): string {
 }
 
 export function formatTtlRule(rule: CondTtlRule): string {
+  if (!rule || rule.calcType === 'NOT_SET') return 'ไม่ระบุ'
   if (rule.calcType === 'MANUAL_DATE') {
     if (!rule.fixedDate) return 'วันที่กำหนดเอง'
     const [y, m, d] = rule.fixedDate.split('-')
