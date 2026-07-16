@@ -544,7 +544,7 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                 <th className="px-2 py-1.5 text-right text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[48px]">Used</th>
                 <th className="px-2 py-1.5 text-right text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[55px]">Bal.</th>
                 <th className="px-2 py-1.5 text-center text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[85px]">ประเภทราคา</th>
-                <th className="px-2 py-1.5 text-right text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[75px]">Fare</th>
+                <th className="px-2 py-1.5 text-right text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[75px]">ราคา</th>
                 <th className="px-2 py-1.5 text-right text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[65px]">Tax</th>
                 <th className="px-2 py-1.5 text-right text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[65px]">YQ</th>
                 <th className="px-2 py-1.5 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[140px]">Condition</th>
@@ -683,16 +683,11 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                                     {p.price_format === 'FARE_YQ' ? 'FARE+YQ' : p.price_format === 'ALL_IN' ? 'ALL IN' : 'FARE'}
                                   </span>
                                 </td>
-                                {/* Fare / All In */}
+                                {/* ราคา (Fare for FARE/FARE_YQ, total_amount for ALL_IN) */}
                                 <td rowSpan={rowCount} className="px-2 py-1.5 text-right font-semibold tabular-nums align-top">
-                                  {p.price_format === 'ALL_IN' ? (
-                                    <div className="flex flex-col items-end gap-0.5">
-                                      <span>{p.total_amount > 0 ? formatNumber(p.total_amount) : <span className="text-slate-300">—</span>}</span>
-                                      <span className="text-[9px] text-blue-500 font-medium leading-none">All In</span>
-                                    </div>
-                                  ) : (
-                                    p.fare > 0 ? formatNumber(p.fare) : <span className="text-slate-300">—</span>
-                                  )}
+                                  {p.price_format === 'ALL_IN'
+                                    ? (p.total_amount > 0 ? formatNumber(p.total_amount) : <span className="text-slate-300">—</span>)
+                                    : (p.fare > 0 ? formatNumber(p.fare) : <span className="text-slate-300">—</span>)}
                                 </td>
                                 {/* Tax */}
                                 <td rowSpan={rowCount} className="px-2 py-1.5 text-right tabular-nums text-slate-600 align-top">

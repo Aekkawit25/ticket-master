@@ -37,10 +37,9 @@ export const PNR_COLS = [
   { key: 'arrTime',    label: 'Arr Time',        width: 92,  align: 'center' },
   { key: 'seat',       label: 'Seat',             width: 62,  align: 'center' },
   { key: 'priceType',  label: 'ประเภทราคา',      width: 72,  align: 'center' },
-  { key: 'colFare',    label: 'Fare',             width: 68,  align: 'right'  },
+  { key: 'colFare',    label: 'ราคา',             width: 80,  align: 'right'  },
   { key: 'colTax',     label: 'Tax',              width: 62,  align: 'right'  },
   { key: 'colYq',      label: 'YQ',               width: 58,  align: 'right'  },
-  { key: 'colAllIn',   label: 'All In',           width: 68,  align: 'right'  },
   { key: 'colTotal',   label: 'Total',            width: 72,  align: 'right'  },
   { key: 'condition',  label: 'Condition',        width: 115, align: 'left'   },
   { key: 'ttl',        label: 'NAME DL',         width: 145, align: 'left'   },
@@ -476,10 +475,9 @@ export function PNRSeatsTable({
               <th className={cn(TH_C, 'bg-[#EDF5FF]')} style={{ width: 92, minWidth: 92, maxWidth: 92, paddingLeft: 0, paddingRight: 0 }}>Arr Time</th>
               <th className={TH_C}>Seat</th>
               <th className={TH_C}>ประเภทราคา</th>
-              <th className={cn(TH, 'text-right')}>Fare</th>
+              <th className={cn(TH, 'text-right')}>ราคา</th>
               <th className={cn(TH, 'text-right')}>Tax</th>
               <th className={cn(TH, 'text-right')}>YQ</th>
-              <th className={cn(TH, 'text-right')}>All In</th>
               <th className={cn(TH, 'text-right')}>Total</th>
               <th className={TH_L}>Condition</th>
               <th className={TH_L}>NAME DL</th>
@@ -490,7 +488,7 @@ export function PNRSeatsTable({
           <tbody>
             {records.length === 0 && (
               <tr>
-                <td colSpan={showCheckbox ? 16 : showAction ? 15 : 14} className="py-10 text-center border-b border-[#E5EAF0]">
+                <td colSpan={showCheckbox ? 15 : showAction ? 14 : 13} className="py-10 text-center border-b border-[#E5EAF0]">
                   <p className="text-[13px] text-slate-400">ยังไม่มีรายการ PNR</p>
                 </td>
               </tr>
@@ -792,16 +790,20 @@ export function PNRSeatsTable({
                               )}
                             </td>
 
-                            {/* Fare */}
+                            {/* ราคา (Fare for FARE/FARE_YQ, All In for ALL_IN) */}
                             <td rowSpan={sectorCount}
-                              className={cn('border-r border-[#E5EAF0] text-right align-middle px-1.5', pnrBorderB, fareErr && fmt !== 'ALL_IN' ? 'bg-red-50' : '')}
-                              style={{ backgroundColor: (fareErr && fmt !== 'ALL_IN') ? undefined : hvBg }}>
-                              {fmt === 'ALL_IN' ? (
-                                <span title="ไม่ใช้กับประเภทราคานี้" className="text-slate-300 text-[11px] select-none">—</span>
-                              ) : readOnly ? (
+                              className={cn('border-r border-[#E5EAF0] text-right align-middle px-1.5', pnrBorderB, fareErr ? 'bg-red-50' : '')}
+                              style={{ backgroundColor: fareErr ? undefined : hvBg }}>
+                              {readOnly ? (
                                 <span className="text-[12px] text-slate-800 tabular-nums font-medium">
-                                  {r.fare > 0 ? r.fare.toLocaleString() : r.fare === 0 ? '0' : '—'}
+                                  {fmt === 'ALL_IN'
+                                    ? ((r.allInAmount ?? 0) > 0 ? r.allInAmount!.toLocaleString() : '—')
+                                    : (r.fare > 0 ? r.fare.toLocaleString() : r.fare === 0 ? '0' : '—')}
                                 </span>
+                              ) : fmt === 'ALL_IN' ? (
+                                <PriceInput value={(r.allInAmount ?? 0) > 0 ? r.allInAmount! : null} compact hasError={fareErr}
+                                  onChange={v => { const a = v ?? 0; update(pnrIdx, { allInAmount: a, totalAmount: calcPnrTotal(fmt, r.fare, r.tax ?? null, r.yq ?? null, a) }) }}
+                                  onBlur={() => markTouched(pnrIdx)} />
                               ) : (
                                 <PriceInput value={r.fare > 0 ? r.fare : null} compact hasError={fareErr}
                                   onChange={v => { const f = v ?? 0; update(pnrIdx, { fare: f, totalAmount: calcPnrTotal(r.priceFormat, f, r.tax ?? null, r.yq ?? null, r.allInAmount) }) }}
@@ -839,23 +841,6 @@ export function PNRSeatsTable({
                               ) : (
                                 <PriceInput value={r.yq ?? null} compact nullable hasError={yqErr}
                                   onChange={v => update(pnrIdx, { yq: v, totalAmount: calcPnrTotal(fmt, r.fare, r.tax, v, r.allInAmount) })}
-                                  onBlur={() => markTouched(pnrIdx)} />
-                              )}
-                            </td>
-
-                            {/* All In */}
-                            <td rowSpan={sectorCount}
-                              className={cn('border-r border-[#E5EAF0] text-right align-middle px-1.5', pnrBorderB, fareErr && fmt === 'ALL_IN' ? 'bg-red-50' : '')}
-                              style={{ backgroundColor: (fareErr && fmt === 'ALL_IN') ? undefined : hvBg }}>
-                              {fmt !== 'ALL_IN' ? (
-                                <span title="ไม่ใช้กับประเภทราคานี้" className="text-slate-300 text-[11px] select-none">—</span>
-                              ) : readOnly ? (
-                                <span className="text-[12px] text-slate-800 tabular-nums font-medium">
-                                  {(r.allInAmount ?? 0) > 0 ? r.allInAmount!.toLocaleString() : '—'}
-                                </span>
-                              ) : (
-                                <PriceInput value={(r.allInAmount ?? 0) > 0 ? r.allInAmount! : null} compact hasError={fareErr && fmt === 'ALL_IN'}
-                                  onChange={v => { const a = v ?? 0; update(pnrIdx, { allInAmount: a, totalAmount: calcPnrTotal(fmt, r.fare, r.tax ?? null, r.yq ?? null, a) }) }}
                                   onBlur={() => markTouched(pnrIdx)} />
                               )}
                             </td>
