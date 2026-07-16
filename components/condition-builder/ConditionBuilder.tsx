@@ -63,11 +63,11 @@ export function validateTab(key: TabKey, v: AppCondition, conditionMode: Conditi
       if (!v.conditionCode.trim()) errs.push('กรุณาระบุรหัส Condition')
       if (!v.conditionName.trim()) errs.push('กรุณาระบุชื่อ Condition')
       if (!v.status)               errs.push('กรุณาเลือก Status')
-      // In series mode, airline/currency/applyScope are locked from the series — skip those checks
-      // In template mode with templateInfo, airline/currency come from template header — skip those checks
+      // In series/template mode, airline/currency are locked from parent — skip those checks
+      // templateInfo being present means airline/currency always come from the template header
       if (conditionMode === 'template') {
-        if (!templateInfo?.currency    && !v.currency.trim()) errs.push('กรุณาเลือก Currency')
-        if (!templateInfo?.airlineCode && !v.airline.trim())  errs.push('กรุณาเลือก Airline')
+        if (!templateInfo && !v.currency.trim()) errs.push('กรุณาเลือก Currency')
+        if (!templateInfo && !v.airline.trim())  errs.push('กรุณาเลือก Airline')
         if (v.applyScope === 'ROUTE'   && v.applyRoutes.length === 0)    errs.push('กรุณาระบุ Route อย่างน้อย 1 รายการ')
         if (v.applyScope === 'COUNTRY' && v.applyCountries.length === 0) errs.push('กรุณาเลือก Country อย่างน้อย 1 ประเทศ')
       }
@@ -299,10 +299,13 @@ export function getTabStatus(key: TabKey, v: AppCondition, errs: string[] = [], 
       const effCurrency = conditionMode === 'series'
         ? (seriesInfo?.currency ?? v.currency)
         : (templateInfo?.currency || v.currency)
+      const inTemplateMode = conditionMode === 'template' && !!templateInfo
       const hasAny = v.conditionCode || v.conditionName || effAirline || v.description
       if (!hasAny) return 'empty'
-      const required = v.conditionCode.trim() && v.conditionName.trim() && effAirline.trim() && effCurrency.trim()
-      const scopeOk  = conditionMode === 'series' || !!templateInfo?.airlineCode
+      // In template mode airline always comes from the template (even when "ทุกสายการบิน")
+      const required = v.conditionCode.trim() && v.conditionName.trim() && effCurrency.trim()
+        && (inTemplateMode || !!effAirline.trim())
+      const scopeOk  = conditionMode === 'series' || inTemplateMode
         || v.applyScope === 'ALL'
         || (v.applyScope === 'ROUTE'   && v.applyRoutes.length > 0)
         || (v.applyScope === 'COUNTRY' && v.applyCountries.length > 0)
@@ -420,8 +423,11 @@ export function getTabSummary(key: TabKey, v: AppCondition, currency = 'THB', co
       const effCurrency = conditionMode === 'series'
         ? (seriesInfo?.currency ?? v.currency)
         : (templateInfo?.currency || v.currency)
-      if (!v.conditionCode && !v.conditionName && !effAirline) return 'ยังไม่ระบุ'
-      const airline = effAirline ? getAirlineName(effAirline) : 'ยังไม่เลือก Airline'
+      const inTemplateMode = conditionMode === 'template' && !!templateInfo
+      if (!v.conditionCode && !v.conditionName && !effAirline && !inTemplateMode) return 'ยังไม่ระบุ'
+      const airline = effAirline ? getAirlineName(effAirline)
+        : inTemplateMode ? 'ทุกสายการบิน'
+        : 'ยังไม่เลือก Airline'
       const parts = [
         v.conditionCode || '—',
         v.conditionName || 'ยังไม่มีชื่อ',
@@ -769,12 +775,13 @@ export function BasicInfoSection({ value, onChange, readOnly, errors = [], condi
     })
 
   const isSeries = conditionMode === 'series'
-  const hasTemplateInfo = !isSeries && !!templateInfo?.airlineCode
+  // hasTemplateInfo: true whenever we're editing inside a template — airline/currency come from template header
+  const hasTemplateInfo = !isSeries && conditionMode === 'template' && !!templateInfo
   const airlineObj = seriesInfo
     ? MASTER_AIRLINES.find(a => a.code === seriesInfo.airlineCode)
-    : templateInfo?.airlineCode
-      ? MASTER_AIRLINES.find(a => a.code === templateInfo.airlineCode)
-      : MASTER_AIRLINES.find(a => a.code === value.airline)
+    : (templateInfo?.airlineCode || value.airline)
+      ? MASTER_AIRLINES.find(a => a.code === (templateInfo?.airlineCode || value.airline))
+      : undefined
 
   return (
     <div className="space-y-6">
@@ -791,7 +798,7 @@ export function BasicInfoSection({ value, onChange, readOnly, errors = [], condi
             <div>
               <p className="text-[10px] text-emerald-500 font-semibold uppercase tracking-wide mb-0.5">Airline</p>
               <p className="text-sm font-semibold text-emerald-900">
-                {airlineObj ? `${airlineObj.code} — ${airlineObj.name}` : templateInfo.airlineCode || '—'}
+                {airlineObj ? `${airlineObj.code} — ${airlineObj.name}` : (templateInfo.airlineCode || 'ทุกสายการบิน')}
               </p>
             </div>
             <div>

@@ -65,8 +65,12 @@ export default function AddConditionTemplatePage() {
     const now = new Date().toISOString()
     const toSave: AppConditionTemplate = {
       ...template,
-      currency: cond.currency || template.currency,
-      condition: cond,
+      currency: template.currency,
+      condition: {
+        ...cond,
+        airline:  template.airlineCode ?? cond.airline,
+        currency: template.currency,
+      },
       createdAt: now,
       updatedAt: now,
     }
@@ -75,7 +79,10 @@ export default function AddConditionTemplatePage() {
   }
 
   const handleSaveDraft = (cond: AppCondition) => {
-    setTemplate(prev => ({ ...prev, currency: cond.currency || prev.currency, condition: cond }))
+    setTemplate(prev => ({
+      ...prev,
+      condition: { ...cond, airline: prev.airlineCode ?? cond.airline, currency: prev.currency },
+    }))
   }
 
   return (

@@ -342,8 +342,9 @@ export default function ConditionEditorModal({
   useEffect(() => {
     if (conditionMode === 'series' && seriesInfo && value) {
       setDraft({ ...value, airline: seriesInfo.airlineCode, currency: seriesInfo.currency })
-    } else if (templateInfo?.airlineCode && value) {
-      setDraft({ ...value, airline: templateInfo.airlineCode, currency: templateInfo.currency || value.currency })
+    } else if (templateInfo && value) {
+      // Always inherit airline/currency from template (even when airlineCode is null = "ทุกสายการบิน")
+      setDraft({ ...value, airline: templateInfo.airlineCode ?? value.airline, currency: templateInfo.currency || value.currency })
     } else {
       setDraft(value)
     }
@@ -363,8 +364,8 @@ export default function ConditionEditorModal({
         const merged: AppCondition = { ...value, airline: seriesInfo.airlineCode, currency: seriesInfo.currency }
         setDraft(merged)
         onChange?.(merged)
-      } else if (templateInfo?.airlineCode && value) {
-        const merged: AppCondition = { ...value, airline: templateInfo.airlineCode, currency: templateInfo.currency || value.currency }
+      } else if (templateInfo && value) {
+        const merged: AppCondition = { ...value, airline: templateInfo.airlineCode ?? value.airline, currency: templateInfo.currency || value.currency }
         setDraft(merged)
         onChange?.(merged)
       }
@@ -413,8 +414,8 @@ export default function ConditionEditorModal({
     if (!draft) return
     const toSave: AppCondition = conditionMode === 'series' && seriesInfo
       ? { ...draft, airline: seriesInfo.airlineCode, currency: seriesInfo.currency }
-      : templateInfo?.airlineCode
-        ? { ...draft, airline: templateInfo.airlineCode, currency: templateInfo.currency || draft.currency }
+      : templateInfo
+        ? { ...draft, airline: templateInfo.airlineCode ?? draft.airline, currency: templateInfo.currency || draft.currency }
         : draft
     const errs = validateCondition(toSave, conditionMode, templateInfo)
     if (Object.keys(errs).length > 0) {

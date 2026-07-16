@@ -2,6 +2,7 @@
 
 import { use, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { AlertTriangle } from 'lucide-react'
 import AppLayout from '@/components/layout/AppLayout'
 import { Card, CardContent } from '@/components/ui/card'
 import { Select } from '@/components/ui/input'
@@ -38,10 +39,13 @@ const CURRENCY_OPTIONS = [
   { value: 'JPY', label: 'JPY' },
 ]
 
+type MetaConfirm = { field: 'airlineCode' | 'currency'; value: string | null }
+
 export default function EditConditionTemplatePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const router = useRouter()
   const [template, setTemplate] = useState<AppConditionTemplate | null>(null)
+  const [metaConfirm, setMetaConfirm] = useState<MetaConfirm | null>(null)
 
   useEffect(() => {
     const t = getConditionTemplateById(id)
@@ -54,11 +58,25 @@ export default function EditConditionTemplatePage({ params }: { params: Promise<
   const setMeta = <K extends keyof AppConditionTemplate>(k: K, v: AppConditionTemplate[K]) =>
     setTemplate(prev => prev ? { ...prev, [k]: v } : prev)
 
+  const requestMetaChange = (field: 'airlineCode' | 'currency', value: string | null) => {
+    setMetaConfirm({ field, value })
+  }
+
+  const confirmMetaChange = () => {
+    if (!metaConfirm) return
+    setMeta(metaConfirm.field as keyof AppConditionTemplate, metaConfirm.value as AppConditionTemplate[keyof AppConditionTemplate])
+    setMetaConfirm(null)
+  }
+
   const handleSave = (cond: AppCondition) => {
     const updated: AppConditionTemplate = {
       ...template,
-      currency:  cond.currency || template.currency,
-      condition: cond,
+      currency: template.currency,
+      condition: {
+        ...cond,
+        airline:  template.airlineCode ?? cond.airline,
+        currency: template.currency,
+      },
       version:   template.version + 1,
       updatedAt: new Date().toISOString(),
     }
@@ -67,7 +85,10 @@ export default function EditConditionTemplatePage({ params }: { params: Promise<
   }
 
   const handleSaveDraft = (cond: AppCondition) => {
-    setTemplate(prev => prev ? { ...prev, currency: cond.currency || prev.currency, condition: cond } : prev)
+    setTemplate(prev => prev ? {
+      ...prev,
+      condition: { ...cond, airline: prev.airlineCode ?? cond.airline, currency: prev.currency },
+    } : prev)
   }
 
   return (
@@ -87,7 +108,7 @@ export default function EditConditionTemplatePage({ params }: { params: Promise<
                 <label className="block text-xs font-medium text-slate-500 mb-1">สายการบิน</label>
                 <Select
                   value={template.airlineCode ?? ''}
-                  onChange={e => setMeta('airlineCode', e.target.value || null)}
+                  onChange={e => requestMetaChange('airlineCode', e.target.value || null)}
                   options={AIRLINE_OPTIONS}
                 />
               </div>
@@ -102,7 +123,7 @@ export default function EditConditionTemplatePage({ params }: { params: Promise<
                 <label className="block text-xs font-medium text-slate-500 mb-1">สกุลเงิน</label>
                 <Select
                   value={template.currency}
-                  onChange={e => setMeta('currency', e.target.value)}
+                  onChange={e => requestMetaChange('currency', e.target.value)}
                   options={CURRENCY_OPTIONS}
                 />
               </div>
@@ -129,6 +150,45 @@ export default function EditConditionTemplatePage({ params }: { params: Promise<
           onSave={handleSave}
         />
       </div>
+
+      {/* ── Confirmation dialog: changing airline or currency affects the condition ── */}
+      {metaConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
+            <div className="flex items-start gap-3 p-5 border-b border-slate-100">
+              <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center shrink-0 mt-0.5">
+                <AlertTriangle size={16} className="text-amber-600" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-slate-800">
+                  ยืนยันการเปลี่ยน{metaConfirm.field === 'airlineCode' ? 'สายการบิน' : 'สกุลเงิน'}?
+                </p>
+                <p className="text-xs text-slate-500 mt-1">
+                  การเปลี่ยนแปลงนี้จะมีผลกับ Condition ทั้งหมดภายใต้ Template นี้ โดยค่า
+                  {metaConfirm.field === 'airlineCode' ? 'สายการบิน' : 'สกุลเงิน'}
+                  ของ Condition จะถูกปรับให้ตรงกับ Template โดยอัตโนมัติ
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2 p-4 justify-end">
+              <button
+                type="button"
+                onClick={() => setMetaConfirm(null)}
+                className="px-4 py-2 text-sm rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={confirmMetaChange}
+                className="px-4 py-2 text-sm rounded-lg bg-amber-500 text-white font-medium hover:bg-amber-600 transition-colors"
+              >
+                ยืนยันการเปลี่ยนแปลง
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </AppLayout>
   )
 }
