@@ -4,17 +4,11 @@ import { useState } from 'react'
 import type { ReactNode } from 'react'
 import { Lock, Check, AlertTriangle, ListChecks, Users, User, Globe } from 'lucide-react'
 import { Input, Textarea } from '@/components/ui/input'
-import { SearchableSelect } from '@/components/ui/searchable-select'
+import { AirlineCombobox } from '@/components/shared/AirlineCombobox'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import type { FlightSeriesFormData, TicketType, GroupType } from '@/types'
-import { MASTER_AIRLINES } from '@/lib/master-data'
 import { CurrencyCombobox } from '@/components/shared/CurrencyCombobox'
 import { getStockTypeConfigSafe, STOCK_TYPE_CONFIG } from '@/lib/stock-type-config'
-
-const AIRLINES = MASTER_AIRLINES.map(a => ({
-  value: a.code,
-  label: `${a.code} — ${a.name}`,
-}))
 
 // ─── Type options definition ──────────────────────────────────────────────────
 
@@ -260,13 +254,12 @@ export default function Step1StockInfo({
               }
             </div>
 
-            <SearchableSelect
+            <AirlineCombobox
               label="Airline"
               required
-              options={AIRLINES}
-              value={data.airline_code}
+              showAllOption={false}
+              value={data.airline_code ?? ''}
               onChange={v => onChange({ airline_code: v })}
-              placeholder="เลือกสายการบิน..."
               error={errors.airline_code}
             />
             <CurrencyCombobox

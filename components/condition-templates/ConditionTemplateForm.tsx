@@ -4,7 +4,8 @@ import { useState, useCallback, useRef } from 'react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { RichTextEditor } from '@/components/ui/rich-text-editor'
-import { SearchableSelect } from '@/components/ui/searchable-select'
+import { AirlineCombobox } from '@/components/shared/AirlineCombobox'
+import { MASTER_AIRLINES } from '@/lib/master-data'
 import { cn } from '@/lib/utils'
 import {
   isTemplateCodeTaken,
@@ -43,26 +44,6 @@ import {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const AIRLINE_OPTIONS = [
-  { value: 'TG', label: 'TG — Thai Airways International' },
-  { value: 'FD', label: 'FD — Thai AirAsia' },
-  { value: 'DD', label: 'DD — Nok Airlines' },
-  { value: 'PG', label: 'PG — Bangkok Airways' },
-  { value: 'VZ', label: 'VZ — Thai VietJet' },
-  { value: 'SL', label: 'SL — Thai Lion Air' },
-  { value: 'JL', label: 'JL — Japan Airlines' },
-  { value: 'NH', label: 'NH — All Nippon Airways' },
-  { value: 'KE', label: 'KE — Korean Air' },
-  { value: 'OZ', label: 'OZ — Asiana Airlines' },
-  { value: 'CI', label: 'CI — China Airlines' },
-  { value: 'CX', label: 'CX — Cathay Pacific' },
-  { value: 'SQ', label: 'SQ — Singapore Airlines' },
-  { value: 'MH', label: 'MH — Malaysia Airlines' },
-  { value: 'EK', label: 'EK — Emirates' },
-  { value: 'QR', label: 'QR — Qatar Airways' },
-  { value: 'BA', label: 'BA — British Airways' },
-  { value: 'LH', label: 'LH — Lufthansa' },
-]
 
 const CURRENCY_OPTIONS = ['THB', 'USD', 'EUR', 'JPY', 'SGD', 'HKD', 'AUD', 'GBP']
 
@@ -1751,7 +1732,8 @@ function PreviewSection({ schedule, templateName, airlineCode, currency, templat
   templateType: TemplateType
 }) {
   const [open, setOpen] = useState(true)
-  const airline = AIRLINE_OPTIONS.find(a => a.value === airlineCode)
+  const airlineFound = MASTER_AIRLINES.find(a => a.code === airlineCode)
+  const airlineLabel = airlineFound ? `${airlineFound.code} — ${airlineFound.name}` : airlineCode
 
   return (
     <div className="border border-slate-200 rounded-2xl overflow-hidden">
@@ -1776,7 +1758,7 @@ function PreviewSection({ schedule, templateName, airlineCode, currency, templat
             <div className="text-xs text-slate-500 mb-1">แม่แบบ</div>
             <div className="font-semibold text-slate-800">{templateName || '(ยังไม่ระบุชื่อ)'}</div>
             <div className="flex gap-4 mt-2 text-xs text-slate-500">
-              <span>สายการบิน: <b className="text-slate-700">{(airline?.label ?? airlineCode) || '—'}</b></span>
+              <span>สายการบิน: <b className="text-slate-700">{airlineLabel || '—'}</b></span>
               <span>ประเภทตั๋ว: <b className="text-slate-700">Group</b></span>
               <span>สกุลเงิน: <b className="text-slate-700">{currency}</b></span>
             </div>
@@ -2152,13 +2134,12 @@ export default function ConditionTemplateForm({ mode, template, initialCode = ''
           {/* Row 2: Airline | Currency */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 items-start">
             <div className="sm:col-span-2">
-              <SearchableSelect
+              <AirlineCombobox
                 label="สายการบิน"
                 required
+                showAllOption={false}
                 value={airlineCode}
                 onChange={setAirlineCode}
-                options={AIRLINE_OPTIONS}
-                placeholder="— เลือกสายการบิน —"
                 error={airlineErr}
               />
             </div>

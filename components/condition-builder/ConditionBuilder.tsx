@@ -39,6 +39,7 @@ import {
 import { MASTER_AIRLINES, MASTER_COUNTRIES, getAirlineName } from '@/lib/master-data'
 import { getCurrencyOptions } from '@/lib/currency-storage'
 import { CurrencyCombobox } from '@/components/shared/CurrencyCombobox'
+import { AirlineCombobox } from '@/components/shared/AirlineCombobox'
 import RichTextEditor from '@/components/condition-builder/RichTextEditor'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 
@@ -582,75 +583,6 @@ export function ErrorBox({ errors }: { errors: string[] }) {
 
 // ─── § 1 Basic Info ───────────────────────────────────────────────────────────
 
-function AirlineCombobox({ value, onChange, disabled }: {
-  value: string; onChange: (v: string) => void; disabled: boolean
-}) {
-  const [open, setOpen] = useState(false)
-  const [q, setQ]       = useState('')
-  const ref             = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [])
-
-  const filtered = MASTER_AIRLINES.filter(
-    a => q === '' || a.code.toLowerCase().includes(q.toLowerCase()) || a.name.toLowerCase().includes(q.toLowerCase())
-  )
-  const selected = MASTER_AIRLINES.find(a => a.code === value)
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => { setOpen(o => !o); setQ('') }}
-        className={`w-full flex items-center justify-between px-3 py-2 rounded-lg border text-sm
-          ${disabled ? 'bg-slate-50 text-slate-400 border-slate-200 cursor-not-allowed'
-                     : 'bg-white border-slate-300 hover:border-slate-400 cursor-pointer'}
-          ${!value ? 'text-slate-400' : 'text-slate-800'}`}
-      >
-        <span className="truncate">
-          {selected ? `${selected.code} — ${selected.name}` : '— เลือก Airline —'}
-        </span>
-        <ChevronDown size={14} className="text-slate-400 flex-shrink-0 ml-1" />
-      </button>
-      {open && (
-        <div className="absolute z-50 mt-1 w-full bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden">
-          <div className="p-2 border-b border-slate-100">
-            <input
-              autoFocus
-              value={q}
-              onChange={e => setQ(e.target.value)}
-              placeholder="ค้นหา airline..."
-              className="w-full px-3 py-1.5 text-sm rounded-lg border border-slate-200 focus:outline-none focus:border-[#05a94f]"
-            />
-          </div>
-          <div className="max-h-52 overflow-y-auto">
-            {filtered.length === 0 ? (
-              <p className="text-center text-xs text-slate-400 py-3">ไม่พบ Airline</p>
-            ) : filtered.map(a => (
-              <button
-                key={a.code}
-                type="button"
-                onClick={() => { onChange(a.code); setOpen(false) }}
-                className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-slate-50 text-left"
-              >
-                <span className="font-mono font-semibold text-[#05a94f] w-8 flex-shrink-0">{a.code}</span>
-                <span className="text-slate-700 truncate flex-1">{a.name}</span>
-                {value === a.code && <Check size={14} className="text-[#05a94f] flex-shrink-0" />}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
 export type ConditionMode = 'template' | 'series'
 
 export interface SeriesInfo {
@@ -806,7 +738,7 @@ export function BasicInfoSection({ value, onChange, readOnly, errors = [], condi
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <Label required>Airline</Label>
-            <AirlineCombobox value={value.airline} onChange={v => set('airline', v)} disabled={readOnly} />
+            <AirlineCombobox value={value.airline} onChange={v => set('airline', v)} disabled={readOnly} showAllOption={false} />
             {hasErr(['airline']) && <p className="text-[10px] text-red-500 mt-1">กรุณาเลือก Airline</p>}
           </div>
           <div>

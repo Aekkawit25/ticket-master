@@ -5,33 +5,15 @@ import { useRouter } from 'next/navigation'
 import { AlertTriangle } from 'lucide-react'
 import AppLayout from '@/components/layout/AppLayout'
 import { Card, CardContent } from '@/components/ui/card'
-import { Select } from '@/components/ui/input'
 import ConditionEditorModal from '@/components/condition-builder/ConditionEditorModal'
 import { CurrencyCombobox } from '@/components/shared/CurrencyCombobox'
+import { AirlineCombobox } from '@/components/shared/AirlineCombobox'
 import {
   type AppConditionTemplate,
   type AppCondition,
 } from '@/lib/condition-schema'
 
 import { getConditionTemplateById, saveConditionTemplate } from '@/lib/condition-storage'
-
-const AIRLINE_OPTIONS = [
-  { value: '',   label: 'ทุกสายการบิน' },
-  { value: 'TG', label: 'TG — Thai Airways' },
-  { value: 'VZ', label: 'VZ — Thai VietJet' },
-  { value: 'FD', label: 'FD — Thai AirAsia' },
-  { value: 'SQ', label: 'SQ — Singapore Airlines' },
-  { value: 'QR', label: 'QR — Qatar Airways' },
-  { value: 'EK', label: 'EK — Emirates' },
-  { value: 'MH', label: 'MH — Malaysia Airlines' },
-  { value: 'CX', label: 'CX — Cathay Pacific' },
-  { value: 'JL', label: 'JL — Japan Airlines' },
-  { value: 'CI', label: 'CI — China Airlines' },
-  { value: 'NH', label: 'NH — All Nippon Airways' },
-  { value: 'KE', label: 'KE — Korean Air' },
-  { value: 'BR', label: 'BR — EVA Air' },
-  { value: 'CA', label: 'CA — Air China' },
-]
 
 type MetaConfirm = { field: 'airlineCode' | 'currency'; value: string | null }
 
@@ -100,10 +82,9 @@ export default function EditConditionTemplatePage({ params }: { params: Promise<
             <div className="grid grid-cols-3 gap-3">
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1">สายการบิน</label>
-                <Select
+                <AirlineCombobox
                   value={template.airlineCode ?? ''}
-                  onChange={e => requestMetaChange('airlineCode', e.target.value || null)}
-                  options={AIRLINE_OPTIONS}
+                  onChange={v => requestMetaChange('airlineCode', v === '' ? null : v)}
                 />
               </div>
               <div>
