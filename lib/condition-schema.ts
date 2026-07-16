@@ -476,7 +476,7 @@ export interface AppCondition {
   conditionCode: string
   conditionName: string
   description: string
-  status: 'Active' | 'Inactive'
+  status: 'Active' | 'Inactive' | 'Draft'
   // § 1 Extended
   airline: string           // airline code e.g. 'TG'
   currency: string          // e.g. 'THB'

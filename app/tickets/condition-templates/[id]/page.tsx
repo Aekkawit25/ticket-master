@@ -284,7 +284,7 @@ export default function ConditionTemplateDetailPage({ params }: { params: Promis
               <span className="font-mono text-sm text-slate-400">{c.conditionCode}</span>
               <span className="text-slate-300 select-none">·</span>
               <CardTitle className="text-base">{c.conditionName}</CardTitle>
-              <Badge variant={c.status === 'Active' ? 'green' : 'gray'}>{c.status}</Badge>
+              <Badge variant={c.status === 'Active' ? 'green' : c.status === 'Draft' ? 'yellow' : 'gray'}>{c.status}</Badge>
             </div>
           </CardHeader>
           <CardContent>

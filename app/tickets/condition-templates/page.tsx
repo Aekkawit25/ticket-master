@@ -241,7 +241,7 @@ export default function ConditionTemplatesPage() {
                             {t.currency}
                           </span>
                         )}
-                        <Badge variant={c.status === 'Active' ? 'green' : 'gray'}>
+                        <Badge variant={c.status === 'Active' ? 'green' : c.status === 'Draft' ? 'yellow' : 'gray'}>
                           {c.status}
                         </Badge>
                         <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100">

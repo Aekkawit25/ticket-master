@@ -2081,8 +2081,8 @@ export default function ConditionTemplateForm({ mode, template, initialCode = ''
           <CardTitle className="text-sm">ข้อมูลพื้นฐาน Template</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          {/* Row 1: Code | Name | Ticket Type (locked) | Status */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+          {/* Row 1: Code | Name | Ticket Type (locked) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
             {/* Template Code */}
             <div>
               <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1">
@@ -2120,15 +2120,6 @@ export default function ConditionTemplateForm({ mode, template, initialCode = ''
               </div>
             </div>
 
-            {/* Status */}
-            <div>
-              <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1">สถานะ</label>
-              <select className={cn(iCls, 'appearance-none cursor-pointer')} value={status}
-                onChange={e => setStatus(e.target.value as 'Active' | 'Inactive')}>
-                <option value="Active">ใช้งาน</option>
-                <option value="Inactive">ไม่ใช้งาน</option>
-              </select>
-            </div>
           </div>
 
           {/* Row 2: Airline | Currency */}

@@ -65,7 +65,6 @@ export function validateTab(key: TabKey, v: AppCondition, conditionMode: Conditi
       const errs: string[] = []
       if (!v.conditionCode.trim()) errs.push('กรุณาระบุรหัส Condition')
       if (!v.conditionName.trim()) errs.push('กรุณาระบุชื่อ Condition')
-      if (!v.status)               errs.push('กรุณาเลือก Status')
       // In series/template mode, airline/currency are locked from parent — skip those checks
       // templateInfo being present means airline/currency always come from the template header
       if (conditionMode === 'template') {
@@ -429,7 +428,6 @@ export function getTabSummary(key: TabKey, v: AppCondition, currency = 'THB', co
         v.conditionCode || '—',
         v.conditionName || 'ยังไม่มีชื่อ',
         airline,
-        v.status,
         effCurrency || 'THB',
       ]
       return parts.join(' · ')
@@ -682,31 +680,17 @@ export function BasicInfoSection({ value, onChange, readOnly, errors = [], condi
         </div>
       )}
 
-      {/* Row 1: Code · Status */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div>
-          <Label required>รหัส Condition</Label>
-          <FInput
-            value={value.conditionCode}
-            onChange={v => set('conditionCode', v.toUpperCase().replace(/\s/g, ''))}
-            placeholder="C001"
-            disabled={readOnly}
-            className={hasErr(['conditionCode']) ? 'border-red-300 focus:border-red-400' : ''}
-          />
-          <p className="text-[10px] text-slate-400 mt-1">ตัวอักษร+เลข ไม่มีช่องว่าง เช่น C001, GRP-TG-01</p>
-        </div>
-        <div>
-          <Label required>สถานะ</Label>
-          <FSelect<'Active' | 'Inactive'>
-            value={value.status}
-            onChange={v => set('status', v as 'Active' | 'Inactive')}
-            options={[
-              { value: 'Active',   label: '● Active — ใช้งานได้' },
-              { value: 'Inactive', label: '○ Inactive — ปิดใช้งาน' },
-            ]}
-            disabled={readOnly}
-          />
-        </div>
+      {/* Row 1: Code (full width) */}
+      <div>
+        <Label required>รหัส Condition</Label>
+        <FInput
+          value={value.conditionCode}
+          onChange={v => set('conditionCode', v.toUpperCase().replace(/\s/g, ''))}
+          placeholder="C001"
+          disabled={readOnly}
+          className={hasErr(['conditionCode']) ? 'border-red-300 focus:border-red-400' : ''}
+        />
+        <p className="text-[10px] text-slate-400 mt-1">ตัวอักษร+เลข ไม่มีช่องว่าง เช่น C001, GRP-TG-01</p>
       </div>
 
       {/* Row 2: Name (full width) */}

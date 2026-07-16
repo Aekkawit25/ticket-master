@@ -68,7 +68,9 @@ function SummaryBar({ value, currency }: { value: AppCondition; currency: string
       <span className="text-slate-300 text-xs select-none">·</span>
       <span className={cn(
         'text-[10px] px-1.5 py-0.5 rounded-full font-semibold shrink-0',
-        value.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500',
+        value.status === 'Active' ? 'bg-emerald-100 text-emerald-700'
+        : value.status === 'Draft'  ? 'bg-amber-100 text-amber-700'
+        : 'bg-slate-100 text-slate-500',
       )}>
         {value.status}
       </span>
@@ -413,10 +415,10 @@ export default function ConditionEditorModal({
   const handleSave = () => {
     if (!draft) return
     const toSave: AppCondition = conditionMode === 'series' && seriesInfo
-      ? { ...draft, airline: seriesInfo.airlineCode, currency: seriesInfo.currency }
+      ? { ...draft, airline: seriesInfo.airlineCode, currency: seriesInfo.currency, status: 'Active' }
       : templateInfo
-        ? { ...draft, airline: templateInfo.airlineCode ?? draft.airline, currency: templateInfo.currency || draft.currency }
-        : draft
+        ? { ...draft, airline: templateInfo.airlineCode ?? draft.airline, currency: templateInfo.currency || draft.currency, status: 'Active' }
+        : { ...draft, status: 'Active' }
     const errs = validateCondition(toSave, conditionMode, templateInfo)
     if (Object.keys(errs).length > 0) {
       setErrors(errs)
@@ -529,7 +531,7 @@ export default function ConditionEditorModal({
         {/* Left */}
         <FooterBtn onClick={onCancel} variant="ghost">ยกเลิก</FooterBtn>
         {onSaveDraft && !readOnly && (
-          <FooterBtn onClick={() => draft && onSaveDraft(draft)} variant="draft">
+          <FooterBtn onClick={() => draft && onSaveDraft({ ...draft, status: 'Draft' })} variant="draft">
             <Save size={11} />
             บันทึกฉบับร่าง
           </FooterBtn>

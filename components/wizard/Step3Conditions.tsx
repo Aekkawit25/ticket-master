@@ -69,6 +69,7 @@ function TemplatePicker({
   }, [])
 
   const filtered = templates.filter(t => {
+    if (t.condition.status === 'Draft') return false
     // If in series mode, filter to matching airline (or universal templates)
     if (seriesAirline && t.airlineCode && t.airlineCode !== seriesAirline) return false
     if (!search.trim()) return true
