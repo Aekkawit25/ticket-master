@@ -26,21 +26,21 @@ type SeedRow = [string, string, string, string, number, string?]
 const SEED_ROWS: SeedRow[] = [
   // ── Southeast Asia ──────────────────────────────────────────────────────────
   ['THB', '764', 'Thai Baht',                    '฿',    2, 'บาทไทย'],
-  ['VND', '704', 'Vietnamese Dong',               '₫',    0],
+  ['VND', '704', 'Vietnamese Dong',               '₫',    0, 'ดองเวียดนาม'],
   ['IDR', '360', 'Indonesian Rupiah',             'Rp',   2],
   ['PHP', '608', 'Philippine Peso',               '₱',   2],
-  ['MYR', '458', 'Malaysian Ringgit',             'RM',   2],
-  ['SGD', '702', 'Singapore Dollar',              'S$',   2],
+  ['MYR', '458', 'Malaysian Ringgit',             'RM',   2, 'ริงกิตมาเลเซีย'],
+  ['SGD', '702', 'Singapore Dollar',              'S$',   2, 'ดอลลาร์สิงคโปร์'],
   ['BND', '096', 'Brunei Dollar',                 '$',    2],
   ['KHR', '116', 'Cambodian Riel',                '៛',    2],
   ['LAK', '418', 'Lao Kip',                       '₭',    2],
   ['MMK', '104', 'Myanmar Kyat',                  'K',    2],
   // ── East Asia ───────────────────────────────────────────────────────────────
-  ['JPY', '392', 'Japanese Yen',                  '¥',    0],
-  ['KRW', '410', 'South Korean Won',              '₩',    0],
-  ['CNY', '156', 'Chinese Renminbi',              '¥',    2],
-  ['TWD', '901', 'New Taiwan Dollar',             'NT$',  2],
-  ['HKD', '344', 'Hong Kong Dollar',              'HK$',  2],
+  ['JPY', '392', 'Japanese Yen',                  '¥',    0, 'เยนญี่ปุ่น'],
+  ['KRW', '410', 'South Korean Won',              '₩',    0, 'วอนเกาหลีใต้'],
+  ['CNY', '156', 'Chinese Renminbi',              '¥',    2, 'หยวนจีน'],
+  ['TWD', '901', 'New Taiwan Dollar',             'NT$',  2, 'ดอลลาร์ไต้หวัน'],
+  ['HKD', '344', 'Hong Kong Dollar',              'HK$',  2, 'ดอลลาร์ฮ่องกง'],
   ['MOP', '446', 'Macanese Pataca',               'P',    2],
   ['MNT', '496', 'Mongolian Tögrög',              '₮',    2],
   // ── South Asia ──────────────────────────────────────────────────────────────
@@ -59,7 +59,7 @@ const SEED_ROWS: SeedRow[] = [
   ['KGS', '417', 'Kyrgyzstani Som',               'с',    2],
   ['TMT', '934', 'Turkmenistan Manat',             'T',    2],
   // ── Middle East ─────────────────────────────────────────────────────────────
-  ['AED', '784', 'UAE Dirham',                    'د.إ',  2],
+  ['AED', '784', 'UAE Dirham',                    'د.إ',  2, 'ดิรฮัมสหรัฐอาหรับเอมิเรตส์'],
   ['SAR', '682', 'Saudi Riyal',                   'ر.س',  2],
   ['QAR', '634', 'Qatari Riyal',                  'ر.ق',  2],
   ['KWD', '414', 'Kuwaiti Dinar',                 'د.ك',  3],
@@ -73,8 +73,8 @@ const SEED_ROWS: SeedRow[] = [
   ['SYP', '760', 'Syrian Pound',                  '£',    2],
   ['YER', '886', 'Yemeni Rial',                   '﷼',    2],
   // ── Europe ──────────────────────────────────────────────────────────────────
-  ['EUR', '978', 'Euro',                          '€',    2],
-  ['GBP', '826', 'Pound Sterling',                '£',    2],
+  ['EUR', '978', 'Euro',                          '€',    2, 'ยูโร'],
+  ['GBP', '826', 'Pound Sterling',                '£',    2, 'ปอนด์สเตอร์ลิง'],
   ['CHF', '756', 'Swiss Franc',                   'Fr',   2],
   ['NOK', '578', 'Norwegian Krone',               'kr',   2],
   ['SEK', '752', 'Swedish Krona',                 'kr',   2],
@@ -141,7 +141,7 @@ const SEED_ROWS: SeedRow[] = [
   ['STN', '930', 'São Tomé & Príncipe Dobra',     'Db',   2],
   ['XPF', '953', 'CFP Franc',                     'Fr',   0],
   // ── Americas ────────────────────────────────────────────────────────────────
-  ['USD', '840', 'US Dollar',                     '$',    2],
+  ['USD', '840', 'US Dollar',                     '$',    2, 'ดอลลาร์สหรัฐ'],
   ['CAD', '124', 'Canadian Dollar',               'CA$',  2],
   ['MXN', '484', 'Mexican Peso',                  '$',    2],
   ['BRL', '986', 'Brazilian Real',                'R$',   2],
@@ -175,7 +175,7 @@ const SEED_ROWS: SeedRow[] = [
   ['CUP', '192', 'Cuban Peso',                    '$',    2],
   ['SVC', '222', 'Salvadoran Colón',              '₡',   2],
   // ── Oceania ─────────────────────────────────────────────────────────────────
-  ['AUD', '036', 'Australian Dollar',             'A$',   2],
+  ['AUD', '036', 'Australian Dollar',             'A$',   2, 'ดอลลาร์ออสเตรเลีย'],
   ['NZD', '554', 'New Zealand Dollar',            'NZ$',  2],
   ['PGK', '598', 'Papua New Guinean Kina',        'K',    2],
   ['FJD', '242', 'Fijian Dollar',                 '$',    2],
@@ -215,10 +215,23 @@ export function getCurrencies(): CurrencyData[] {
       return SEED_CURRENCIES
     }
     const parsed = JSON.parse(raw) as CurrencyData[]
-    // Migration: patch missing displayName for THB from old storage
-    const thb = parsed.find(c => c.currencyCode === 'THB')
-    if (thb && !thb.displayName) {
-      const migrated = parsed.map(c => c.currencyCode === 'THB' ? { ...c, displayName: 'บาทไทย' } : c)
+    // Migration: backfill displayName for common currencies
+    const COMMON_TH_NAMES: Record<string, string> = {
+      THB: 'บาทไทย',      USD: 'ดอลลาร์สหรัฐ',               JPY: 'เยนญี่ปุ่น',
+      KRW: 'วอนเกาหลีใต้', CNY: 'หยวนจีน',                    TWD: 'ดอลลาร์ไต้หวัน',
+      HKD: 'ดอลลาร์ฮ่องกง', SGD: 'ดอลลาร์สิงคโปร์',          MYR: 'ริงกิตมาเลเซีย',
+      VND: 'ดองเวียดนาม',  EUR: 'ยูโร',                        GBP: 'ปอนด์สเตอร์ลิง',
+      AUD: 'ดอลลาร์ออสเตรเลีย', AED: 'ดิรฮัมสหรัฐอาหรับเอมิเรตส์',
+    }
+    let needsMigration = false
+    const migrated = parsed.map(c => {
+      if (!c.displayName && COMMON_TH_NAMES[c.currencyCode]) {
+        needsMigration = true
+        return { ...c, displayName: COMMON_TH_NAMES[c.currencyCode] }
+      }
+      return c
+    })
+    if (needsMigration) {
       localStorage.setItem(KEY, JSON.stringify(migrated))
       return migrated
     }

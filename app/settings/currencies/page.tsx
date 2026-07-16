@@ -41,7 +41,8 @@ export default function CurrenciesPage() {
       c.currencyCode.toLowerCase().includes(q) ||
       c.numericCode.includes(q) ||
       c.currencyName.toLowerCase().includes(q) ||
-      c.symbol.toLowerCase().includes(q)
+      c.symbol.toLowerCase().includes(q) ||
+      (c.displayName?.toLowerCase().includes(q) ?? false)
     if (!matchQ) return false
     if (tab === 'common')   return c.isCommon
     if (tab === 'active')   return c.status === 'ACTIVE'

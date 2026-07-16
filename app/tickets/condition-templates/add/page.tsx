@@ -6,6 +6,7 @@ import AppLayout from '@/components/layout/AppLayout'
 import { Card, CardContent } from '@/components/ui/card'
 import { Select } from '@/components/ui/input'
 import ConditionEditorModal from '@/components/condition-builder/ConditionEditorModal'
+import { CurrencyCombobox } from '@/components/shared/CurrencyCombobox'
 import {
   type AppConditionTemplate,
   type AppCondition,
@@ -30,13 +31,6 @@ const AIRLINE_OPTIONS = [
   { value: 'KE', label: 'KE — Korean Air' },
   { value: 'BR', label: 'BR — EVA Air' },
   { value: 'CA', label: 'CA — Air China' },
-]
-
-const CURRENCY_OPTIONS = [
-  { value: 'THB', label: 'THB' },
-  { value: 'USD', label: 'USD' },
-  { value: 'EUR', label: 'EUR' },
-  { value: 'JPY', label: 'JPY' },
 ]
 
 export default function AddConditionTemplatePage() {
@@ -115,10 +109,9 @@ export default function AddConditionTemplatePage() {
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1">สกุลเงิน</label>
-                <Select
+                <CurrencyCombobox
                   value={template.currency}
-                  onChange={e => setMeta('currency', e.target.value)}
-                  options={CURRENCY_OPTIONS}
+                  onChange={v => setMeta('currency', v)}
                 />
               </div>
             </div>

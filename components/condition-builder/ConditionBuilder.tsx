@@ -36,7 +36,9 @@ import {
   migrateRefundTerms, formatRefundTermsSummary,
   DAY_BASED_DUE_TYPES,
 } from '@/lib/condition-schema'
-import { MASTER_AIRLINES, MASTER_CURRENCIES, MASTER_COUNTRIES, getAirlineName } from '@/lib/master-data'
+import { MASTER_AIRLINES, MASTER_COUNTRIES, getAirlineName } from '@/lib/master-data'
+import { getCurrencyOptions } from '@/lib/currency-storage'
+import { CurrencyCombobox } from '@/components/shared/CurrencyCombobox'
 import RichTextEditor from '@/components/condition-builder/RichTextEditor'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 
@@ -922,12 +924,11 @@ export function BasicInfoSection({ value, onChange, readOnly, errors = [], condi
           </div>
           <div>
             <Label required>Currency</Label>
-            <FSelect<string>
+            <CurrencyCombobox
               value={value.currency}
               onChange={v => set('currency', v)}
-              options={MASTER_CURRENCIES.map(c => ({ value: c.code, label: `${c.code} — ${c.name}` }))}
               disabled={readOnly}
-              className={hasErr(['currency']) ? 'border-red-300' : ''}
+              error={hasErr(['currency']) ? 'กรุณาเลือกสกุลเงิน' : undefined}
             />
           </div>
         </div>
@@ -2352,7 +2353,7 @@ function SrRuleCard({
                     <FSelect<string>
                       value={rule.currency || currency}
                       onChange={v => v && onChange({ currency: v })}
-                      options={MASTER_CURRENCIES.slice(0, 8).map(c => ({ value: c.code, label: c.code }))}
+                      options={getCurrencyOptions().map(c => ({ value: c.currencyCode, label: c.currencyCode }))}
                       disabled={readOnly}
                     />
                   </div>
@@ -2693,7 +2694,7 @@ export function SeatReductionSection({ value, onChange, readOnly, currency, erro
                                 <FSelect<string>
                                   value={sp.singlePenaltyCurrency || currency}
                                   onChange={v => v && setSp({ singlePenaltyCurrency: v })}
-                                  options={MASTER_CURRENCIES.slice(0, 8).map(c => ({ value: c.code, label: c.code }))}
+                                  options={getCurrencyOptions().map(c => ({ value: c.currencyCode, label: c.currencyCode }))}
                                   disabled={readOnly}
                                 />
                               </div>
@@ -2974,20 +2975,11 @@ const REFUND_PENALTY_BASE_OPTIONS: { value: string; label: string }[] = [
   { value: 'TOTAL_PAID',  label: 'ยอดชำระทั้งหมด' },
 ]
 
-const CURRENCY_OPTIONS: { value: string; label: string; subtitle: string }[] = [
-  { value: 'THB', label: 'THB', subtitle: 'Thai Baht' },
-  { value: 'USD', label: 'USD', subtitle: 'US Dollar' },
-  { value: 'EUR', label: 'EUR', subtitle: 'Euro' },
-  { value: 'JPY', label: 'JPY', subtitle: 'Japanese Yen' },
-  { value: 'CNY', label: 'CNY', subtitle: 'Chinese Yuan' },
-  { value: 'TWD', label: 'TWD', subtitle: 'Taiwan Dollar' },
-  { value: 'HKD', label: 'HKD', subtitle: 'Hong Kong Dollar' },
-  { value: 'KRW', label: 'KRW', subtitle: 'Korean Won' },
-  { value: 'SGD', label: 'SGD', subtitle: 'Singapore Dollar' },
-  { value: 'MYR', label: 'MYR', subtitle: 'Malaysian Ringgit' },
-  { value: 'VND', label: 'VND', subtitle: 'Vietnamese Dong' },
-  { value: 'AUD', label: 'AUD', subtitle: 'Australian Dollar' },
-]
+const CURRENCY_OPTIONS = getCurrencyOptions().map(c => ({
+  value:    c.currencyCode,
+  label:    c.currencyCode,
+  subtitle: c.displayName ? `${c.displayName} — ${c.currencyName}` : c.currencyName,
+}))
 
 const UTIL_BASE_OPTIONS: { value: CondUtilizationBase; label: string }[] = [
   { value: 'INITIAL_SEAT', label: 'จำนวนตั๋วเริ่มต้น' },
@@ -3385,7 +3377,7 @@ export function CancelGroupSection({ value, onChange, readOnly, currency, errors
                           <FSelect<string>
                             value={cg.penaltyCurrency || currency}
                             onChange={v => v && setCg({ penaltyCurrency: v })}
-                            options={MASTER_CURRENCIES.slice(0, 8).map(c => ({ value: c.code, label: c.code }))}
+                            options={getCurrencyOptions().map(c => ({ value: c.currencyCode, label: c.currencyCode }))}
                             disabled={readOnly}
                           />
                         </div>
