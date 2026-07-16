@@ -6,14 +6,14 @@
  */
 
 import { useState, useRef, useEffect, type ReactNode } from 'react'
-import { Plus, Trash2, Edit2, GripVertical, X, AlertCircle, ChevronDown, Check, Globe, Route, Lock, Copy, ArrowUp, ArrowDown, CreditCard, Clock, Info, Package, Briefcase, StickyNote, Layers, Calculator, Receipt, Eye } from 'lucide-react'
+import { Plus, Trash2, Edit2, GripVertical, X, AlertCircle, ChevronDown, Check, Lock, Copy, ArrowUp, ArrowDown, CreditCard, Clock, Info, Package, Briefcase, StickyNote, Layers, Calculator, Receipt, Eye } from 'lucide-react'
 import {
   AppCondition, CondStage, CondTtlRule, CondBaggagePolicy,
   CondSeatReductionPolicy, CondSeatReductionRule, CondRefundTerms,
   COND_PAYMENT_TYPE_LABELS, COND_CALC_TYPE_LABELS, COND_DUE_TYPE_LABELS,
-  COND_APPLY_SCOPE_LABELS, COND_QUANTITY_BASIS_LABELS, COND_REFUNDABLE_LABELS,
+  COND_QUANTITY_BASIS_LABELS, COND_REFUNDABLE_LABELS,
   CondPaymentType, CondCalcType, CondCalcBase, CondDueType, CondTtlCalcType,
-  CondApplyScope, CondQuantityBasis, CondRefundableType,
+  CondQuantityBasis, CondRefundableType,
   COND_CALC_BASE_LABELS,
   CondBaggageStatus, CondBaggageType, CondBaggageAllowanceMode, CondBaggagePiece,
   CondSeatReductionAllow, CondSeatBasis, CondSeatNoticeDaysBase, CondSeatReductionMode, CondSeatRangeType,
@@ -70,8 +70,6 @@ export function validateTab(key: TabKey, v: AppCondition, conditionMode: Conditi
       if (conditionMode === 'template') {
         if (!templateInfo && !v.currency.trim()) errs.push('กรุณาเลือก Currency')
         if (!templateInfo && !v.airline.trim())  errs.push('กรุณาเลือก Airline')
-        if (v.applyScope === 'ROUTE'   && v.applyRoutes.length === 0)    errs.push('กรุณาระบุ Route อย่างน้อย 1 รายการ')
-        if (v.applyScope === 'COUNTRY' && v.applyCountries.length === 0) errs.push('กรุณาเลือก Country อย่างน้อย 1 ประเทศ')
       }
       return errs
     }
@@ -307,11 +305,7 @@ export function getTabStatus(key: TabKey, v: AppCondition, errs: string[] = [], 
       // In template mode airline always comes from the template (even when "ทุกสายการบิน")
       const required = v.conditionCode.trim() && v.conditionName.trim() && effCurrency.trim()
         && (inTemplateMode || !!effAirline.trim())
-      const scopeOk  = conditionMode === 'series' || inTemplateMode
-        || v.applyScope === 'ALL'
-        || (v.applyScope === 'ROUTE'   && v.applyRoutes.length > 0)
-        || (v.applyScope === 'COUNTRY' && v.applyCountries.length > 0)
-      return required && scopeOk ? 'complete' : 'incomplete'
+      return required ? 'complete' : 'incomplete'
     }
     case 'payment': {
       const hasStages = v.stages.length > 0
@@ -469,7 +463,7 @@ export function clearTab(key: TabKey, v: AppCondition, conditionMode: ConditionM
   switch (key) {
     case 'basic':
       if (conditionMode === 'series') {
-        // Keep series-locked fields (airline, currency, applyScope, applyRoutes)
+        // Keep series-locked fields (airline, currency)
         return {
           ...v,
           conditionCode: '', conditionName: '', description: '', status: 'Active',
@@ -480,7 +474,6 @@ export function clearTab(key: TabKey, v: AppCondition, conditionMode: ConditionM
         ...v,
         conditionCode: '', conditionName: '', description: '', status: 'Active',
         airline: '', currency: 'THB', conditionType: 'Custom',
-        applyScope: 'ALL', applyRoutes: [], applyCountries: [],
         effectiveDate: '', version: 'V1',
       }
     case 'payment':
@@ -658,96 +651,6 @@ function AirlineCombobox({ value, onChange, disabled }: {
   )
 }
 
-function CountryMultiSelect({ value, onChange, disabled }: {
-  value: string[]; onChange: (v: string[]) => void; disabled: boolean
-}) {
-  const toggle = (name: string) =>
-    onChange(value.includes(name) ? value.filter(c => c !== name) : [...value, name])
-  return (
-    <div className="border border-slate-200 rounded-xl overflow-hidden">
-      <div className="max-h-44 overflow-y-auto grid grid-cols-2 gap-0">
-        {MASTER_COUNTRIES.map(c => (
-          <label key={c.name} className={`flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-slate-50
-            ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}>
-            <input
-              type="checkbox"
-              checked={value.includes(c.name)}
-              onChange={() => !disabled && toggle(c.name)}
-              className="accent-[#05a94f]"
-              disabled={disabled}
-            />
-            <span className="text-slate-700">{c.name}</span>
-          </label>
-        ))}
-      </div>
-      {value.length > 0 && (
-        <div className="border-t border-slate-100 px-3 py-2 flex flex-wrap gap-1.5">
-          {value.map(c => (
-            <span key={c} className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-50 border border-emerald-200 rounded-full text-xs text-emerald-700">
-              {c}
-              {!disabled && (
-                <button type="button" onClick={() => toggle(c)} className="hover:text-red-500">
-                  <X size={10} />
-                </button>
-              )}
-            </span>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function RouteTagInput({ value, onChange, disabled }: {
-  value: string[]; onChange: (v: string[]) => void; disabled: boolean
-}) {
-  const [input, setInput] = useState('')
-  const add = () => {
-    const v = input.trim().toUpperCase()
-    if (v && !value.includes(v)) onChange([...value, v])
-    setInput('')
-  }
-  const remove = (r: string) => onChange(value.filter(x => x !== r))
-  return (
-    <div className="space-y-2">
-      {!disabled && (
-        <div className="flex gap-2">
-          <input
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add() } }}
-            placeholder="เช่น BKK-NRT กด Enter เพื่อเพิ่ม"
-            className="flex-1 px-3 py-2 text-sm rounded-lg border border-slate-300 focus:outline-none focus:border-[#05a94f] font-mono"
-          />
-          <button
-            type="button"
-            onClick={add}
-            className="px-3 py-2 rounded-lg bg-[#05a94f] text-white text-sm hover:bg-[#048a40]"
-          >
-            <Plus size={14} />
-          </button>
-        </div>
-      )}
-      {value.length > 0 ? (
-        <div className="flex flex-wrap gap-1.5">
-          {value.map(r => (
-            <span key={r} className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-50 border border-blue-200 rounded-full text-xs font-mono text-blue-700">
-              {r}
-              {!disabled && (
-                <button type="button" onClick={() => remove(r)} className="hover:text-red-500">
-                  <X size={10} />
-                </button>
-              )}
-            </span>
-          ))}
-        </div>
-      ) : (
-        <p className="text-xs text-slate-400">ยังไม่มี Route — พิมพ์รูปแบบ BKK-NRT แล้วกด Enter</p>
-      )}
-    </div>
-  )
-}
-
 export type ConditionMode = 'template' | 'series'
 
 export interface SeriesInfo {
@@ -843,22 +746,6 @@ export function BasicInfoSection({ value, onChange, readOnly, errors = [], condi
                 {airlineObj ? `${airlineObj.code} — ${airlineObj.name}` : seriesInfo.airlineCode || '—'}
               </p>
             </div>
-            <div className="col-span-2">
-              <p className="text-[10px] text-blue-500 font-semibold uppercase tracking-wide mb-1">ขอบเขตการใช้งาน</p>
-              <div className="flex items-center flex-wrap gap-1.5">
-                <span className="text-xs text-blue-800 font-medium">เฉพาะ Series นี้</span>
-                {seriesInfo.routes.length > 0 ? (
-                  <>
-                    <span className="text-[10px] text-blue-400">·</span>
-                    {seriesInfo.routes.map(r => (
-                      <span key={r} className="inline-flex items-center px-2 py-0.5 bg-white border border-blue-300 rounded-lg font-mono text-xs text-blue-800">{r}</span>
-                    ))}
-                  </>
-                ) : (
-                  <span className="text-[10px] text-blue-500">(ทุกเส้นทาง)</span>
-                )}
-              </div>
-            </div>
           </div>
         </div>
       )}
@@ -934,48 +821,6 @@ export function BasicInfoSection({ value, onChange, readOnly, errors = [], condi
         </div>
       )}
 
-      {/* Template mode: Apply Scope */}
-      {!isSeries && (
-        <div>
-          <Label>ขอบเขตการใช้งาน (Apply Scope)</Label>
-          <div className="flex flex-wrap gap-4 mt-2 mb-3">
-            {(Object.entries(COND_APPLY_SCOPE_LABELS) as [CondApplyScope, string][]).map(([scope, label]) => (
-              <label key={scope} className={`flex items-center gap-2 text-sm cursor-pointer ${readOnly ? 'opacity-60 cursor-not-allowed' : ''}`}>
-                <input
-                  type="radio"
-                  name="applyScope"
-                  value={scope}
-                  checked={value.applyScope === scope}
-                  onChange={() => !readOnly && set('applyScope', scope)}
-                  className="accent-[#05a94f]"
-                  disabled={readOnly}
-                />
-                <span className="text-slate-700">{label}</span>
-              </label>
-            ))}
-          </div>
-
-          {value.applyScope === 'ROUTE' && (
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <p className="text-xs font-medium text-slate-600 mb-2 flex items-center gap-1">
-                <Route size={12} /> Route ที่ใช้งาน
-              </p>
-              <RouteTagInput value={value.applyRoutes} onChange={v => set('applyRoutes', v)} disabled={readOnly} />
-              {hasErr(['applyRoutes']) && <p className="text-[10px] text-red-500 mt-1">กรุณาระบุ Route อย่างน้อย 1 รายการ</p>}
-            </div>
-          )}
-
-          {value.applyScope === 'COUNTRY' && (
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <p className="text-xs font-medium text-slate-600 mb-2 flex items-center gap-1">
-                <Globe size={12} /> ประเทศที่ใช้งาน
-              </p>
-              <CountryMultiSelect value={value.applyCountries} onChange={v => set('applyCountries', v)} disabled={readOnly} />
-              {hasErr(['applyCountries']) && <p className="text-[10px] text-red-500 mt-1">กรุณาเลือก Country อย่างน้อย 1 ประเทศ</p>}
-            </div>
-          )}
-        </div>
-      )}
     </div>
   )
 }

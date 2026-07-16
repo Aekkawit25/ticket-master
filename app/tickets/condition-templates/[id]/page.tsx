@@ -16,7 +16,7 @@ import {
   COND_PAYMENT_TYPE_LABELS, COND_DUE_TYPE_LABELS,
   COND_QUANTITY_BASIS_LABELS, COND_REFUNDABLE_LABELS,
   COND_PRE_MONEY_TYPE_LABELS, COND_PRE_REFUND_POLICY_LABELS,
-  COND_REFUND_TYPE_LABELS, COND_REFUND_TYPE_COLORS, COND_APPLY_SCOPE_LABELS,
+  COND_REFUND_TYPE_LABELS, COND_REFUND_TYPE_COLORS,
   DAY_BASED_DUE_TYPES,
   formatStageAmount, formatTtlRule, formatBaggageSummary,
 } from '@/lib/condition-schema'
@@ -300,16 +300,9 @@ export default function ConditionTemplateDetailPage({ params }: { params: Promis
                 {c.stages.length > 0 ? `${c.stages.length} งวด` : 'ยังไม่มี'}
               </Kv>
             </div>
-            {c.applyScope && c.applyScope !== 'ALL' && (
-              <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                <Kv label="ขอบเขต">{COND_APPLY_SCOPE_LABELS[c.applyScope] ?? c.applyScope}</Kv>
-                {c.applyScope === 'ROUTE' && c.applyRoutes.length > 0 && (
-                  <Kv label="Route">{c.applyRoutes.join(', ')}</Kv>
-                )}
-                {c.applyScope === 'COUNTRY' && c.applyCountries.length > 0 && (
-                  <Kv label="ประเทศ">{c.applyCountries.join(', ')}</Kv>
-                )}
-                {c.effectiveDate && <Kv label="มีผลตั้งแต่">{c.effectiveDate}</Kv>}
+            {c.effectiveDate && (
+              <div className="mt-3 text-xs">
+                <Kv label="มีผลตั้งแต่">{c.effectiveDate}</Kv>
               </div>
             )}
             {c.description && <p className="text-sm text-slate-600 mt-3">{c.description}</p>}
