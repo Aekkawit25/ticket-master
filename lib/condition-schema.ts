@@ -875,7 +875,7 @@ export function formatSeatReductionSummary(sp: CondSeatReductionPolicy): string 
     : ''
 
   if (sp.mode === 'STEP_RULE') {
-    if (sp.rules.length === 0) return 'ลดที่นั่ง: อนุญาต · ใช้กฎขั้นบันได (ยังไม่มีกฎ)' + shortRemark
+    if (sp.rules.length === 0) return 'ลดที่นั่ง: อนุญาต · ใช้เงื่อนไข Step (ยังไม่มี Step)' + shortRemark
     const ruleShort = (r: CondSeatReductionRule): string => {
       const range =
         r.rangeType === 'FROM_DAY_UP' ? `${r.fromDays ?? '?'}+ วัน` :
@@ -888,7 +888,7 @@ export function formatSeatReductionSummary(sp: CondSeatReductionPolicy): string 
       return `${range}${pct}${over}`
     }
     const detail = sp.rules.map(ruleShort).join(' · ')
-    return `ลดที่นั่ง: อนุญาต · ใช้กฎขั้นบันได ${sp.rules.length} ช่วง · ${detail}${shortRemark}`
+    return `ลดที่นั่ง: อนุญาต · ใช้เงื่อนไข Step ${sp.rules.length} ช่วง · ${detail}${shortRemark}`
   }
   const overLimitLabel: Record<CondSingleOverLimit, string> = {
     UNSPECIFIED: 'ยังไม่กำหนด', NO_FORFEIT: 'ไม่ยึดเงิน',

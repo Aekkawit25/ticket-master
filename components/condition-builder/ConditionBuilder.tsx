@@ -164,28 +164,28 @@ export function validateTab(key: TabKey, v: AppCondition, conditionMode: Conditi
             errs.push('กรุณาระบุเปอร์เซ็นต์ค่าปรับ')
         }
       } else {
-        if (sp.rules.length === 0) errs.push('กรุณาเพิ่มกฎอย่างน้อย 1 รายการ')
+        if (sp.rules.length === 0) errs.push('กรุณาเพิ่ม Step อย่างน้อย 1 รายการ')
         sp.rules.forEach((r, i) => {
           const n = i + 1
           if (r.rangeType === 'FROM_DAY_UP' && r.fromDays === null)
-            errs.push(`กฎที่ ${n}: กรุณาระบุจำนวนวัน`)
+            errs.push(`Step ${n}: กรุณาระบุจำนวนวัน`)
           if (r.rangeType === 'UNTIL_DAY' && r.toDays === null)
-            errs.push(`กฎที่ ${n}: กรุณาระบุจำนวนวัน`)
+            errs.push(`Step ${n}: กรุณาระบุจำนวนวัน`)
           if (r.rangeType === 'BETWEEN') {
             if (r.fromDays === null || r.toDays === null)
-              errs.push(`กฎที่ ${n}: กรุณาระบุช่วงวัน`)
+              errs.push(`Step ${n}: กรุณาระบุช่วงวัน`)
             else if (r.fromDays <= r.toDays)
-              errs.push(`กฎที่ ${n}: วัน "ตั้งแต่" ต้องมากกว่าวัน "ถึง"`)
+              errs.push(`Step ${n}: วัน "ตั้งแต่" ต้องมากกว่าวัน "ถึง"`)
           }
           if (r.maxReducePercent != null && (r.maxReducePercent < 0 || r.maxReducePercent > 100))
-            errs.push(`กฎที่ ${n}: ลดได้สูงสุด (%) ต้องอยู่ระหว่าง 0–100`)
+            errs.push(`Step ${n}: ลดได้สูงสุด (%) ต้องอยู่ระหว่าง 0–100`)
           if (r.ruleOverLimitAction === 'FORFEIT' && !r.forfeitSource)
-            errs.push(`กฎที่ ${n}: กรุณาเลือกว่ายึดเงินจากส่วนใด`)
+            errs.push(`Step ${n}: กรุณาเลือกว่ายึดเงินจากส่วนใด`)
           if (r.ruleOverLimitAction === 'PENALTY') {
             if (r.penaltyType === 'FIXED'   && (r.penaltyAmount  == null || r.penaltyAmount  < 0))
-              errs.push(`กฎที่ ${n}: กรุณาระบุจำนวนเงินค่าปรับ`)
+              errs.push(`Step ${n}: กรุณาระบุจำนวนเงินค่าปรับ`)
             if (r.penaltyType === 'PERCENT' && (r.penaltyPercent == null || r.penaltyPercent <= 0))
-              errs.push(`กฎที่ ${n}: กรุณาระบุเปอร์เซ็นต์ค่าปรับ`)
+              errs.push(`Step ${n}: กรุณาระบุเปอร์เซ็นต์ค่าปรับ`)
           }
         })
         const getRangeBounds = (r: CondSeatReductionRule) => {
@@ -198,7 +198,7 @@ export function validateTab(key: TabKey, v: AppCondition, conditionMode: Conditi
             const { lo: aLo, hi: aHi } = getRangeBounds(sp.rules[i])
             const { lo: bLo, hi: bHi } = getRangeBounds(sp.rules[j])
             if (aLo <= bHi && bLo <= aHi)
-              errs.push(`กฎที่ ${i + 1} และกฎที่ ${j + 1} มีช่วงวันที่ทับซ้อนกัน`)
+              errs.push(`Step ${i + 1} และ Step ${j + 1} มีช่วงวันที่ทับซ้อนกัน`)
           }
         }
       }
@@ -238,10 +238,10 @@ export function validateTab(key: TabKey, v: AppCondition, conditionMode: Conditi
           errs.push('กรุณาระบุเปอร์เซ็นต์ค่าธรรมเนียม Refund')
         if (post.penaltyMode === 'STEP_RULE') {
           if (post.penaltyStepRules.length === 0)
-            errs.push('กรุณาเพิ่มกฎขั้นบันไดอย่างน้อย 1 รายการ')
+            errs.push('กรุณาเพิ่ม Step อย่างน้อย 1 รายการ')
           post.penaltyStepRules.forEach((r, i) => {
             if (r.penaltyValue == null || r.penaltyValue < 0)
-              errs.push(`กฎขั้นบันไดที่ ${i + 1}: กรุณาระบุค่าปรับ`)
+              errs.push(`Step ${i + 1}: กรุณาระบุค่าปรับ`)
           })
         }
       }
@@ -249,7 +249,7 @@ export function validateTab(key: TabKey, v: AppCondition, conditionMode: Conditi
         rt.preTicket.moneyTypeRules.forEach(() => { /* kept for backward compat */ })
         rt.preTicket.rules.forEach((r, i) => {
           if (r.fromDays !== null && r.toDays !== null && r.fromDays <= r.toDays)
-            errs.push(`Step Rule กฎที่ ${i + 1}: "จาก" ต้องมากกว่า "ถึง"`)
+            errs.push(`Step ${i + 1}: "จาก" ต้องมากกว่า "ถึง"`)
         })
         for (let i = 0; i < rt.preTicket.rules.length; i++) {
           for (let j = i + 1; j < rt.preTicket.rules.length; j++) {
@@ -259,7 +259,7 @@ export function validateTab(key: TabKey, v: AppCondition, conditionMode: Conditi
             const aLo = a.toDays ?? 0, aHi = a.fromDays ?? Infinity
             const bLo = b.toDays ?? 0, bHi = b.fromDays ?? Infinity
             if (aLo <= bHi && bLo <= aHi)
-              errs.push(`Step Rule: กฎที่ ${i + 1} และ ${j + 1} มีช่วงวันซ้อนกันในประเภทเงินเดียวกัน`)
+              errs.push(`Step ${i + 1} และ Step ${j + 1} มีช่วงวันซ้อนกันในประเภทเงินเดียวกัน`)
           }
         }
       }
@@ -1924,7 +1924,7 @@ const SR_NOTICE_BASE_OPTIONS: { value: CondSeatNoticeDaysBase; label: string }[]
 
 const SR_MODE_OPTIONS: { value: CondSeatReductionMode; label: string }[] = [
   { value: 'SINGLE',    label: 'เงื่อนไขเดียว' },
-  { value: 'STEP_RULE', label: 'กฎขั้นบันได' },
+  { value: 'STEP_RULE', label: 'เงื่อนไข Step' },
 ]
 
 const SR_SINGLE_OVER_LIMIT_OPTIONS: { value: CondSingleOverLimit; label: string }[] = [
@@ -2015,9 +2015,9 @@ function SrRuleCard({
     <div className="rounded-xl border border-slate-200 overflow-hidden">
       {/* Header */}
       <div className="flex items-center gap-1.5 px-3 py-2.5 bg-slate-50 border-b border-slate-100">
-        <div className="w-5 h-5 rounded-full bg-[#05a94f]/10 text-[#05a94f] text-[10px] flex items-center justify-center font-bold shrink-0">
-          {ruleNo}
-        </div>
+        <span className="text-[10px] font-bold text-[#05a94f] bg-[#05a94f]/10 px-2 py-0.5 rounded-full shrink-0">
+          Step {ruleNo}
+        </span>
         <button type="button" onClick={() => setExpanded(e => !e)}
           className="flex-1 flex items-center gap-2 text-left min-w-0">
           <p className="text-xs font-semibold text-slate-700 flex-1 truncate">
@@ -2635,9 +2635,9 @@ export function SeatReductionSection({ value, onChange, readOnly, currency, erro
               lines.push({ text: `หากแจ้งลดเกินเงื่อนไข ${overLimitSuffix}`, missing: overLimitMissing })
             } else {
               if (sp.rules.length === 0) {
-                lines.push({ text: 'ใช้กฎขั้นบันได แต่ยังไม่มีกฎ', missing: true })
+                lines.push({ text: 'ใช้เงื่อนไข Step แต่ยังไม่มี Step', missing: true })
               } else {
-                lines.push({ text: `ใช้กฎขั้นบันได ${sp.rules.length} ช่วง:`, missing: false })
+                lines.push({ text: `ใช้เงื่อนไข Step ${sp.rules.length} ช่วง:`, missing: false })
                 sp.rules.forEach((r, i) => {
                   lines.push({
                     text: `ช่วงที่ ${i + 1}: ${formatDayRange(r.rangeType, r.fromDays, r.toDays)} — ลดได้ ${r.maxReducePercent != null ? r.maxReducePercent + '%' : '?%'}`,
@@ -2671,7 +2671,7 @@ export function SeatReductionSection({ value, onChange, readOnly, currency, erro
             <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
               <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-200 bg-slate-50">
                 <Layers size={14} className="text-slate-500" />
-                <p className="text-xs font-semibold text-slate-700 flex-1">กฎขั้นบันไดการลดที่นั่ง</p>
+                <p className="text-xs font-semibold text-slate-700 flex-1">เงื่อนไข Step การลดที่นั่ง</p>
                 {!readOnly && (
                   <button type="button" onClick={addPreset}
                     className="text-[10px] text-blue-600 hover:underline font-medium shrink-0">
@@ -2695,8 +2695,8 @@ export function SeatReductionSection({ value, onChange, readOnly, currency, erro
                 {sp.rules.length === 0 && (
                   <div className="text-center py-6 bg-slate-50 rounded-xl border border-dashed border-amber-300">
                     <Layers size={24} className="text-slate-300 mx-auto mb-2" />
-                    <p className="text-sm font-medium text-slate-500">ยังไม่มีกฎ</p>
-                    <p className="text-[11px] text-slate-400 mt-1">เพิ่มกฎเพื่อกำหนดเงื่อนไขในแต่ละช่วงวัน</p>
+                    <p className="text-sm font-medium text-slate-500">ยังไม่มี Step</p>
+                    <p className="text-[11px] text-slate-400 mt-1">เพิ่ม Step เพื่อกำหนดเงื่อนไขในแต่ละช่วงวัน</p>
                   </div>
                 )}
 
@@ -2723,7 +2723,7 @@ export function SeatReductionSection({ value, onChange, readOnly, currency, erro
                         ? 'border-amber-400 text-amber-600 hover:bg-amber-50'
                         : 'border-[#05a94f]/40 text-[#05a94f] hover:bg-emerald-50',
                     )}>
-                    <Plus size={12} /> เพิ่มกฎขั้นบันได
+                    <Plus size={12} /> เพิ่ม Step
                   </button>
                 )}
               </div>
@@ -2793,7 +2793,7 @@ const REFUND_FEE_UNIT_OPTIONS: { value: CondRefundFeeUnit; label: string }[] = [
 const REFUND_PENALTY_MODE_OPTIONS: { value: CondRefundPenaltyMode; label: string }[] = [
   { value: 'NONE',      label: 'ไม่มี' },
   { value: 'SINGLE',    label: 'เงื่อนไขเดียว' },
-  { value: 'STEP_RULE', label: 'กฎขั้นบันได' },
+  { value: 'STEP_RULE', label: 'เงื่อนไข Step' },
 ]
 
 const REFUND_PENALTY_BASE_OPTIONS: { value: string; label: string }[] = [
@@ -2915,7 +2915,7 @@ function RefundPenaltyStepRuleRow({ rule, index, readOnly, onUpdate, onRemove, c
   return (
     <div className="border border-slate-200 rounded-xl overflow-hidden">
       <div className="flex items-center gap-2 px-3 py-2 bg-slate-50">
-        <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 text-[10px] flex items-center justify-center font-bold shrink-0">{index + 1}</span>
+        <span className="text-[10px] font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full shrink-0">Step {index + 1}</span>
         <span className="flex-1 text-xs text-slate-600 font-medium">{rangeText}</span>
         <span className="text-[10px] text-slate-400 shrink-0">
           {rule.penaltyType === 'PERCENT' ? `${rule.penaltyValue ?? '?'}%` : `${rule.penaltyValue?.toLocaleString() ?? '?'} ${currency}`}
@@ -3344,7 +3344,7 @@ export function CombinedRefundSection({ value, onChange, readOnly, currency, err
         else lines.push({ text: 'ค่าปรับ: ยึดเงินเต็มจำนวน', missing: false })
       } else if (post.penaltyMode === 'STEP_RULE') {
         if (post.penaltyStepRules.length === 0) {
-          lines.push({ text: 'ค่าปรับแบบขั้นบันได: ยังไม่มีกฎ', missing: true })
+          lines.push({ text: 'ค่าปรับแบบเงื่อนไข Step: ยังไม่มี Step', missing: true })
         } else {
           lines.push({ text: `ค่าปรับตามช่วงวันก่อนเดินทาง (${post.penaltyStepRules.length} ช่วง):`, missing: false })
           post.penaltyStepRules.forEach(r => {
@@ -3761,8 +3761,8 @@ export function CombinedRefundSection({ value, onChange, readOnly, currency, err
                     <div className="mt-3 space-y-2">
                       {post.penaltyStepRules.length === 0 && (
                         <div className="text-center py-4 bg-slate-50 rounded-xl border border-dashed border-amber-300">
-                          <p className="text-xs text-slate-500">ยังไม่มีกฎขั้นบันได</p>
-                          <p className="text-[10px] text-slate-400 mt-0.5">เพิ่มกฎเพื่อกำหนดค่าปรับตามช่วงวัน</p>
+                          <p className="text-xs text-slate-500">ยังไม่มี Step</p>
+                          <p className="text-[10px] text-slate-400 mt-0.5">เพิ่ม Step เพื่อกำหนดค่าปรับตามช่วงวัน</p>
                         </div>
                       )}
                       {post.penaltyStepRules.map((r, i) => (
@@ -3775,7 +3775,7 @@ export function CombinedRefundSection({ value, onChange, readOnly, currency, err
                       {!readOnly && (
                         <button type="button" onClick={addPenaltyStepRule}
                           className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl border border-dashed border-[#05a94f]/40 text-[#05a94f] text-xs font-medium hover:bg-emerald-50 transition">
-                          <Plus size={12} /> เพิ่มกฎขั้นบันได
+                          <Plus size={12} /> เพิ่ม Step
                         </button>
                       )}
                     </div>

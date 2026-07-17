@@ -479,7 +479,7 @@ export default function ConditionTemplateDetailPage({ params }: { params: Promis
             <CardContent className="space-y-3">
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   <Kv label="โหมด">
-                    <Chip color="blue">{sp.mode === 'SINGLE' ? 'เงื่อนไขเดียว' : 'กฎขั้นบันได'}</Chip>
+                    <Chip color="blue">{sp.mode === 'SINGLE' ? 'เงื่อนไขเดียว' : 'เงื่อนไข Step'}</Chip>
                   </Kv>
                   {sp.maxReducePercent != null && <Kv label="ลดได้สูงสุด">{sp.maxReducePercent}%</Kv>}
                   <Kv label="คำนวณจำนวนที่นั่งจาก">{SEAT_BASIS_LABELS[sp.basis] ?? sp.basis}</Kv>
