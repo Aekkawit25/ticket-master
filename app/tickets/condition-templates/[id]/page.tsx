@@ -100,7 +100,7 @@ const UTIL_BASE_LABELS: Record<string, string> = {
   INITIAL_SEAT: 'ที่นั่งเปิดขาย', DEPOSIT_SEAT: 'ที่นั่งที่วางมัดจำ', LATEST_SEAT: 'ที่นั่งปัจจุบัน',
 }
 const SEAT_BASIS_LABELS: Record<string, string> = {
-  INITIAL_SEAT: 'Seat เริ่มต้น (ที่นั่งเปิดขาย)', REMAINING_SEAT: 'Seat คงเหลือ',
+  INITIAL_SEAT: 'Seat เริ่มต้น', REMAINING_SEAT: 'Seat ปัจจุบัน',
 }
 const SEAT_NOTICE_BASE_LABELS: Record<string, string> = {
   DEPARTURE_DATE: 'วันเดินทางวันแรก',

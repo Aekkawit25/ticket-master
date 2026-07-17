@@ -1912,8 +1912,8 @@ const SR_ALLOW_OPTIONS: { value: CondSeatReductionAllow; label: string }[] = [
 ]
 
 const SR_BASIS_OPTIONS: { value: CondSeatBasis; label: string }[] = [
-  { value: 'INITIAL_SEAT',   label: 'Seat เริ่มต้น (ที่นั่งเปิดขาย)' },
-  { value: 'REMAINING_SEAT', label: 'Seat คงเหลือ' },
+  { value: 'INITIAL_SEAT',   label: 'Seat เริ่มต้น' },
+  { value: 'REMAINING_SEAT', label: 'Seat ปัจจุบัน' },
 ]
 
 const SR_NOTICE_BASE_OPTIONS: { value: CondSeatNoticeDaysBase; label: string }[] = [
