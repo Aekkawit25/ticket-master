@@ -675,7 +675,7 @@ function ImportReviewInner() {
                       <td className="px-3 py-2.5 text-xs text-center text-slate-400">{s.seq}</td>
                       <td className="px-3 py-2.5 text-xs text-center">
                         <span className={`font-medium ${s.sectorType === 'Departure' ? 'text-green-600' : s.sectorType === 'Arrival' ? 'text-purple-600' : 'text-slate-600'}`}>
-                          {s.sectorType}
+                          {s.sectorType === 'Arrival' ? 'Return' : s.sectorType}
                         </span>
                       </td>
                       <td className="px-3 py-2.5 text-center">

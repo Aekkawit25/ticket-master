@@ -853,7 +853,7 @@ export function BulkPnrBuilder({
       const first = selFs.sectors[0]
       const last  = selFs.sectors[selFs.sectors.length - 1]
       if (first.sectorType !== 'Departure') { setFormErr('Sector แรกของ Flight Set ต้องเป็น Departure'); return }
-      if (last.sectorType !== 'Arrival' && last.sectorType !== 'Departure') { setFormErr('Sector สุดท้ายของ Flight Set ต้องเป็น Arrival'); return }
+      if (last.sectorType !== 'Arrival' && last.sectorType !== 'Departure') { setFormErr('Sector สุดท้ายของ Flight Set ต้องเป็น Return'); return }
     }
 
     // Price validation
@@ -1294,7 +1294,7 @@ export function BulkPnrBuilder({
                                   <div key={i} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-slate-600 border-t border-slate-200 pt-1.5">
                                     <span className="font-semibold text-slate-500 w-3">{i + 1}.</span>
                                     <span className={`rounded px-1 py-0.5 text-[9px] font-medium ${s.sectorType === 'Departure' ? 'bg-blue-100 text-blue-700' : s.sectorType === 'Arrival' ? 'bg-purple-100 text-purple-700' : 'bg-slate-200 text-slate-600'}`}>
-                                      {s.sectorType}
+                                      {s.sectorType === 'Arrival' ? 'Return' : s.sectorType}
                                     </span>
                                     {flightCode && <span className="font-semibold text-slate-800">{flightCode}</span>}
                                     {sRoute && <span>{sRoute}</span>}

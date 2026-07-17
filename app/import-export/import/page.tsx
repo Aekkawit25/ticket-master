@@ -98,7 +98,7 @@ export default function ImportStockPage() {
           <CardContent>
             <ul className="text-xs text-slate-600 space-y-1 list-disc list-inside">
               <li>ต้องมี Series Code และ Ticket Type ทุกครั้ง</li>
-              <li>Group / Ticket + Land ต้องมี Sector อย่างน้อย 2 รายการ (Departure + Arrival)</li>
+              <li>Group / Ticket + Land ต้องมี Sector อย่างน้อย 2 รายการ (Departure + Return)</li>
               <li>FIT ต้องมี Sector อย่างน้อย 1 รายการ</li>
               <li>Sector แรกต้องเป็น Departure เสมอ</li>
               <li>PNR ต้องมี วันเดินทางเริ่มต้น และ Seat Total (Travel End คำนวณจาก Sector Travel Day)</li>

@@ -16,7 +16,7 @@ import { AirlineCell } from '@/components/shared/AirlineCell'
 const SECTOR_TYPE_OPTIONS: { value: SectorType; label: string; text: string }[] = [
   { value: 'Departure', label: 'Departure', text: 'text-green-600' },
   { value: 'Transit',   label: 'Transit',   text: 'text-amber-600' },
-  { value: 'Arrival',   label: 'Arrival',   text: 'text-purple-600' },
+  { value: 'Arrival',   label: 'Return',    text: 'text-purple-600' },
 ]
 
 const MIDDLE_TYPE_OPTIONS = SECTOR_TYPE_OPTIONS.filter(o => o.value === 'Transit')
@@ -756,7 +756,7 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
                     type="button"
                     disabled={disabled}
                     onClick={() => handleTripTypeChange(tt)}
-                    title={disabled ? 'Group/Ticket+Land ต้องมี Arrival — ไม่รองรับ One-way' : undefined}
+                    title={disabled ? 'Group/Ticket+Land ต้องมี Return — ไม่รองรับ One-way' : undefined}
                     className={cn(
                       'px-3 py-1.5 font-medium transition-colors border-r border-slate-200 last:border-r-0',
                       tripType === tt ? 'bg-[#05a94f] text-white'
@@ -771,16 +771,16 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
             </div>
 
             <span className="text-xs text-slate-400 flex-1 min-w-0">
-              {tripType === 'One-way' && 'Departure แรก · Transit ระหว่างทาง (ถ้ามี) · Arrival สุดท้าย'}
-              {tripType === 'Round-trip' && 'อย่างน้อย 2 Sectors · Departure → Transit (ถ้ามี) → Arrival · ปลายทางต้องกลับต้นทาง'}
-              {tripType === 'Multi-city' && 'สามารถเพิ่ม Sector ระหว่าง Departure และ Arrival ได้'}
+              {tripType === 'One-way' && 'Departure แรก · Transit ระหว่างทาง (ถ้ามี) · Return สุดท้าย'}
+              {tripType === 'Round-trip' && 'อย่างน้อย 2 Sectors · Departure → Transit (ถ้ามี) → Return · ปลายทางต้องกลับต้นทาง'}
+              {tripType === 'Multi-city' && 'สามารถเพิ่ม Sector ระหว่าง Departure และ Return ได้'}
             </span>
 
             <button
               type="button"
               onClick={addSector}
               disabled={!canAdd}
-              title={!canAdd ? 'เพิ่ม Sector ได้เฉพาะ Round-trip และ Multi-city' : 'แทรก Sector ก่อน Arrival'}
+              title={!canAdd ? 'เพิ่ม Sector ได้เฉพาะ Round-trip และ Multi-city' : 'แทรก Sector ก่อน Return'}
               className={cn(
                 'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all shrink-0',
                 canAdd
@@ -1058,7 +1058,7 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
                           onClick={() => deleteRow(idx)}
                           disabled={!deletable}
                           title={!deletable
-                            ? (locked ? 'ไม่สามารถลบ Departure หรือ Arrival' : 'ลบได้เฉพาะ Round-trip และ Multi-city')
+                            ? (locked ? 'ไม่สามารถลบ Departure หรือ Return' : 'ลบได้เฉพาะ Round-trip และ Multi-city')
                             : 'ลบ Sector นี้'
                           }
                           className={cn(
@@ -1115,9 +1115,9 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
         <div className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700">
           <AlertTriangle size={13} className="shrink-0" />
           <span>
-            {tripType === 'One-way'    && (sectors.length > 1 ? 'One-way Sector สุดท้ายต้องเป็น Arrival' : 'One-way ต้องมี Departure อย่างน้อย 1 Sector')}
-            {tripType === 'Round-trip' && (sectors.length < 2 ? 'Round-trip ต้องมีอย่างน้อย 2 Sectors' : 'Round-trip Sector สุดท้ายต้องเป็น Arrival')}
-            {tripType === 'Multi-city' && 'Multi-city ต้องมีอย่างน้อย 2 Sector — Departure (แรก) + Arrival (สุดท้าย)'}
+            {tripType === 'One-way'    && (sectors.length > 1 ? 'One-way Sector สุดท้ายต้องเป็น Return' : 'One-way ต้องมี Departure อย่างน้อย 1 Sector')}
+            {tripType === 'Round-trip' && (sectors.length < 2 ? 'Round-trip ต้องมีอย่างน้อย 2 Sectors' : 'Round-trip Sector สุดท้ายต้องเป็น Return')}
+            {tripType === 'Multi-city' && 'Multi-city ต้องมีอย่างน้อย 2 Sector — Departure (แรก) + Return (สุดท้าย)'}
           </span>
         </div>
       )}

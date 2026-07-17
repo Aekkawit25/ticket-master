@@ -411,7 +411,7 @@ export default function Step5Review({
                           <Td className="text-xs text-slate-400">{s.seq ?? i + 1}</Td>
                           <Td>
                             <span className={`text-xs font-medium ${SECTOR_TYPE_COLOR[s.sector_type] ?? 'text-slate-600'}`}>
-                              {s.sector_type}
+                              {s.sector_type === 'Arrival' ? 'Return' : s.sector_type}
                             </span>
                           </Td>
                           <Td className="font-mono text-xs">

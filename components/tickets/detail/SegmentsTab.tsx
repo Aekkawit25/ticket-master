@@ -123,7 +123,7 @@ function SectorEditTable({ sectors, minSectors, errors, defaultAirlineCode, onCh
               <td className="px-1 py-1.5">
                 <select value={s.sectorType} onChange={e => update(i, { sectorType: e.target.value })}
                   className="w-full border border-slate-300 rounded-md px-1.5 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[#05a94f]">
-                  {SECTOR_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                  {SECTOR_TYPES.map(t => <option key={t} value={t}>{t === 'Arrival' ? 'Return' : t}</option>)}
                 </select>
               </td>
               <td className="px-1 py-1.5">
@@ -221,7 +221,7 @@ function SectorReadTable({ sectors }: { sectors: DemoSector[] }) {
               <tr key={s.sectorId} className={`border-b border-slate-100 last:border-0 ${i % 2 === 0 ? '' : 'bg-slate-50/40'} hover:bg-slate-50 align-middle`}>
                 <td className="px-3 py-2.5 text-xs text-center text-slate-400">{s.seq}</td>
                 <td className="px-3 py-2.5 text-xs text-center overflow-hidden text-ellipsis whitespace-nowrap">
-                  <span className={`font-medium ${s.sectorType === 'Departure' ? 'text-green-600' : s.sectorType === 'Arrival' ? 'text-purple-600' : 'text-slate-500'}`}>{s.sectorType}</span>
+                  <span className={`font-medium ${s.sectorType === 'Departure' ? 'text-green-600' : s.sectorType === 'Arrival' ? 'text-purple-600' : 'text-slate-500'}`}>{s.sectorType === 'Arrival' ? 'Return' : s.sectorType}</span>
                 </td>
                 <td className="px-3 py-2.5 text-center overflow-hidden">
                   <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-slate-100 text-slate-600">{s.airlineCode}</span>
@@ -325,7 +325,7 @@ export function SegmentsTab({ liveStock, mockSectors, ticketType, canEdit, jumpT
     if (editSectors.length > 0 && editSectors[0].sectorType !== 'Departure') errs._order = 'Sector แรกต้องเป็น Departure'
     if (editSectors.length > 1 && ticketType !== 'FIT') {
       const lastType = editSectors[editSectors.length - 1].sectorType
-      if (lastType !== 'Arrival' && lastType !== 'Departure') errs._return = 'Sector สุดท้ายต้องเป็น Arrival'
+      if (lastType !== 'Arrival' && lastType !== 'Departure') errs._return = 'Sector สุดท้ายต้องเป็น Return'
     }
     editSectors.forEach((s, i) => {
       if (!s.airlineCode || !MASTER_AIRLINE_CODE_SET.has(s.airlineCode))

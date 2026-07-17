@@ -297,7 +297,7 @@ export default function Step1StockInfo({
           <li>Currency แสดงเฉพาะสกุลเงินที่ ACTIVE จาก Currencies Master (ISO 4217)</li>
           <li><strong>ชื่อ {typeConfig.displayName}</strong> จะกำหนดใน Step 4 Review &amp; Save — ระบบจะสร้างชื่อแนะนำจาก Airline, Route และช่วงเดินทางให้อัตโนมัติ</li>
           {(typeConfig.key === 'SERIES' || typeConfig.key === 'AD_HOC' || typeConfig.key === 'TICKET_ONLY') && (
-            <li>ต้องมี Sector ขั้นต่ำ 2 รายการ (Departure + Arrival)</li>
+            <li>ต้องมี Sector ขั้นต่ำ 2 รายการ (Departure + Return)</li>
           )}
           {typeConfig.key === 'FIT' && (
             <li>FIT รองรับ One-way (1 Sector), Round-trip และ Multi-city (≥ 2 Sector)</li>

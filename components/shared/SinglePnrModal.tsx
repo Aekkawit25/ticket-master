@@ -83,7 +83,7 @@ function SectorTable({ rows }: { rows: PnrSectorRow[] }) {
                 <td className="px-2 py-1.5 text-center text-slate-400 font-mono whitespace-nowrap">{r.seq}</td>
                 <td className="px-2 py-1.5 text-left whitespace-nowrap">
                   <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${typeColor}`}>
-                    {r.sectorType.slice(0, 3).toUpperCase()}
+                    {(r.sectorType === 'Arrival' ? 'Return' : r.sectorType).slice(0, 3).toUpperCase()}
                   </span>
                 </td>
                 <td className="px-2 py-1.5 text-left font-mono font-medium text-slate-700 whitespace-nowrap">
