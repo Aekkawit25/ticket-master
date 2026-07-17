@@ -334,8 +334,9 @@ export type CondRefundPenaltyMode = 'NONE' | 'SINGLE' | 'STEP_RULE'
 export type CondNameChangePolicy = 'UNSPECIFIED' | 'ALLOW' | 'NOT_ALLOW' | 'REQUIRE_APPROVAL'
 
 // ─── Change / Reissue types ──────────────────────────────────────────────────
-export type CondChangePolicy  = 'UNSPECIFIED' | 'ALLOW' | 'NOT_ALLOW' | 'REQUIRE_APPROVAL'
-export type CondChangeFeeType = 'NONE' | 'FIXED' | 'PERCENT'
+export type CondChangePolicy   = 'UNSPECIFIED' | 'ALLOW' | 'NOT_ALLOW' | 'REQUIRE_APPROVAL'
+export type CondChangeFeeType  = 'NONE' | 'FIXED' | 'PERCENT'
+export type CondChangeFeeBasis = 'PER_PERSON' | 'PER_CHANGE' | 'PER_PNR'
 
 export interface CondChangeSingleTerm {
   policy:      CondChangePolicy
@@ -344,6 +345,8 @@ export interface CondChangeSingleTerm {
   feePercent:  number | null
   feeCurrency: string
   noticeDays:  number | null
+  maxChanges:  number | null
+  feeBasis:    CondChangeFeeBasis | null
 }
 
 export interface CondChangeTerms {
@@ -786,7 +789,7 @@ export function defaultCancelGroupTerms(): CondCancelGroupTerms {
 }
 
 export function defaultChangeSingleTerm(): CondChangeSingleTerm {
-  return { policy: 'UNSPECIFIED', feeType: 'NONE', feeAmount: null, feePercent: null, feeCurrency: '', noticeDays: null }
+  return { policy: 'UNSPECIFIED', feeType: 'NONE', feeAmount: null, feePercent: null, feeCurrency: '', noticeDays: null, maxChanges: null, feeBasis: null }
 }
 export function defaultChangeTerms(): CondChangeTerms {
   return {

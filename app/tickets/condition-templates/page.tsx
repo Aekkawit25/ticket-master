@@ -8,18 +8,15 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Modal } from '@/components/ui/modal'
 import {
-  PlusCircle, Search, ChevronDown, ChevronRight,
+  PlusCircle, Search,
   Eye, Pencil, Copy, PowerOff, Trash2, Clock,
-  Banknote, CalendarDays, FileText,
+  Banknote, CalendarDays,
 } from 'lucide-react'
 import {
   type AppConditionTemplate,
   type AppCondition,
   type CondStage,
   type CondTtlRule,
-  type CondRefundableType,
-  COND_PAYMENT_TYPE_LABELS,
-  COND_CALC_TYPE_LABELS,
   COND_REFUND_TYPE_LABELS,
   formatStageAmount,
   formatTtlRule,
@@ -105,7 +102,6 @@ export default function ConditionTemplatesPage() {
   const router = useRouter()
   const [templates, setTemplates] = useState<AppConditionTemplate[]>([])
   const [search, setSearch] = useState('')
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
   const [deleteModal, setDeleteModal] = useState<string | null>(null)
 
   const load = () => {
@@ -125,9 +121,6 @@ export default function ConditionTemplatesPage() {
       (t.airlineCode ?? '').toLowerCase().includes(q),
     )
   }, [templates, search])
-
-  const toggle = (id: string) =>
-    setExpandedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
 
   const handleDuplicate    = (id: string) => { duplicateConditionTemplate(id);    load() }
   const handleToggleStatus = (id: string) => { toggleConditionTemplateStatus(id); load() }
@@ -182,7 +175,6 @@ export default function ConditionTemplatesPage() {
         <div className="space-y-2">
           {filtered.map(t => {
             const c            = t.condition
-            const isExpanded   = expandedIds.has(t.templateId)
             const depositStage = getDepositStage(c.stages)
             const firstStage   = c.stages[0] ?? null
             const hasFullPay   = c.stages.some(s => s.paymentType === 'FULL_PAYMENT')
@@ -197,25 +189,8 @@ export default function ConditionTemplatesPage() {
                 <div className="px-4 pt-3 pb-2">
                   <div className="flex items-start gap-3">
 
-                    {/* Toggle chevron */}
-                    <button
-                      type="button"
-                      onClick={() => toggle(t.templateId)}
-                      className="mt-1 shrink-0 text-slate-400 hover:text-slate-600 transition"
-                    >
-                      {isExpanded
-                        ? <ChevronDown size={14} />
-                        : <ChevronRight size={14} />
-                      }
-                    </button>
-
-                    {/* Identity info (click area for expand) */}
-                    <div
-                      role="button" tabIndex={0}
-                      onClick={() => toggle(t.templateId)}
-                      onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && toggle(t.templateId)}
-                      className="min-w-0 flex-1 cursor-pointer"
-                    >
+                    {/* Identity info */}
+                    <div className="min-w-0 flex-1">
                       {/* Row 1: Code + Name */}
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-mono text-[10px] text-slate-500 bg-slate-100 px-1.5 py-px rounded font-semibold shrink-0">
@@ -256,7 +231,7 @@ export default function ConditionTemplatesPage() {
                     </div>
 
                     {/* Actions */}
-                    <div className="flex items-center gap-0.5 shrink-0 -mt-0.5" onClick={e => e.stopPropagation()}>
+                    <div className="flex items-center gap-0.5 shrink-0 -mt-0.5">
                       <button type="button" title="ดูรายละเอียด"
                         onClick={() => router.push(`/tickets/condition-templates/${t.templateId}`)}
                         className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition">
@@ -378,7 +353,7 @@ export default function ConditionTemplatesPage() {
                 </div>
 
                 {/* ══ Card Footer ══ */}
-                <div className="flex items-center justify-between px-4 py-2 border-t border-slate-100 bg-slate-50/60">
+                <div className="flex items-center px-4 py-2 border-t border-slate-100 bg-slate-50/60">
                   <div className="flex items-center gap-3 text-[10px] text-slate-400">
                     <span>ใช้กับ: <strong className="text-slate-600">Group</strong></span>
                     <span className="text-slate-200 select-none">·</span>
@@ -386,168 +361,7 @@ export default function ConditionTemplatesPage() {
                     <span className="text-slate-200 select-none">·</span>
                     <span>v{t.version}</span>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => toggle(t.templateId)}
-                    className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-[#05a94f] transition"
-                  >
-                    {isExpanded ? (
-                      <><ChevronDown size={12} className="shrink-0" /> ย่อรายละเอียด</>
-                    ) : (
-                      <><ChevronRight size={12} className="shrink-0" /> ดูรายละเอียด</>
-                    )}
-                  </button>
                 </div>
-
-                {/* ══ Expanded Detail ══ */}
-                {isExpanded && (
-                  <div className="border-t-2 border-slate-200 bg-slate-50/80 px-4 pb-4 pt-3 space-y-4">
-
-                    {/* รายการรอบชำระเงินทั้งหมด */}
-                    <div>
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-2">
-                        รายการรอบชำระเงิน
-                      </p>
-                      {c.stages.length === 0 ? (
-                        <p className="text-xs text-slate-400 italic px-1">ยังไม่มีรอบชำระ — ยังไม่ระบุ</p>
-                      ) : (
-                        <div className="space-y-2">
-                          {c.stages.map(s => {
-                            const refundable: CondRefundableType = (s as any).refundable ?? 'UNSPECIFIED'
-                            const creditTowardFare: boolean      = (s as any).creditTowardFare ?? false
-                            return (
-                              <div key={s.stageId} className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm">
-                                {/* Stage header */}
-                                <div className="flex items-center gap-2 px-3 py-2 border-b border-slate-100">
-                                  <span className="w-5 h-5 rounded-full bg-[#05a94f] flex items-center justify-center text-[10px] font-bold text-white shrink-0">
-                                    {s.stageNo}
-                                  </span>
-                                  <span className="text-xs font-semibold text-slate-700 flex-1">
-                                    {COND_PAYMENT_TYPE_LABELS[s.paymentType as keyof typeof COND_PAYMENT_TYPE_LABELS]
-                                      ?? s.paymentType
-                                      ?? `งวดที่ ${s.stageNo}`}
-                                  </span>
-                                  <span className="text-sm font-bold text-slate-800 tabular-nums">
-                                    {formatStageAmount(s, t.currency)}
-                                  </span>
-                                </div>
-                                {/* Stage body */}
-                                <div className="px-3 py-2 flex flex-wrap items-center gap-x-4 gap-y-1.5">
-                                  <span className="text-[11px] text-slate-500">
-                                    วิธีคิด:{' '}
-                                    <span className="text-slate-700 font-medium">
-                                      {COND_CALC_TYPE_LABELS[s.calcType as keyof typeof COND_CALC_TYPE_LABELS] ?? s.calcType}
-                                    </span>
-                                  </span>
-                                  <span className="flex items-center gap-1 text-[11px] text-slate-500">
-                                    <Clock size={10} className="text-slate-400 shrink-0" />
-                                    กำหนดชำระ:{' '}
-                                    <span className="text-slate-700 font-medium ml-0.5">{stageDueText(s)}</span>
-                                  </span>
-                                  <div className="flex items-center gap-1 ml-auto flex-wrap">
-                                    {creditTowardFare && (
-                                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-medium border border-emerald-100">
-                                        นับเป็นค่าตั๋ว
-                                      </span>
-                                    )}
-                                    {refundable === 'REFUNDABLE' && (
-                                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 font-medium border border-blue-100">คืนเงินได้</span>
-                                    )}
-                                    {refundable === 'NON_REFUNDABLE' && (
-                                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-50 text-red-600 font-medium border border-red-100">คืนเงินไม่ได้</span>
-                                    )}
-                                    {refundable === 'AS_SEAT_RETURN' && (
-                                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600 font-medium border border-amber-100">ตามเงื่อนไขคืนที่นั่ง</span>
-                                    )}
-                                    {refundable === 'UNSPECIFIED' && (
-                                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-400 font-medium">ยังไม่ระบุคืนเงิน</span>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* TTL */}
-                    <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
-                      <Clock size={12} className="text-purple-400 shrink-0" />
-                      <span className="text-[11px] font-semibold text-slate-500">NAME DL / กำหนดส่งชื่อ</span>
-                      <span className={cn(
-                        'text-xs font-medium',
-                        c.ttlRule?.calcType === 'NOT_SET' || !c.ttlRule ? 'text-slate-400 italic' : 'text-slate-700'
-                      )}>
-                        {ttlSummary(c.ttlRule)}
-                      </span>
-                    </div>
-
-                    {/* เงื่อนไขการคืน */}
-                    <div>
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">
-                        เงื่อนไขการคืน (Refund)
-                      </p>
-                      <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs shadow-sm">
-                        <span className={cn('text-[11px] font-semibold px-2 py-0.5 rounded-full', refundChip.cls)}>
-                          {refundChip.label}
-                        </span>
-                        {c.refundTerms?.remark && (
-                          <p className="mt-1.5 text-[11px] text-slate-500">{c.refundTerms.remark}</p>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* เงื่อนไขลดที่นั่ง */}
-                    <div>
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">
-                        เงื่อนไขการลดที่นั่ง
-                      </p>
-                      <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs shadow-sm">
-                        <span className={cn('text-[11px] font-semibold px-2 py-0.5 rounded-full', seatChip.cls)}>
-                          {seatChip.label}
-                        </span>
-                        {c.seatReductionPolicy?.enabled && c.seatReductionPolicy.maxReducePercent != null && (
-                          <span className="ml-2 text-[11px] text-slate-500">ลดได้สูงสุด {c.seatReductionPolicy.maxReducePercent}%</span>
-                        )}
-                        {c.seatReductionPolicy?.remark && (
-                          <p className="mt-1.5 text-[11px] text-slate-500">{c.seatReductionPolicy.remark}</p>
-                        )}
-                        {!c.seatReductionPolicy?.enabled && (
-                          <span className="ml-2 text-[11px] text-slate-400 italic">ยังไม่ระบุ</span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* เงื่อนไขเพิ่มเติม Free Text */}
-                    {hasFreeText ? (
-                      <div>
-                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5 flex items-center gap-1">
-                          <FileText size={10} />
-                          เงื่อนไขเพิ่มเติม (Free Text)
-                        </p>
-                        <div className="rounded-xl border border-orange-100 bg-orange-50/40 px-3 py-2.5 shadow-sm">
-                          {c.freeTextHtml ? (
-                            <div
-                              className="prose prose-xs max-w-none text-slate-600 text-xs"
-                              dangerouslySetInnerHTML={{ __html: c.freeTextHtml }}
-                            />
-                          ) : (
-                            <p className="text-xs text-slate-600 whitespace-pre-wrap">{c.freeTextCondition}</p>
-                          )}
-                        </div>
-                      </div>
-                    ) : (
-                      <div>
-                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5 flex items-center gap-1">
-                          <FileText size={10} />
-                          เงื่อนไขเพิ่มเติม (Free Text)
-                        </p>
-                        <p className="text-[11px] text-slate-400 italic px-1">ไม่มีเงื่อนไขเพิ่มเติม</p>
-                      </div>
-                    )}
-                  </div>
-                )}
 
               </Card>
             )

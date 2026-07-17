@@ -20,7 +20,7 @@ import {
   CondSingleOverLimit, CondRuleOverLimitAction, CondForfeitSource, CondStepPenaltyType, CondStepCalcBase,
   CondCancelGroupPolicy, CondCancelGroupDeadlineBase, CondCancelGroupRefundable, CondCancelGroupTerms,
   defaultCancelGroupTerms,
-  CondChangePolicy, CondChangeFeeType, CondChangeSingleTerm, CondChangeTerms,
+  CondChangePolicy, CondChangeFeeType, CondChangeFeeBasis, CondChangeSingleTerm, CondChangeTerms,
   defaultChangeTerms, defaultChangeSingleTerm,
   CondPostRefundFeeType, CondPostRefundFeeBase,
   CondMainRefundPolicy,
@@ -55,8 +55,8 @@ export const TABS: { key: TabKey; label: string; no: number }[] = [
   { key: 'payment', label: 'เงื่อนไขงวดชำระเงิน',    no: 2 },
   { key: 'baggage', label: 'เงื่อนไขสัมภาระ',        no: 3 },
   { key: 'reduce',  label: 'เงื่อนไขการลดที่นั่ง',   no: 4 },
-  { key: 'cancel',  label: 'เงื่อนไขการยกเลิกกรุ๊ป', no: 5 },
-  { key: 'change',  label: 'เงื่อนไขการเปลี่ยน',     no: 6 },
+  { key: 'cancel',  label: 'เงื่อนไขการยกเลิกกรุ๊ป (No Sell)', no: 5 },
+  { key: 'change',  label: 'เงื่อนไขการเปลี่ยนชื่อ',  no: 6 },
   { key: 'refund',  label: 'เงื่อนไขการ Refund',      no: 7 },
   { key: 'extra',   label: 'เงื่อนไขเพิ่มเติม',      no: 8 },
 ]
@@ -229,16 +229,11 @@ export function validateTab(key: TabKey, v: AppCondition, conditionMode: Conditi
       const errs: string[] = []
       const ct = v.changeTerms ?? defaultChangeTerms()
       if (ct.enabled) {
-        const validateFee = (label: string, term: typeof ct.dateChange) => {
-          if (term.policy !== 'ALLOW') return
-          if (term.feeType === 'FIXED' && (term.feeAmount == null || term.feeAmount < 0))
-            errs.push(`${label}: กรุณาระบุจำนวนเงินค่าธรรมเนียม`)
-          if (term.feeType === 'PERCENT' && (term.feePercent == null || term.feePercent <= 0))
-            errs.push(`${label}: กรุณาระบุเปอร์เซ็นต์ค่าธรรมเนียม`)
-        }
-        validateFee('เปลี่ยนวันเดินทาง', ct.dateChange)
-        validateFee('เปลี่ยนชื่อผู้โดยสาร', ct.nameChange)
-        validateFee('เปลี่ยนเที่ยวบิน', ct.flightChange)
+        const nc = ct.nameChange
+        if (nc.feeType === 'FIXED' && (nc.feeAmount == null || nc.feeAmount < 0))
+          errs.push('กรุณาระบุจำนวนเงินค่าธรรมเนียมการเปลี่ยนชื่อ')
+        if (nc.feeType === 'PERCENT' && (nc.feePercent == null || nc.feePercent <= 0))
+          errs.push('กรุณาระบุเปอร์เซ็นต์ค่าธรรมเนียมการเปลี่ยนชื่อ')
       }
       return errs
     }
@@ -417,15 +412,9 @@ export function getTabStatus(key: TabKey, v: AppCondition, errs: string[] = [], 
     case 'change': {
       const ct = v.changeTerms ?? defaultChangeTerms()
       if (!ct.enabled) return 'empty'
-      const hasPolicy = ct.dateChange.policy !== 'UNSPECIFIED' || ct.nameChange.policy !== 'UNSPECIFIED' || ct.flightChange.policy !== 'UNSPECIFIED'
-      if (!hasPolicy) return 'incomplete'
-      const checkFee = (term: typeof ct.dateChange) => {
-        if (term.policy !== 'ALLOW') return false
-        if (term.feeType === 'FIXED' && (term.feeAmount == null || term.feeAmount < 0)) return true
-        if (term.feeType === 'PERCENT' && (term.feePercent == null || term.feePercent <= 0)) return true
-        return false
-      }
-      if (checkFee(ct.dateChange) || checkFee(ct.nameChange) || checkFee(ct.flightChange)) return 'incomplete'
+      const nc = ct.nameChange
+      if (nc.feeType === 'FIXED' && (nc.feeAmount == null || nc.feeAmount < 0)) return 'incomplete'
+      if (nc.feeType === 'PERCENT' && (nc.feePercent == null || nc.feePercent <= 0)) return 'incomplete'
       return 'complete'
     }
     case 'refund': {
@@ -495,19 +484,21 @@ export function getTabSummary(key: TabKey, v: AppCondition, currency = 'THB', co
       return formatSeatReductionSummary(migrateSeatReductionPolicy(v.seatReductionPolicy))
     case 'cancel': {
       const cg = v.cancelGroupTerms ?? defaultCancelGroupTerms()
-      if (!cg.enabled) return 'ไม่อนุญาตยกเลิกกรุ๊ป'
-      const noticePart = cg.noticeDays != null ? ` · แจ้งล่วงหน้า ${cg.noticeDays} วัน` : ''
-      return 'อนุญาตยกเลิกตามเงื่อนไข' + noticePart
+      if (!cg.enabled) return 'ยกเลิกกรุ๊ป (No Sell): ไม่อนุญาต'
+      const noticePart = cg.noticeDays != null ? ` · แจ้ง No Sell ${cg.noticeDays} วัน` : ''
+      return 'ยกเลิกกรุ๊ป (No Sell): อนุญาตตามเงื่อนไข' + noticePart
     }
     case 'change': {
       const ct = v.changeTerms ?? defaultChangeTerms()
-      if (!ct.enabled) return 'ไม่อนุญาตการเปลี่ยนแปลง'
-      const policyLabel: Record<string, string> = { ALLOW: 'อนุญาต', NOT_ALLOW: 'ไม่อนุญาต', REQUIRE_APPROVAL: 'ต้องขออนุมัติ', UNSPECIFIED: '' }
+      if (!ct.enabled) return 'ไม่อนุญาตเปลี่ยนชื่อผู้โดยสาร'
+      const nc = ct.nameChange
       const parts: string[] = []
-      if (ct.dateChange.policy !== 'UNSPECIFIED')   parts.push(`วันเดินทาง: ${policyLabel[ct.dateChange.policy]}`)
-      if (ct.nameChange.policy !== 'UNSPECIFIED')   parts.push(`ชื่อ: ${policyLabel[ct.nameChange.policy]}`)
-      if (ct.flightChange.policy !== 'UNSPECIFIED') parts.push(`เที่ยวบิน: ${policyLabel[ct.flightChange.policy]}`)
-      return parts.length > 0 ? parts.join(' · ') : 'อนุญาตเปลี่ยนแปลง (ยังไม่ระบุรายละเอียด)'
+      if (nc.noticeDays != null) parts.push(`แจ้งล่วงหน้า ${nc.noticeDays} วัน`)
+      if (nc.maxChanges  != null) parts.push(`สูงสุด ${nc.maxChanges} ครั้ง`)
+      if (nc.feeType === 'NONE') parts.push('ไม่มีค่าธรรมเนียม')
+      else if (nc.feeType === 'FIXED'   && nc.feeAmount  != null) parts.push(`ค่าธรรมเนียม ${nc.feeAmount.toLocaleString()} ${nc.feeCurrency}`)
+      else if (nc.feeType === 'PERCENT' && nc.feePercent != null) parts.push(`ค่าธรรมเนียม ${nc.feePercent}%`)
+      return 'อนุญาตเปลี่ยนชื่อ' + (parts.length > 0 ? ' · ' + parts.join(' · ') : '')
     }
     case 'refund':
       return formatRefundTermsSummary(migrateRefundTerms(v.refundTerms), currency)
@@ -3033,124 +3024,16 @@ function RefundPenaltyStepRuleRow({ rule, index, readOnly, onUpdate, onRemove, c
 
 // ── ChangeSection ─────────────────────────────────────────────────────────────
 
-const CHANGE_POLICY_OPTIONS: { value: CondChangePolicy; label: string }[] = [
-  { value: 'ALLOW',            label: 'อนุญาต' },
-  { value: 'NOT_ALLOW',        label: 'ไม่อนุญาต' },
-  { value: 'REQUIRE_APPROVAL', label: 'ต้องขออนุมัติ' },
-]
 const CHANGE_FEE_TYPE_OPTIONS: { value: CondChangeFeeType; label: string }[] = [
   { value: 'NONE',    label: 'ไม่มีค่าธรรมเนียม' },
   { value: 'FIXED',   label: 'จำนวนเงิน' },
   { value: 'PERCENT', label: 'เปอร์เซ็นต์' },
 ]
-
-function ChangeSingleTermBlock({
-  title, term, onChange: setTerm, readOnly, currency, showNotice = false,
-}: {
-  title: string
-  term: CondChangeSingleTerm
-  onChange: (patch: Partial<CondChangeSingleTerm>) => void
-  readOnly: boolean
-  currency: string
-  showNotice?: boolean
-}) {
-  const policyColor = (p: CondChangePolicy) =>
-    p === 'ALLOW' ? 'border-[#05a94f] bg-emerald-50 text-[#05a94f]' :
-    p === 'NOT_ALLOW' ? 'border-red-400 bg-red-50 text-red-600' :
-    p === 'REQUIRE_APPROVAL' ? 'border-purple-400 bg-purple-50 text-purple-600' :
-    'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
-
-  return (
-    <div className="rounded-xl border border-slate-200 overflow-hidden">
-      <div className="flex items-center gap-2 px-3 py-2.5 bg-slate-50 border-b border-slate-100">
-        <p className="text-xs font-semibold text-slate-700 flex-1">{title}</p>
-        {term.policy !== 'UNSPECIFIED' && (
-          <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${policyColor(term.policy)}`}>
-            {CHANGE_POLICY_OPTIONS.find(o => o.value === term.policy)?.label}
-          </span>
-        )}
-      </div>
-      <div className="px-3 py-3 space-y-3">
-        {/* Policy */}
-        <div className="flex gap-2 flex-wrap">
-          {CHANGE_POLICY_OPTIONS.map(opt => (
-            <label key={opt.value} className={cn(
-              'flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs cursor-pointer transition select-none',
-              term.policy === opt.value ? policyColor(opt.value) : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50',
-              readOnly && 'pointer-events-none opacity-60',
-            )}>
-              <input type="radio" className="sr-only" checked={term.policy === opt.value}
-                onChange={() => {
-                  const patch: Partial<CondChangeSingleTerm> = { policy: opt.value }
-                  if (opt.value !== 'ALLOW') { patch.feeType = 'NONE'; patch.feeAmount = null; patch.feePercent = null; patch.noticeDays = null }
-                  setTerm(patch)
-                }} disabled={readOnly} />
-              <span className="font-medium">{opt.label}</span>
-            </label>
-          ))}
-        </div>
-
-        {/* Fee fields — only when ALLOW */}
-        {term.policy === 'ALLOW' && (
-          <div className="space-y-2">
-            <div>
-              <Label>ค่าธรรมเนียมการเปลี่ยน</Label>
-              <StatusPills<CondChangeFeeType>
-                value={term.feeType}
-                onChange={v => {
-                  const patch: Partial<CondChangeSingleTerm> = { feeType: v }
-                  if (v !== 'FIXED')   patch.feeAmount  = null
-                  if (v !== 'PERCENT') patch.feePercent = null
-                  setTerm(patch)
-                }}
-                options={CHANGE_FEE_TYPE_OPTIONS}
-                disabled={readOnly}
-              />
-            </div>
-            {term.feeType === 'FIXED' && (
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <Label required>จำนวนเงิน</Label>
-                  <FInput type="number" min={0} value={term.feeAmount ?? ''} disabled={readOnly}
-                    onChange={v => setTerm({ feeAmount: v === '' ? null : Number(v) })} placeholder="0" />
-                </div>
-                <div>
-                  <Label>สกุลเงิน</Label>
-                  <FSelect<string> value={term.feeCurrency || currency}
-                    onChange={v => v && setTerm({ feeCurrency: v })}
-                    options={getCurrencyOptions().map(c => ({ value: c.currencyCode, label: c.currencyCode }))}
-                    disabled={readOnly} />
-                </div>
-              </div>
-            )}
-            {term.feeType === 'PERCENT' && (
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <Label required>เปอร์เซ็นต์</Label>
-                  <div className="flex items-center gap-2">
-                    <FInput type="number" min={0} max={100} value={term.feePercent ?? ''} disabled={readOnly}
-                      onChange={v => setTerm({ feePercent: v === '' ? null : Number(v) })} placeholder="0" />
-                    <span className="text-xs text-slate-500 shrink-0">%</span>
-                  </div>
-                </div>
-              </div>
-            )}
-            {showNotice && (
-              <div>
-                <Label>แจ้งล่วงหน้าไม่น้อยกว่า</Label>
-                <div className="flex items-center gap-2 max-w-[50%]">
-                  <FInput type="number" min={0} value={term.noticeDays ?? ''} disabled={readOnly}
-                    onChange={v => setTerm({ noticeDays: v === '' ? null : Number(v) })} placeholder="ไม่จำกัด" />
-                  <span className="text-xs text-slate-500 shrink-0">วัน</span>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
+const CHANGE_FEE_BASIS_OPTIONS: { value: CondChangeFeeBasis; label: string }[] = [
+  { value: 'PER_PERSON', label: 'ต่อคน' },
+  { value: 'PER_CHANGE', label: 'ต่อครั้ง' },
+  { value: 'PER_PNR',    label: 'ต่อ PNR' },
+]
 
 export function ChangeSection({ value, onChange, readOnly, currency, errors = [] }: {
   value: AppCondition; onChange: (v: AppCondition) => void; readOnly: boolean; currency: string; errors?: string[]
@@ -3158,13 +3041,15 @@ export function ChangeSection({ value, onChange, readOnly, currency, errors = []
   const ct: CondChangeTerms = value.changeTerms ?? defaultChangeTerms()
   const setCt = (patch: Partial<CondChangeTerms>) =>
     onChange({ ...value, changeTerms: { ...ct, ...patch } })
+  const nc = ct.nameChange
+  const setNc = (patch: Partial<CondChangeSingleTerm>) =>
+    setCt({ nameChange: { ...nc, ...patch } })
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
       <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-200 bg-slate-50">
         <Edit2 size={14} className="text-slate-500" />
-        <p className="text-xs font-semibold text-slate-700 flex-1">เงื่อนไขการเปลี่ยน</p>
-        <p className="text-[10px] text-slate-400">เปลี่ยนวันเดินทาง / ชื่อ / เที่ยวบิน</p>
+        <p className="text-xs font-semibold text-slate-700 flex-1">เงื่อนไขการเปลี่ยนชื่อ</p>
       </div>
 
       <div className="px-4 py-4 space-y-4">
@@ -3178,47 +3063,115 @@ export function ChangeSection({ value, onChange, readOnly, currency, errors = []
         <label className="flex items-center gap-3 cursor-pointer select-none p-3 rounded-xl border border-slate-200 hover:bg-slate-50 transition">
           <Toggle checked={ct.enabled} onChange={v => setCt({ enabled: v })} disabled={readOnly} />
           <div>
-            <p className="text-sm font-semibold text-slate-800">อนุญาตให้เปลี่ยนแปลงตามเงื่อนไข</p>
+            <p className="text-sm font-semibold text-slate-800">อนุญาตให้เปลี่ยนชื่อผู้โดยสาร</p>
             <p className="text-[11px] text-slate-400 mt-0.5">
-              {ct.enabled ? 'เปิด — กำหนดเงื่อนไขการเปลี่ยนด้านล่าง' : 'ปิด — ไม่อนุญาตให้เปลี่ยนแปลง'}
+              {ct.enabled ? 'เปิด — กำหนดเงื่อนไขการเปลี่ยนชื่อด้านล่าง' : 'ปิด — ไม่อนุญาตให้เปลี่ยนชื่อผู้โดยสาร'}
             </p>
           </div>
         </label>
 
         {ct.enabled && (
-          <>
-            <ChangeSingleTermBlock
-              title="เปลี่ยนวันเดินทาง"
-              term={ct.dateChange}
-              onChange={patch => setCt({ dateChange: { ...ct.dateChange, ...patch } })}
-              readOnly={readOnly} currency={currency} showNotice
-            />
-            <ChangeSingleTermBlock
-              title="เปลี่ยนชื่อผู้โดยสาร"
-              term={ct.nameChange}
-              onChange={patch => setCt({ nameChange: { ...ct.nameChange, ...patch } })}
-              readOnly={readOnly} currency={currency}
-            />
-            <ChangeSingleTermBlock
-              title="เปลี่ยนเที่ยวบิน"
-              term={ct.flightChange}
-              onChange={patch => setCt({ flightChange: { ...ct.flightChange, ...patch } })}
-              readOnly={readOnly} currency={currency} showNotice
-            />
+          <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-4">
 
-            {/* Remark */}
+            {/* กำหนดเวลา */}
             <div>
-              <Label>รายละเอียดเงื่อนไขการเปลี่ยน</Label>
+              <Label>กำหนดเวลาที่เปลี่ยนชื่อได้ (แจ้งล่วงหน้าไม่น้อยกว่า)</Label>
+              <div className="flex items-center gap-2 max-w-xs">
+                <FInput type="number" min={0} value={nc.noticeDays ?? ''} disabled={readOnly}
+                  onChange={v => setNc({ noticeDays: v === '' ? null : Number(v) })}
+                  placeholder="ไม่จำกัด" />
+                <span className="text-xs text-slate-500 shrink-0">วัน</span>
+              </div>
+            </div>
+
+            {/* จำนวนครั้งสูงสุด */}
+            <div>
+              <Label>เปลี่ยนชื่อได้ไม่เกิน</Label>
+              <div className="flex items-center gap-2 max-w-xs">
+                <FInput type="number" min={1} value={nc.maxChanges ?? ''} disabled={readOnly}
+                  onChange={v => setNc({ maxChanges: v === '' ? null : Number(v) })}
+                  placeholder="ไม่จำกัด" />
+                <span className="text-xs text-slate-500 shrink-0">ครั้ง</span>
+              </div>
+            </div>
+
+            {/* ค่าธรรมเนียม */}
+            <div>
+              <Label>ค่าธรรมเนียมการเปลี่ยนชื่อ</Label>
+              <StatusPills<CondChangeFeeType>
+                value={nc.feeType}
+                onChange={v => {
+                  const patch: Partial<CondChangeSingleTerm> = { feeType: v }
+                  if (v !== 'FIXED')   patch.feeAmount  = null
+                  if (v !== 'PERCENT') patch.feePercent = null
+                  setNc(patch)
+                }}
+                options={CHANGE_FEE_TYPE_OPTIONS}
+                disabled={readOnly}
+              />
+            </div>
+            {nc.feeType === 'FIXED' && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label required>จำนวนเงิน</Label>
+                  <FInput type="number" min={0} value={nc.feeAmount ?? ''} disabled={readOnly}
+                    onChange={v => setNc({ feeAmount: v === '' ? null : Number(v) })} placeholder="0" />
+                </div>
+                <div>
+                  <Label>สกุลเงิน</Label>
+                  <FSelect<string> value={nc.feeCurrency || currency}
+                    onChange={v => v && setNc({ feeCurrency: v })}
+                    options={getCurrencyOptions().map(c => ({ value: c.currencyCode, label: c.currencyCode }))}
+                    disabled={readOnly} />
+                </div>
+              </div>
+            )}
+            {nc.feeType === 'PERCENT' && (
+              <div className="max-w-xs">
+                <Label required>เปอร์เซ็นต์</Label>
+                <div className="flex items-center gap-2">
+                  <FInput type="number" min={0} max={100} value={nc.feePercent ?? ''} disabled={readOnly}
+                    onChange={v => setNc({ feePercent: v === '' ? null : Number(v) })} placeholder="0" />
+                  <span className="text-xs text-slate-500 shrink-0">%</span>
+                </div>
+              </div>
+            )}
+
+            {/* วิธีคิดค่าธรรมเนียม — แสดงเมื่อมีค่าธรรมเนียม */}
+            {nc.feeType !== 'NONE' && (
+              <div>
+                <Label>วิธีคิดค่าธรรมเนียม</Label>
+                <div className="flex gap-2 flex-wrap">
+                  {CHANGE_FEE_BASIS_OPTIONS.map(opt => (
+                    <label key={opt.value} className={cn(
+                      'flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs cursor-pointer transition select-none',
+                      nc.feeBasis === opt.value
+                        ? 'border-[#05a94f] bg-emerald-50 text-[#05a94f] font-semibold'
+                        : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300',
+                      readOnly && 'pointer-events-none opacity-60',
+                    )}>
+                      <input type="radio" className="sr-only" checked={nc.feeBasis === opt.value}
+                        onChange={() => setNc({ feeBasis: opt.value })} disabled={readOnly} />
+                      {opt.label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* รายละเอียด */}
+            <div>
+              <Label>รายละเอียดเงื่อนไขการเปลี่ยนชื่อผู้โดยสาร</Label>
               <textarea
                 className="w-full text-sm rounded-xl border border-slate-200 px-3 py-2.5 bg-white resize-none outline-none focus:ring-2 focus:ring-[#05a94f]/20 focus:border-[#05a94f] transition placeholder:text-slate-300 disabled:opacity-50"
                 rows={3}
                 value={ct.remark}
                 onChange={e => setCt({ remark: e.target.value })}
-                placeholder="เช่น การเปลี่ยนวันเดินทางต้องแจ้งล่วงหน้าไม่น้อยกว่า 14 วัน และเสียค่าธรรมเนียม 500 บาทต่อที่นั่ง"
+                placeholder="เช่น เปลี่ยนชื่อได้ไม่เกิน 1 ครั้ง ต้องแจ้งล่วงหน้าไม่น้อยกว่า 14 วัน ค่าธรรมเนียม 500 บาทต่อคน"
                 disabled={readOnly}
               />
             </div>
-          </>
+          </div>
         )}
       </div>
     </div>
@@ -3253,7 +3206,7 @@ export function CancelGroupSection({ value, onChange, readOnly, currency, errors
       {/* Section header */}
       <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-200 bg-slate-50">
         <X size={14} className="text-slate-500" />
-        <p className="text-xs font-semibold text-slate-700 flex-1">เงื่อนไขการยกเลิกกรุ๊ป</p>
+        <p className="text-xs font-semibold text-slate-700 flex-1">เงื่อนไขการยกเลิกกรุ๊ป (No Sell)</p>
         <p className="text-[10px] text-slate-400">แยกจากเงื่อนไข Refund รายผู้โดยสาร</p>
       </div>
 
@@ -3262,9 +3215,9 @@ export function CancelGroupSection({ value, onChange, readOnly, currency, errors
         <label className="flex items-center gap-3 cursor-pointer select-none p-3 rounded-xl border border-slate-200 hover:bg-slate-50 transition">
           <Toggle checked={cg.enabled} onChange={v => setCg({ enabled: v })} disabled={readOnly} />
           <div>
-            <p className="text-sm font-semibold text-slate-800">อนุญาตให้ยกเลิกกรุ๊ปตามเงื่อนไข</p>
+            <p className="text-sm font-semibold text-slate-800">อนุญาตให้ยกเลิกกรุ๊ป (No Sell) ตามเงื่อนไข</p>
             <p className="text-[11px] text-slate-400 mt-0.5">
-              {cg.enabled ? 'เปิด — กำหนดเงื่อนไขการยกเลิกด้านล่าง' : 'ปิด — ไม่อนุญาตให้ยกเลิกกรุ๊ป'}
+              {cg.enabled ? 'เปิด — กำหนดเงื่อนไขการยกเลิก (No Sell) ด้านล่าง' : 'ปิด — ไม่อนุญาตให้ยกเลิกกรุ๊ป (No Sell)'}
             </p>
           </div>
         </label>
@@ -3274,7 +3227,7 @@ export function CancelGroupSection({ value, onChange, readOnly, currency, errors
                 {/* Notice days + Deadline base */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <Label>แจ้งยกเลิกไม่น้อยกว่า</Label>
+                    <Label>แจ้ง No Sell ไม่น้อยกว่า</Label>
                     <div className="flex items-center gap-2">
                       <FInput
                         type="number" min={0}
@@ -3443,7 +3396,7 @@ export function CancelGroupSection({ value, onChange, readOnly, currency, errors
 
                 {/* Remark */}
                 <div>
-                  <Label>รายละเอียดเงื่อนไขการยกเลิกกรุ๊ป</Label>
+                  <Label>รายละเอียดเงื่อนไขการยกเลิกกรุ๊ป (No Sell)</Label>
                   <textarea
                     className="w-full text-sm rounded-xl border border-slate-200 px-3 py-2.5 bg-white resize-none outline-none focus:ring-2 focus:ring-[#05a94f]/20 focus:border-[#05a94f] transition placeholder:text-slate-300 disabled:opacity-50"
                     rows={3}

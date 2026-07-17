@@ -97,6 +97,9 @@ const SEAT_NOTICE_BASE_LABELS: Record<string, string> = {
   TICKET_ISSUE:   'วันออกตั๋ว',
   SEAT_CONFIRMED: 'วันที่ Confirm ที่นั่ง',
 }
+const CHANGE_FEE_BASIS_LABELS: Record<string, string> = {
+  PER_PERSON: 'ต่อคน', PER_CHANGE: 'ต่อครั้ง', PER_PNR: 'ต่อ PNR',
+}
 
 const ANCILLARY_LABELS: Record<string, string> = {
   UNSPECIFIED: 'ยังไม่ระบุ', YES: 'ได้', NO: 'ไม่ได้',
@@ -543,17 +546,17 @@ export default function ConditionTemplateDetailPage({ params }: { params: Promis
             <CardHeader>
               <div className="flex items-center gap-2">
                 <X size={14} className="text-slate-400" />
-                <CardTitle>เงื่อนไขการยกเลิกกรุ๊ป</CardTitle>
-                <Chip color="green">อนุญาตยกเลิกตามเงื่อนไข</Chip>
+                <CardTitle>เงื่อนไขการยกเลิกกรุ๊ป (No Sell)</CardTitle>
+                <Chip color="green">อนุญาตยกเลิก (No Sell) ตามเงื่อนไข</Chip>
               </div>
             </CardHeader>
             <CardContent className="space-y-3">
                 {/* Deadline — ประโยคเดียวเหมือน Card ลดที่นั่ง */}
                 <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5">
-                  <p className="text-[10px] text-slate-400 mb-0.5">Deadline การยกเลิกกรุ๊ป</p>
+                  <p className="text-[10px] text-slate-400 mb-0.5">Deadline การยกเลิกกรุ๊ป (No Sell)</p>
                   {cg.noticeDays != null ? (
                     <p className="text-xs font-medium text-slate-700">
-                      แจ้งยกเลิกไม่น้อยกว่า{' '}
+                      แจ้ง No Sell ไม่น้อยกว่า{' '}
                       <span className="text-[#05a94f]">{cg.noticeDays} วัน</span>
                       {' '}ก่อน{CG_DEADLINE_BASE_LABELS[cg.deadlineBase] ?? cg.deadlineBase}
                       {cg.deadlineBase === 'CUSTOM_DATE' && cg.deadlineCustomDate && (
@@ -603,43 +606,29 @@ export default function ConditionTemplateDetailPage({ params }: { params: Promis
             <CardHeader>
               <div className="flex items-center gap-2">
                 <Edit2 size={14} className="text-slate-400" />
-                <CardTitle>เงื่อนไขการเปลี่ยน</CardTitle>
-                <Chip color="blue">อนุญาตตามเงื่อนไข</Chip>
+                <CardTitle>เงื่อนไขการเปลี่ยนชื่อ</CardTitle>
+                <Chip color="green">อนุญาตเปลี่ยนชื่อ</Chip>
               </div>
             </CardHeader>
-            <CardContent className="space-y-3">
-              {([
-                { key: 'dateChange',   label: 'เปลี่ยนวันเดินทาง', showNotice: true },
-                { key: 'nameChange',   label: 'เปลี่ยนชื่อผู้โดยสาร', showNotice: false },
-                { key: 'flightChange', label: 'เปลี่ยนเที่ยวบิน', showNotice: true },
-              ] as const).map(({ key, label, showNotice }) => {
-                const term = ch[key]
-                if (!term || term.policy === 'UNSPECIFIED') return null
-                const chipColor = term.policy === 'ALLOW' ? 'green' : term.policy === 'NOT_ALLOW' ? 'red' : 'amber'
-                const policyLabel: Record<string, string> = { ALLOW: 'อนุญาต', NOT_ALLOW: 'ไม่อนุญาต', REQUIRE_APPROVAL: 'ต้องขออนุมัติ' }
-                return (
-                  <div key={key} className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-[10px] font-medium text-slate-500">{label}</span>
-                      <Chip color={chipColor}>{policyLabel[term.policy]}</Chip>
-                    </div>
-                    {term.policy === 'ALLOW' && (
-                      <div className="text-xs text-slate-600 space-y-0.5">
-                        {term.feeType === 'NONE' && <span>ไม่มีค่าธรรมเนียม</span>}
-                        {term.feeType === 'FIXED' && term.feeAmount != null && (
-                          <span>ค่าธรรมเนียม: {term.feeAmount.toLocaleString()} {term.feeCurrency || template.currency}</span>
-                        )}
-                        {term.feeType === 'PERCENT' && term.feePercent != null && (
-                          <span>ค่าธรรมเนียม: {term.feePercent}%</span>
-                        )}
-                        {showNotice && term.noticeDays != null && (
-                          <span className="block">แจ้งล่วงหน้า {term.noticeDays} วัน</span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
+            <CardContent className="space-y-2">
+              {ch.nameChange.noticeDays != null && (
+                <Kv label="แจ้งล่วงหน้าไม่น้อยกว่า">{ch.nameChange.noticeDays} วัน</Kv>
+              )}
+              {ch.nameChange.maxChanges != null && (
+                <Kv label="เปลี่ยนชื่อได้ไม่เกิน">{ch.nameChange.maxChanges} ครั้ง</Kv>
+              )}
+              {ch.nameChange.feeType === 'NONE' && (
+                <Kv label="ค่าธรรมเนียม">ไม่มี</Kv>
+              )}
+              {ch.nameChange.feeType === 'FIXED' && ch.nameChange.feeAmount != null && (
+                <Kv label="ค่าธรรมเนียม">{ch.nameChange.feeAmount.toLocaleString()} {ch.nameChange.feeCurrency || template.currency}</Kv>
+              )}
+              {ch.nameChange.feeType === 'PERCENT' && ch.nameChange.feePercent != null && (
+                <Kv label="ค่าธรรมเนียม">{ch.nameChange.feePercent}%</Kv>
+              )}
+              {ch.nameChange.feeBasis && (
+                <Kv label="วิธีคิดค่าธรรมเนียม">{CHANGE_FEE_BASIS_LABELS[ch.nameChange.feeBasis] ?? ch.nameChange.feeBasis}</Kv>
+              )}
               {ch.remark.trim() && (
                 <p className="text-xs text-slate-500 italic border-t border-slate-100 pt-2">{ch.remark}</p>
               )}

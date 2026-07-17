@@ -103,7 +103,7 @@ function EditorTabBar({
   templateInfo?: TemplateInfo
 }) {
   return (
-    <div className="flex gap-3 overflow-x-auto px-4 py-3 border-b border-slate-200 bg-slate-50 shrink-0">
+    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 px-4 py-3 border-b border-slate-200 bg-slate-50 shrink-0">
       {visibleTabs.map(tab => {
         const isActive = activeTab === tab.key
         const status   = getTabStatus(tab.key, value, errors[tab.key] ?? [], conditionMode, seriesInfo, templateInfo)
@@ -111,7 +111,7 @@ function EditorTabBar({
         const summary  = getTabSummary(tab.key, value, currency, conditionMode, seriesInfo, templateInfo)
 
         const cardCls = cn(
-          'flex-shrink-0 min-w-[176px] min-h-[64px] rounded-xl border-2 px-4 py-2.5 flex flex-col justify-center gap-1 text-left transition-colors cursor-pointer',
+          'w-full min-h-[80px] rounded-xl border-2 px-4 py-3 flex flex-col justify-center gap-1.5 text-left transition-colors cursor-pointer',
           isActive
             ? 'bg-emerald-50 border-[#05a94f] shadow-sm'
             : status === 'error'
@@ -135,8 +135,8 @@ function EditorTabBar({
         )
 
         const labelCls = cn(
-          'text-xs font-semibold leading-snug',
-          isActive         ? 'text-[#05a94f]'   :
+          'text-xs font-semibold leading-snug line-clamp-2',
+          isActive                ? 'text-[#05a94f]'  :
           status === 'error'      ? 'text-red-700'    :
           status === 'incomplete' ? 'text-amber-700'  :
           'text-slate-700',
@@ -159,7 +159,7 @@ function EditorTabBar({
             className={cardCls}
           >
             {/* Row 1: step circle + label */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-start gap-2">
               <span className={stepCls}>{tab.no}</span>
               <span className={labelCls}>{tab.label}</span>
             </div>
