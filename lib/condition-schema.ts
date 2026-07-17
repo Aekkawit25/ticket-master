@@ -1074,7 +1074,7 @@ export function defaultCondition(partial?: Partial<AppCondition>): AppCondition 
     applyCountries:      [],
     effectiveDate:       '',
     version:             'V1',
-    stages:              [],
+    stages:              [defaultCondStage(1)],
     ttlRule:             defaultTtlRule(),
     issuanceMode:        'SEPARATE',
     ticketDlRule:        defaultTtlRule(),

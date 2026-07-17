@@ -980,8 +980,8 @@ function StageCard({ stage, idx, total, currency, readOnly, open, onToggle, onCh
                 className="p-1 rounded text-slate-300 hover:text-blue-500 hover:bg-blue-50 transition">
                 <Copy size={11} />
               </button>
-              <button type="button" title="ลบงวด" onClick={onDelete}
-                className="p-1 rounded text-slate-300 hover:text-red-500 hover:bg-red-50 transition">
+              <button type="button" title={total <= 1 ? 'ต้องมีอย่างน้อย 1 งวด' : 'ลบงวด'} onClick={onDelete} disabled={total <= 1}
+                className="p-1 rounded text-slate-300 hover:text-red-500 hover:bg-red-50 transition disabled:opacity-20 disabled:cursor-not-allowed disabled:hover:text-slate-300 disabled:hover:bg-transparent">
                 <Trash2 size={11} />
               </button>
             </>
@@ -1333,6 +1333,7 @@ export function PaymentSection({ value, onChange, readOnly, currency, errors = [
   }
 
   const deleteStage = (idx: number) => {
+    if (stages.length <= 1) return
     const next = stages.filter((_, i) => i !== idx).map((s, i) => ({ ...s, stageNo: i + 1 }))
     onChange({ ...value, stages: next })
   }
