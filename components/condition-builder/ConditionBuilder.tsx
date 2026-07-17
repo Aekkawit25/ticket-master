@@ -85,7 +85,7 @@ export function validateTab(key: TabKey, v: AppCondition, conditionMode: Conditi
           if (s.percent <= 0)   errs.push(`${no}: เปอร์เซ็นต์ต้องมากกว่า 0`)
           if (s.percent > 100)  errs.push(`${no}: เปอร์เซ็นต์ต้องไม่เกิน 100`)
         }
-        if (DAY_BASED_DUE_TYPES.includes(s.dueType) && !s.dueDays)
+        if (DAY_BASED_DUE_TYPES.includes(s.dueType) && !s.dueDays && s.paymentType !== 'TICKET_ISSUE_DATE')
           errs.push(`${no}: กรุณาระบุจำนวนวัน`)
         if (s.dueType === 'CUSTOM_DATE' && !s.dueDate)
           errs.push(`${no}: กรุณาระบุวันที่กำหนดเอง`)
@@ -816,24 +816,26 @@ export function BasicInfoSection({ value, onChange, readOnly, errors = [], condi
 // ─── § 2 Payment — helpers ───────────────────────────────────────────────────
 
 const PT_COLOR: Record<string, string> = {
-  RSVN_FEE:     'bg-purple-100 text-purple-700',
-  DEPOSIT:      'bg-blue-100 text-blue-700',
-  BALANCE:      'bg-emerald-100 text-emerald-700',
-  FULL_PAYMENT: 'bg-green-100 text-green-700',
-  FEE:          'bg-amber-100 text-amber-700',
-  OTHER:        'bg-slate-100 text-slate-600',
-  '':           'bg-red-100 text-red-500',
+  RSVN_FEE:          'bg-purple-100 text-purple-700',
+  DEPOSIT:           'bg-blue-100 text-blue-700',
+  BALANCE:           'bg-emerald-100 text-emerald-700',
+  FULL_PAYMENT:      'bg-green-100 text-green-700',
+  TICKET_ISSUE_DATE: 'bg-orange-100 text-orange-700',
+  FEE:               'bg-amber-100 text-amber-700',
+  OTHER:             'bg-slate-100 text-slate-600',
+  '':                'bg-red-100 text-red-500',
 }
 
-type PaymentDefaults = Partial<Pick<CondStage, 'calcType' | 'quantityBasis' | 'creditTowardFare' | 'refundable' | 'nonRefundable'>>
+type PaymentDefaults = Partial<Pick<CondStage, 'calcType' | 'quantityBasis' | 'creditTowardFare' | 'refundable' | 'nonRefundable' | 'dueType' | 'dueDays'>>
 
 const PAYMENT_TYPE_DEFAULTS: Record<CondPaymentType, PaymentDefaults> = {
-  RSVN_FEE:     { calcType: 'PER_SEAT',        quantityBasis: 'INITIAL_SEAT',   creditTowardFare: false, refundable: 'NON_REFUNDABLE', nonRefundable: true  },
-  DEPOSIT:      { calcType: 'PER_SEAT',        quantityBasis: 'REMAINING_SEAT', creditTowardFare: true,  refundable: 'UNSPECIFIED',     nonRefundable: false },
-  BALANCE:      { calcType: 'PER_SEAT',        quantityBasis: 'REMAINING_SEAT', creditTowardFare: true,  refundable: 'UNSPECIFIED',     nonRefundable: false },
-  FULL_PAYMENT: { calcType: 'PER_SEAT',        quantityBasis: 'REMAINING_SEAT', creditTowardFare: true,  refundable: 'UNSPECIFIED',     nonRefundable: false },
-  FEE:          { calcType: 'FIXED_PER_SERIES',quantityBasis: 'INITIAL_SEAT',   creditTowardFare: false, refundable: 'NON_REFUNDABLE',  nonRefundable: true  },
-  OTHER:        {},
+  RSVN_FEE:          { calcType: 'PER_SEAT',        quantityBasis: 'INITIAL_SEAT',   creditTowardFare: false, refundable: 'NON_REFUNDABLE', nonRefundable: true  },
+  DEPOSIT:           { calcType: 'PER_SEAT',        quantityBasis: 'REMAINING_SEAT', creditTowardFare: true,  refundable: 'UNSPECIFIED',     nonRefundable: false },
+  BALANCE:           { calcType: 'PER_SEAT',        quantityBasis: 'REMAINING_SEAT', creditTowardFare: true,  refundable: 'UNSPECIFIED',     nonRefundable: false },
+  FULL_PAYMENT:      { calcType: 'PER_SEAT',        quantityBasis: 'REMAINING_SEAT', creditTowardFare: true,  refundable: 'UNSPECIFIED',     nonRefundable: false },
+  TICKET_ISSUE_DATE: { calcType: 'PER_SEAT',        quantityBasis: 'REMAINING_SEAT', creditTowardFare: true,  refundable: 'UNSPECIFIED',     nonRefundable: false, dueType: 'TICKET_ISSUE_MINUS_DAYS', dueDays: 0 },
+  FEE:               { calcType: 'FIXED_PER_SERIES',quantityBasis: 'INITIAL_SEAT',   creditTowardFare: false, refundable: 'NON_REFUNDABLE',  nonRefundable: true  },
+  OTHER:             {},
 }
 
 // Only 3 active calc types in the dropdown
@@ -895,20 +897,22 @@ function formatDueShort(stage: CondStage): string {
 
 // ─── § 2 Stage inline card ───────────────────────────────────────────────────
 
-function StageCard({ stage, idx, total, currency, readOnly, open, onToggle, onChange, onPaymentTypeChange, onDuplicate, onDelete, onMoveUp, onMoveDown }: {
+function StageCard({ stage, idx, total, currency, readOnly, open, onToggle, onChange, onPaymentTypeChange, onDuplicate, onDelete, onMoveUp, onMoveDown, ticketDlLabel }: {
   stage: CondStage; idx: number; total: number; currency: string; readOnly: boolean
   open: boolean; onToggle: () => void
   onChange: (patch: Partial<CondStage>) => void
   onPaymentTypeChange: (pt: CondPaymentType | '') => void
   onDuplicate: () => void; onDelete: () => void; onMoveUp: () => void; onMoveDown: () => void
+  ticketDlLabel: string | null
 }) {
   const set = <K extends keyof CondStage>(k: K, v: CondStage[K]) => onChange({ [k]: v } as Partial<CondStage>)
+  const isTicketIssueDate = stage.paymentType === 'TICKET_ISSUE_DATE'
   const timeUnspecified  = stage.dueTimeUnspecified ?? !stage.dueTime
   const isPercent        = isPercentCalc(stage.calcType)
   const isAmount         = isAmountCalc(stage.calcType)
   const showQtyBasis     = stage.calcType === 'PER_SEAT'
-  const dueNeedsDays     = DAY_BASED_DUE_TYPES.includes(stage.dueType)
-  const dueNeedsDate     = stage.dueType === 'CUSTOM_DATE'
+  const dueNeedsDays     = DAY_BASED_DUE_TYPES.includes(stage.dueType) && !isTicketIssueDate
+  const dueNeedsDate     = stage.dueType === 'CUSTOM_DATE' && !isTicketIssueDate
   const isMissing        = !stage.paymentType
   const preview          = buildPreview(stage, currency)
   const needsAmount      = isAmount && !stage.amount
@@ -1143,20 +1147,42 @@ function StageCard({ stage, idx, total, currency, readOnly, open, onToggle, onCh
             )}
             <div>
               <Label>วิธีคำนวณวันครบกำหนดชำระ</Label>
-              <FSelect<CondDueType>
-                value={stage.dueType}
-                onChange={v => set('dueType', v as CondDueType)}
-                options={([
-                  'TRAVEL_MINUS_DAYS',
-                  'SEAT_CONFIRMED_PLUS_DAYS',
-                  'NAME_DEADLINE_MINUS_DAYS',
-                  'TICKET_ISSUE_MINUS_DAYS',
-                  'CUSTOM_DATE',
-                ] as CondDueType[]).map(v => ({ value: v, label: COND_DUE_TYPE_LABELS[v] }))}
-                disabled={readOnly}
-              />
+              {isTicketIssueDate ? (
+                <div className="h-9 flex items-center gap-2 px-3 rounded-xl border border-orange-200 bg-orange-50/60 text-xs text-orange-700 select-none">
+                  <Lock size={11} className="shrink-0" />
+                  <span>ตรงกับวันออกตั๋ว (อัตโนมัติ)</span>
+                </div>
+              ) : (
+                <FSelect<CondDueType>
+                  value={stage.dueType}
+                  onChange={v => set('dueType', v as CondDueType)}
+                  options={([
+                    'TRAVEL_MINUS_DAYS',
+                    'SEAT_CONFIRMED_PLUS_DAYS',
+                    'NAME_DEADLINE_MINUS_DAYS',
+                    'TICKET_ISSUE_MINUS_DAYS',
+                    'CUSTOM_DATE',
+                  ] as CondDueType[]).map(v => ({ value: v, label: COND_DUE_TYPE_LABELS[v] }))}
+                  disabled={readOnly}
+                />
+              )}
             </div>
           </div>
+
+          {/* TICKET_ISSUE_DATE: แสดง DL ที่ดึงมา หรือ warning ถ้ายังไม่ได้กำหนด */}
+          {isTicketIssueDate && (
+            ticketDlLabel ? (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-orange-50 border border-orange-200 text-[11px] text-orange-700">
+                <Info size={11} className="shrink-0" />
+                <span>วันครบกำหนดชำระ = TICKET DL: <span className="font-semibold">{ticketDlLabel}</span></span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-50 border border-red-200 text-[11px] text-red-700">
+                <AlertCircle size={11} className="shrink-0" />
+                <span>กรุณากำหนดวันออกตั๋ว (TICKET DL) ในส่วน NAME DL &amp; TICKET DL ก่อน</span>
+              </div>
+            )
+          )}
 
           {/* Row 3: Days/Date + Time */}
           {dueNeedsDays && (
@@ -1354,6 +1380,12 @@ export function PaymentSection({ value, onChange, readOnly, currency, errors = [
     updateStage(idx, { paymentType: pt, ...defaults })
   }
 
+  // Ticket DL label — ใช้โดย StageCard สำหรับ TICKET_ISSUE_DATE payment type
+  const effectiveTicketDlRule = value.issuanceMode === 'SEPARATE' ? value.ticketDlRule : value.ttlRule
+  const ticketDlIsSet = !((effectiveTicketDlRule.calcType === 'TRAVEL_MINUS_DAYS' && !effectiveTicketDlRule.daysBefore) ||
+                          (effectiveTicketDlRule.calcType === 'MANUAL_DATE' && !effectiveTicketDlRule.fixedDate))
+  const ticketDlLabel: string | null = ticketDlIsSet ? formatTtlRule(effectiveTicketDlRule) : null
+
   // TTL
   const ttlRule = value.ttlRule
   const setTtl = <K extends keyof CondTtlRule>(k: K, v: CondTtlRule[K]) =>
@@ -1411,6 +1443,7 @@ export function PaymentSection({ value, onChange, readOnly, currency, errors = [
               onDelete={() => deleteStage(idx)}
               onMoveUp={() => moveStage(idx, -1)}
               onMoveDown={() => moveStage(idx, 1)}
+              ticketDlLabel={ticketDlLabel}
             />
           ))}
         </div>

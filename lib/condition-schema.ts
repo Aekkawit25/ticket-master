@@ -5,15 +5,16 @@
 
 // ─── Payment Stage ─────────────────────────────────────────────────────────────
 
-export type CondPaymentType = 'RSVN_FEE' | 'DEPOSIT' | 'BALANCE' | 'FULL_PAYMENT' | 'FEE' | 'OTHER'
+export type CondPaymentType = 'RSVN_FEE' | 'DEPOSIT' | 'BALANCE' | 'FULL_PAYMENT' | 'TICKET_ISSUE_DATE' | 'FEE' | 'OTHER'
 
 export const COND_PAYMENT_TYPE_LABELS: Record<CondPaymentType, string> = {
-  RSVN_FEE:     'ค่าจองที่นั่ง (RSVN Fee)',
-  DEPOSIT:      'มัดจำ (Deposit)',
-  BALANCE:      'ส่วนที่เหลือ (Balance)',
-  FULL_PAYMENT: 'ชำระเต็มจำนวน (Full Payment)',
-  FEE:          'ค่าธรรมเนียม (Fee)',
-  OTHER:        'อื่น ๆ (Other)',
+  RSVN_FEE:          'ค่าจองที่นั่ง (RSVN Fee)',
+  DEPOSIT:           'มัดจำ (Deposit)',
+  BALANCE:           'ส่วนที่เหลือ (Balance)',
+  FULL_PAYMENT:      'ชำระเต็มจำนวน (Full Payment)',
+  TICKET_ISSUE_DATE: 'ชำระเงินวันออกตั๋ว',
+  FEE:               'ค่าธรรมเนียม (Fee)',
+  OTHER:             'อื่น ๆ (Other)',
 }
 
 export type CondCalcType =
