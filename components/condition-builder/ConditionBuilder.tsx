@@ -45,16 +45,16 @@ import { SearchableSelect } from '@/components/ui/searchable-select'
 
 // ─── Tab definitions ──────────────────────────────────────────────────────────
 
-export type TabKey = 'basic' | 'payment' | 'baggage' | 'reduce' | 'refund' | 'extra'
+export type TabKey = 'basic' | 'payment' | 'baggage' | 'reduce' | 'cancel' | 'refund' | 'extra'
 export type TabStatus = 'empty' | 'incomplete' | 'complete' | 'error'
 
 export const TABS: { key: TabKey; label: string; no: number }[] = [
-  { key: 'basic',   label: 'รายละเอียดหัว',      no: 1 },
-  { key: 'payment', label: 'งวดชำระเงิน',         no: 2 },
-  { key: 'baggage', label: 'สัมภาระ',             no: 3 },
-  { key: 'reduce',  label: 'ลดที่นั่ง / ยกเลิกกรุ๊ป', no: 4 },
-  { key: 'refund',  label: 'เงื่อนไขการคืน',      no: 5 },
-  { key: 'extra',   label: 'เงื่อนไขเพิ่มเติม',  no: 6 },
+  { key: 'basic',   label: 'รายละเอียด',              no: 1 },
+  { key: 'payment', label: 'เงื่อนไขงวดชำระเงิน',    no: 2 },
+  { key: 'baggage', label: 'เงื่อนไขสัมภาระ',        no: 3 },
+  { key: 'reduce',  label: 'เงื่อนไขการลดที่นั่ง',   no: 4 },
+  { key: 'cancel',  label: 'เงื่อนไขการยกเลิกกรุ๊ป', no: 5 },
+  { key: 'extra',   label: 'เงื่อนไขเพิ่มเติม',      no: 6 },
 ]
 
 // ─── Per-tab validation ────────────────────────────────────────────────────────
@@ -203,18 +203,21 @@ export function validateTab(key: TabKey, v: AppCondition, conditionMode: Conditi
           }
         }
       }
-      // Cancel Group validation
+      return errs
+    }
+    case 'cancel': {
+      const errs: string[] = []
       const cg = v.cancelGroupTerms ?? defaultCancelGroupTerms()
       if (cg.enabled && cg.policy !== 'UNSPECIFIED') {
         if (cg.overLimitAction === 'FORFEIT' && !cg.forfeitSource)
-          errs.push('ยกเลิกกรุ๊ป: กรุณาเลือกว่ายึดเงินจากส่วนใด')
+          errs.push('กรุณาเลือกว่ายึดเงินจากส่วนใด')
         if (cg.overLimitAction === 'PENALTY') {
           if (cg.penaltyType === 'NONE')
-            errs.push('ยกเลิกกรุ๊ป: กรุณาเลือกประเภทค่าปรับ')
+            errs.push('กรุณาเลือกประเภทค่าปรับ')
           if (cg.penaltyType === 'FIXED' && (cg.penaltyAmount == null || cg.penaltyAmount < 0))
-            errs.push('ยกเลิกกรุ๊ป: กรุณาระบุจำนวนเงินค่าปรับ')
+            errs.push('กรุณาระบุจำนวนเงินค่าปรับ')
           if (cg.penaltyType === 'PERCENT' && (cg.penaltyPercent == null || cg.penaltyPercent <= 0))
-            errs.push('ยกเลิกกรุ๊ป: กรุณาระบุเปอร์เซ็นต์ค่าปรับ')
+            errs.push('กรุณาระบุเปอร์เซ็นต์ค่าปรับ')
         }
       }
       return errs
@@ -359,38 +362,37 @@ export function getTabStatus(key: TabKey, v: AppCondition, errs: string[] = [], 
     }
     case 'reduce': {
       const sp = migrateSeatReductionPolicy(v.seatReductionPolicy)
-      const cg = v.cancelGroupTerms ?? defaultCancelGroupTerms()
-      const spActive = sp.enabled
-      const cgActive = cg.enabled
-      if (!spActive && !cgActive) return 'empty'
-      if (spActive) {
-        if (sp.allowReduction === 'UNSPECIFIED') return 'incomplete'
-        if (sp.mode === 'SINGLE') {
-          if (sp.singleOverLimitAction === 'FORFEIT' && !sp.singleForfeitSource) return 'incomplete'
-          if (sp.singleOverLimitAction === 'PENALTY') {
-            if (sp.singlePenaltyType === 'NONE') return 'incomplete'
-            if (sp.singlePenaltyType === 'FIXED'   && (sp.singlePenaltyAmount  == null || sp.singlePenaltyAmount  < 0)) return 'incomplete'
-            if (sp.singlePenaltyType === 'PERCENT' && (sp.singlePenaltyPercent == null || sp.singlePenaltyPercent <= 0)) return 'incomplete'
-          }
-        }
-        if (sp.mode === 'STEP_RULE') {
-          if (sp.rules.length === 0) return 'incomplete'
-          if (sp.rules.some(r =>
-            (r.ruleOverLimitAction === 'FORFEIT' && !r.forfeitSource) ||
-            (r.ruleOverLimitAction === 'PENALTY' && (
-              (r.penaltyType === 'FIXED'   && (r.penaltyAmount  == null || r.penaltyAmount  < 0)) ||
-              (r.penaltyType === 'PERCENT' && (r.penaltyPercent == null || r.penaltyPercent <= 0))
-            ))
-          )) return 'incomplete'
+      if (!sp.enabled) return 'empty'
+      if (sp.allowReduction === 'UNSPECIFIED') return 'incomplete'
+      if (sp.mode === 'SINGLE') {
+        if (sp.singleOverLimitAction === 'FORFEIT' && !sp.singleForfeitSource) return 'incomplete'
+        if (sp.singleOverLimitAction === 'PENALTY') {
+          if (sp.singlePenaltyType === 'NONE') return 'incomplete'
+          if (sp.singlePenaltyType === 'FIXED'   && (sp.singlePenaltyAmount  == null || sp.singlePenaltyAmount  < 0)) return 'incomplete'
+          if (sp.singlePenaltyType === 'PERCENT' && (sp.singlePenaltyPercent == null || sp.singlePenaltyPercent <= 0)) return 'incomplete'
         }
       }
-      if (cgActive && cg.policy !== 'UNSPECIFIED') {
-        if (cg.overLimitAction === 'FORFEIT' && !cg.forfeitSource) return 'incomplete'
-        if (cg.overLimitAction === 'PENALTY') {
-          if (cg.penaltyType === 'NONE') return 'incomplete'
-          if (cg.penaltyType === 'FIXED'   && (cg.penaltyAmount  == null || cg.penaltyAmount  < 0)) return 'incomplete'
-          if (cg.penaltyType === 'PERCENT' && (cg.penaltyPercent == null || cg.penaltyPercent <= 0)) return 'incomplete'
-        }
+      if (sp.mode === 'STEP_RULE') {
+        if (sp.rules.length === 0) return 'incomplete'
+        if (sp.rules.some(r =>
+          (r.ruleOverLimitAction === 'FORFEIT' && !r.forfeitSource) ||
+          (r.ruleOverLimitAction === 'PENALTY' && (
+            (r.penaltyType === 'FIXED'   && (r.penaltyAmount  == null || r.penaltyAmount  < 0)) ||
+            (r.penaltyType === 'PERCENT' && (r.penaltyPercent == null || r.penaltyPercent <= 0))
+          ))
+        )) return 'incomplete'
+      }
+      return 'complete'
+    }
+    case 'cancel': {
+      const cg = v.cancelGroupTerms ?? defaultCancelGroupTerms()
+      if (!cg.enabled) return 'empty'
+      if (cg.policy === 'UNSPECIFIED') return 'incomplete'
+      if (cg.overLimitAction === 'FORFEIT' && !cg.forfeitSource) return 'incomplete'
+      if (cg.overLimitAction === 'PENALTY') {
+        if (cg.penaltyType === 'NONE') return 'incomplete'
+        if (cg.penaltyType === 'FIXED'   && (cg.penaltyAmount  == null || cg.penaltyAmount  < 0)) return 'incomplete'
+        if (cg.penaltyType === 'PERCENT' && (cg.penaltyPercent == null || cg.penaltyPercent <= 0)) return 'incomplete'
       }
       return 'complete'
     }
@@ -459,6 +461,18 @@ export function getTabSummary(key: TabKey, v: AppCondition, currency = 'THB', co
       return formatBaggageSummary(migrateBaggagePolicy(v.baggagePolicy))
     case 'reduce':
       return formatSeatReductionSummary(migrateSeatReductionPolicy(v.seatReductionPolicy))
+    case 'cancel': {
+      const cg = v.cancelGroupTerms ?? defaultCancelGroupTerms()
+      if (!cg.enabled) return 'ยังไม่ตั้งค่า'
+      const policyLabel: Record<string, string> = {
+        UNSPECIFIED:      'ยังไม่ระบุนโยบาย',
+        ALLOW:            'อนุญาตยกเลิกตามเงื่อนไข',
+        NOT_ALLOW:        'ไม่อนุญาตยกเลิก',
+        REQUIRE_APPROVAL: 'ต้องขออนุมัติ',
+      }
+      const noticePart = cg.noticeDays != null ? ` · แจ้งล่วงหน้า ${cg.noticeDays} วัน` : ''
+      return (policyLabel[cg.policy] ?? cg.policy) + noticePart
+    }
     case 'refund':
       return formatRefundTermsSummary(migrateRefundTerms(v.refundTerms), currency)
     case 'extra': {
@@ -495,7 +509,9 @@ export function clearTab(key: TabKey, v: AppCondition, conditionMode: ConditionM
     case 'baggage':
       return { ...v, baggagePolicy: defaultBaggagePolicy() }
     case 'reduce':
-      return { ...v, seatReductionPolicy: defaultSeatReductionPolicy(), cancelGroupTerms: defaultCancelGroupTerms() }
+      return { ...v, seatReductionPolicy: defaultSeatReductionPolicy() }
+    case 'cancel':
+      return { ...v, cancelGroupTerms: defaultCancelGroupTerms() }
     case 'refund':
       return { ...v, refundTerms: defaultRefundTerms() }
     case 'extra':
@@ -4131,12 +4147,8 @@ export default function ConditionBuilder({
       case 'basic':   return showBasicInfo ? <BasicInfoSection value={value} onChange={onChange} readOnly={readOnly} errors={errors.basic} conditionMode={conditionMode} seriesInfo={seriesInfo} templateInfo={templateInfo} /> : null
       case 'payment': return <PaymentSection value={value} onChange={onChange} readOnly={readOnly} currency={currency} errors={errors.payment} conditionMode={conditionMode} seriesInfo={seriesInfo} />
       case 'baggage': return <BaggageSection value={value} onChange={onChange} readOnly={readOnly} errors={errors.baggage} />
-      case 'reduce':  return (
-        <div className="space-y-4">
-          <SeatReductionSection value={value} onChange={onChange} readOnly={readOnly} currency={currency} errors={errors.reduce} />
-          <CancelGroupSection value={value} onChange={onChange} readOnly={readOnly} currency={currency} errors={errors.reduce} />
-        </div>
-      )
+      case 'reduce':  return <SeatReductionSection value={value} onChange={onChange} readOnly={readOnly} currency={currency} errors={errors.reduce} />
+      case 'cancel':  return <CancelGroupSection value={value} onChange={onChange} readOnly={readOnly} currency={currency} errors={errors.cancel} />
       case 'refund':  return <CombinedRefundSection value={value} onChange={onChange} readOnly={readOnly} currency={currency} errors={errors.refund} />
       case 'extra':   return <AdditionalSection value={value} onChange={onChange} readOnly={readOnly} errors={errors.extra} />
       default:        return null

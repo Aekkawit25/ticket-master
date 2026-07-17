@@ -472,7 +472,7 @@ export default function ConditionTemplateDetailPage({ params }: { params: Promis
             <CardHeader>
               <div className="flex items-center gap-2">
                 <TrendingDown size={14} className="text-slate-400" />
-                <CardTitle>ลดที่นั่ง</CardTitle>
+                <CardTitle>เงื่อนไขการลดที่นั่ง</CardTitle>
                 {sp.allowReduction === 'UNSPECIFIED'
                   ? <Chip color="slate">ยังไม่กำหนดนโยบาย</Chip>
                   : <Chip color="green">อนุญาตให้ลด</Chip>}
@@ -555,7 +555,7 @@ export default function ConditionTemplateDetailPage({ params }: { params: Promis
             <CardHeader>
               <div className="flex items-center gap-2">
                 <X size={14} className="text-slate-400" />
-                <CardTitle>ยกเลิกกรุ๊ป</CardTitle>
+                <CardTitle>เงื่อนไขการยกเลิกกรุ๊ป</CardTitle>
                 <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${CG_POLICY_COLORS[cg.policy] ?? 'bg-slate-100 text-slate-500'}`}>
                   {CG_POLICY_LABELS[cg.policy] ?? cg.policy}
                 </span>

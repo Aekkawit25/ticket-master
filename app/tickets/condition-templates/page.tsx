@@ -358,7 +358,7 @@ export default function ConditionTemplatesPage() {
                 <div className="mx-4 mb-2 flex items-center gap-2 flex-wrap">
                   <SummaryChip label="Refund" value={refundChip.label} cls={refundChip.cls} />
                   <span className="text-slate-200 text-xs select-none">·</span>
-                  <SummaryChip label="ลดที่นั่ง" value={seatChip.label} cls={seatChip.cls} />
+                  <SummaryChip label="ลดที่นั่ง/ยกเลิก" value={seatChip.label} cls={seatChip.cls} />
                   <span className="text-slate-200 text-xs select-none">·</span>
                   <SummaryChip
                     label="Full Payment"
@@ -501,7 +501,7 @@ export default function ConditionTemplatesPage() {
                     {/* เงื่อนไขลดที่นั่ง */}
                     <div>
                       <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">
-                        เงื่อนไขลดที่นั่ง
+                        เงื่อนไขการลดที่นั่ง
                       </p>
                       <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs shadow-sm">
                         <span className={cn('text-[11px] font-semibold px-2 py-0.5 rounded-full', seatChip.cls)}>
