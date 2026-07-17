@@ -58,16 +58,6 @@ const CALC_BASE_LABELS: Record<string, string> = {
   GROUP_PRICE: 'ราคากรุ๊ป', FARE: 'Fare', ALLIN: 'All-in',
   NET_FARE: 'Net Fare', DEPOSIT: 'Deposit', AMOUNT_PAID: 'ยอดที่จ่ายแล้ว',
 }
-const CG_POLICY_LABELS: Record<string, string> = {
-  UNSPECIFIED: 'ยังไม่ระบุ', ALLOW: 'อนุญาต',
-  NOT_ALLOW: 'ไม่อนุญาต', REQUIRE_APPROVAL: 'ต้องขออนุมัติ',
-}
-const CG_POLICY_COLORS: Record<string, string> = {
-  UNSPECIFIED:      'bg-slate-100 text-slate-500',
-  ALLOW:            'bg-green-50 text-green-700',
-  NOT_ALLOW:        'bg-red-50 text-red-700',
-  REQUIRE_APPROVAL: 'bg-purple-50 text-purple-700',
-}
 const CG_DEADLINE_BASE_LABELS: Record<string, string> = {
   DEPARTURE_DATE: 'วันเดินทางวันแรก', TICKET_ISSUE: 'วันออกตั๋ว',
   SEAT_CONFIRMED: 'วันที่ Confirm ที่นั่ง', CUSTOM_DATE: 'วันที่กำหนดเอง',
@@ -552,13 +542,10 @@ export default function ConditionTemplateDetailPage({ params }: { params: Promis
               <div className="flex items-center gap-2">
                 <X size={14} className="text-slate-400" />
                 <CardTitle>เงื่อนไขการยกเลิกกรุ๊ป</CardTitle>
-                <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${CG_POLICY_COLORS[cg.policy] ?? 'bg-slate-100 text-slate-500'}`}>
-                  {CG_POLICY_LABELS[cg.policy] ?? cg.policy}
-                </span>
+                <Chip color="green">อนุญาตยกเลิกตามเงื่อนไข</Chip>
               </div>
             </CardHeader>
-            {cg.policy !== 'UNSPECIFIED' && (
-              <CardContent className="space-y-3">
+            <CardContent className="space-y-3">
                 {/* Deadline — ประโยคเดียวเหมือน Card ลดที่นั่ง */}
                 <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5">
                   <p className="text-[10px] text-slate-400 mb-0.5">Deadline การยกเลิกกรุ๊ป</p>
@@ -605,7 +592,6 @@ export default function ConditionTemplateDetailPage({ params }: { params: Promis
                   <p className="text-xs text-slate-500 italic border-t border-slate-100 pt-2">{cg.remark}</p>
                 )}
               </CardContent>
-            )}
           </Card>
         )}
 

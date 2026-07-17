@@ -207,7 +207,7 @@ export function validateTab(key: TabKey, v: AppCondition, conditionMode: Conditi
     case 'cancel': {
       const errs: string[] = []
       const cg = v.cancelGroupTerms ?? defaultCancelGroupTerms()
-      if (cg.enabled && cg.policy !== 'UNSPECIFIED') {
+      if (cg.enabled) {
         if (cg.overLimitAction === 'FORFEIT' && !cg.forfeitSource)
           errs.push('กรุณาเลือกว่ายึดเงินจากส่วนใด')
         if (cg.overLimitAction === 'PENALTY') {
@@ -385,7 +385,6 @@ export function getTabStatus(key: TabKey, v: AppCondition, errs: string[] = [], 
     case 'cancel': {
       const cg = v.cancelGroupTerms ?? defaultCancelGroupTerms()
       if (!cg.enabled) return 'empty'
-      if (cg.policy === 'UNSPECIFIED') return 'incomplete'
       if (cg.overLimitAction === 'FORFEIT' && !cg.forfeitSource) return 'incomplete'
       if (cg.overLimitAction === 'PENALTY') {
         if (cg.penaltyType === 'NONE') return 'incomplete'
@@ -461,15 +460,9 @@ export function getTabSummary(key: TabKey, v: AppCondition, currency = 'THB', co
       return formatSeatReductionSummary(migrateSeatReductionPolicy(v.seatReductionPolicy))
     case 'cancel': {
       const cg = v.cancelGroupTerms ?? defaultCancelGroupTerms()
-      if (!cg.enabled) return 'ยังไม่ตั้งค่า'
-      const policyLabel: Record<string, string> = {
-        UNSPECIFIED:      'ยังไม่ระบุนโยบาย',
-        ALLOW:            'อนุญาตยกเลิกตามเงื่อนไข',
-        NOT_ALLOW:        'ไม่อนุญาตยกเลิก',
-        REQUIRE_APPROVAL: 'ต้องขออนุมัติ',
-      }
+      if (!cg.enabled) return 'ไม่อนุญาตยกเลิกกรุ๊ป'
       const noticePart = cg.noticeDays != null ? ` · แจ้งล่วงหน้า ${cg.noticeDays} วัน` : ''
-      return (policyLabel[cg.policy] ?? cg.policy) + noticePart
+      return 'อนุญาตยกเลิกตามเงื่อนไข' + noticePart
     }
     case 'refund':
       return formatRefundTermsSummary(migrateRefundTerms(v.refundTerms), currency)
@@ -2993,13 +2986,6 @@ function RefundPenaltyStepRuleRow({ rule, index, readOnly, onUpdate, onRemove, c
 
 // ── CancelGroupSection ────────────────────────────────────────────────────────
 
-const CG_POLICY_OPTIONS: { value: CondCancelGroupPolicy; label: string; desc: string }[] = [
-  { value: 'UNSPECIFIED',      label: 'ไม่ระบุ',          desc: 'ยังไม่ได้กำหนดนโยบาย' },
-  { value: 'ALLOW',            label: 'อนุญาต',           desc: 'สามารถยกเลิกกรุ๊ปได้ตามเงื่อนไข' },
-  { value: 'NOT_ALLOW',        label: 'ไม่อนุญาต',        desc: 'ห้ามยกเลิกกรุ๊ปในทุกกรณี' },
-  { value: 'REQUIRE_APPROVAL', label: 'ต้องขออนุมัติ',   desc: 'ต้องได้รับการอนุมัติก่อนยกเลิก' },
-]
-
 const CG_DEADLINE_BASE_OPTIONS: { value: CondCancelGroupDeadlineBase; label: string }[] = [
   { value: 'DEPARTURE_DATE', label: 'วันเดินทางแรก' },
   { value: 'TICKET_ISSUE',   label: 'วันออกตั๋ว' },
@@ -3021,8 +3007,6 @@ export function CancelGroupSection({ value, onChange, readOnly, currency, errors
   const setCg = (patch: Partial<CondCancelGroupTerms>) =>
     onChange({ ...value, cancelGroupTerms: { ...cg, ...patch } })
 
-  const policyActive = cg.enabled && cg.policy !== 'UNSPECIFIED'
-
   return (
     <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
       {/* Section header */}
@@ -3037,51 +3021,15 @@ export function CancelGroupSection({ value, onChange, readOnly, currency, errors
         <label className="flex items-center gap-3 cursor-pointer select-none p-3 rounded-xl border border-slate-200 hover:bg-slate-50 transition">
           <Toggle checked={cg.enabled} onChange={v => setCg({ enabled: v })} disabled={readOnly} />
           <div>
-            <p className="text-sm font-semibold text-slate-800">เปิดใช้งานเงื่อนไขการยกเลิกกรุ๊ป</p>
+            <p className="text-sm font-semibold text-slate-800">อนุญาตให้ยกเลิกกรุ๊ปตามเงื่อนไข</p>
             <p className="text-[11px] text-slate-400 mt-0.5">
-              {cg.enabled ? 'เปิดใช้งาน — กรอกเงื่อนไขด้านล่าง' : 'ปิดอยู่ — ไม่มีเงื่อนไขการยกเลิกกรุ๊ป'}
+              {cg.enabled ? 'เปิด — กำหนดเงื่อนไขการยกเลิกด้านล่าง' : 'ปิด — ไม่อนุญาตให้ยกเลิกกรุ๊ป'}
             </p>
           </div>
         </label>
 
         {cg.enabled && (
           <>
-            {/* Policy */}
-            <div>
-              <Label>นโยบายการยกเลิกกรุ๊ป</Label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {CG_POLICY_OPTIONS.map(opt => (
-                  <label key={opt.value} className={cn(
-                    'flex flex-col gap-1 p-2.5 rounded-xl border cursor-pointer select-none transition',
-                    cg.policy === opt.value
-                      ? (opt.value === 'NOT_ALLOW' ? 'border-red-400 bg-red-50' : 'border-[#05a94f] bg-emerald-50')
-                      : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/40',
-                    readOnly && 'pointer-events-none opacity-60',
-                  )}>
-                    <input type="radio" className="sr-only" checked={cg.policy === opt.value}
-                      onChange={() => {
-                        const patch: Partial<CondCancelGroupTerms> = { policy: opt.value }
-                        if (opt.value === 'UNSPECIFIED') {
-                          // ล้างค่าทั้งหมดเมื่อเลือก "ไม่ระบุ"
-                          Object.assign(patch, {
-                            noticeDays: null, deadlineBase: 'DEPARTURE_DATE', deadlineCustomDate: '',
-                            overLimitAction: 'UNSPECIFIED', forfeitSource: null,
-                            penaltyType: 'NONE', penaltyAmount: null, penaltyPercent: null, penaltyCurrency: '',
-                            refundable: 'UNSPECIFIED', remark: '',
-                          })
-                        }
-                        setCg(patch)
-                      }}
-                      disabled={readOnly} />
-                    <span className="text-xs font-semibold text-slate-700">{opt.label}</span>
-                    <span className="text-[10px] text-slate-400 leading-snug">{opt.desc}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            {policyActive && (
-              <>
                 {/* Notice days + Deadline base */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -3264,8 +3212,6 @@ export function CancelGroupSection({ value, onChange, readOnly, currency, errors
                     disabled={readOnly}
                   />
                 </div>
-              </>
-            )}
           </>
         )}
       </div>
