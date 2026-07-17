@@ -905,7 +905,7 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
                       <XL className={locked ? 'bg-slate-50/70' : ''}>
                         {locked ? (
                           <div className={cn('px-2 py-[5px] text-xs font-semibold select-none', typeOpt?.text || 'text-slate-700')}>
-                            {s.sector_type}
+                            {typeOpt?.label ?? s.sector_type}
                           </div>
                         ) : (
                           <select
