@@ -148,7 +148,6 @@ export function validateTab(key: TabKey, v: AppCondition, conditionMode: Conditi
       const errs: string[] = []
       const sp = migrateSeatReductionPolicy(v.seatReductionPolicy)
       if (!sp.enabled) return errs
-      if (sp.allowReduction === 'UNSPECIFIED') return errs
       if (sp.mode === 'SINGLE') {
         if (sp.maxReducePercent != null && (sp.maxReducePercent < 0 || sp.maxReducePercent > 100))
           errs.push('ลดได้สูงสุด (%) ต้องอยู่ระหว่าง 0–100')
@@ -363,7 +362,6 @@ export function getTabStatus(key: TabKey, v: AppCondition, errs: string[] = [], 
     case 'reduce': {
       const sp = migrateSeatReductionPolicy(v.seatReductionPolicy)
       if (!sp.enabled) return 'empty'
-      if (sp.allowReduction === 'UNSPECIFIED') return 'incomplete'
       if (sp.mode === 'SINGLE') {
         if (sp.singleOverLimitAction === 'FORFEIT' && !sp.singleForfeitSource) return 'incomplete'
         if (sp.singleOverLimitAction === 'PENALTY') {
@@ -2352,56 +2350,23 @@ export function SeatReductionSection({ value, onChange, readOnly, currency, erro
             </div>
             <div className="px-4 py-4 space-y-4">
 
-              {/* allowReduction */}
+              {/* รายละเอียดเงื่อนไขการลดที่นั่ง */}
               <div>
-                <Label>นโยบายการลดที่นั่ง</Label>
-                <StatusPills<CondSeatReductionAllow>
-                  value={sp.allowReduction}
-                  onChange={v => {
-                    if (v === 'UNSPECIFIED' && sp.allowReduction === 'ALLOW') {
-                      const hasData = sp.rules.length > 0 || sp.maxReducePercent != null ||
-                                      sp.noticeDays != null || sp.remark.trim() !== '' ||
-                                      sp.singleOverLimitAction !== 'NO_FORFEIT'
-                      if (hasData && !window.confirm(
-                        'การเปลี่ยนเป็น \'ไม่ระบุ\' จะล้างข้อมูลเงื่อนไขการลดที่นั่งทั้งหมด\nต้องการดำเนินการต่อหรือไม่?'
-                      )) return
-                      setSp({ allowReduction: 'UNSPECIFIED', mode: 'SINGLE', maxReducePercent: null,
-                              basis: 'INITIAL_SEAT', noticeDays: null, singleOverLimitAction: 'NO_FORFEIT',
-                              singlePenaltyType: 'NONE', singlePenaltyPercent: null,
-                              singlePenaltyAmount: null, singleCalcBase: 'GROUP_PRICE',
-                              rules: [], remark: '' })
-                    } else if (v === 'ALLOW' && sp.allowReduction === 'UNSPECIFIED') {
-                      setSp({ allowReduction: 'ALLOW', mode: 'SINGLE', basis: 'INITIAL_SEAT',
-                              maxReducePercent: null, noticeDays: null,
-                              singleOverLimitAction: 'NO_FORFEIT', rules: [] })
-                    } else {
-                      setSp({ allowReduction: v })
-                    }
-                  }}
-                  options={SR_ALLOW_OPTIONS}
+                <Label>รายละเอียดเงื่อนไขการลดที่นั่ง</Label>
+                <FTextarea
+                  value={sp.remark}
+                  onChange={v => setSp({ remark: v })}
+                  placeholder="เช่น อนุญาตลดได้ 30% ก่อนเดินทาง 45 วัน หากเกินเงื่อนไขไม่มีคืนเงิน"
+                  rows={3}
+                  maxLength={1000}
                   disabled={readOnly}
                 />
+                {sp.remark.length > 900 && (
+                  <p className="text-[10px] text-slate-400 mt-0.5 text-right">{sp.remark.length}/1000</p>
+                )}
               </div>
 
-              {sp.allowReduction === 'ALLOW' && (
-                <div>
-                  <Label>รายละเอียดนโยบายการลดที่นั่ง</Label>
-                  <FTextarea
-                    value={sp.remark}
-                    onChange={v => setSp({ remark: v })}
-                    placeholder="เช่น อนุญาตลดได้ 30% ก่อนเดินทาง 45 วัน หากเกินเงื่อนไขไม่มีคืนเงิน"
-                    rows={3}
-                    maxLength={1000}
-                    disabled={readOnly}
-                  />
-                  {sp.remark.length > 900 && (
-                    <p className="text-[10px] text-slate-400 mt-0.5 text-right">{sp.remark.length}/1000</p>
-                  )}
-                </div>
-              )}
-
-              {sp.allowReduction === 'ALLOW' && (
-                <>
+              <>
                   {/* mode */}
                   <div>
                     <Label>รูปแบบเงื่อนไขการลดที่นั่ง</Label>
@@ -2609,7 +2574,6 @@ export function SeatReductionSection({ value, onChange, readOnly, currency, erro
                     </>
                   )}
                 </>
-              )}
 
             </div>
           </div>
@@ -2617,19 +2581,6 @@ export function SeatReductionSection({ value, onChange, readOnly, currency, erro
           {/* ── Live Preview ── */}
           {(() => {
             const basisLabel = SR_BASIS_OPTIONS.find(o => o.value === sp.basis)?.label ?? sp.basis
-            if (sp.allowReduction === 'UNSPECIFIED') {
-              return (
-                <div className="rounded-2xl border border-sky-200 bg-sky-50 overflow-hidden">
-                  <div className="flex items-center gap-2 px-4 py-2.5 bg-sky-100 border-b border-sky-200">
-                    <Eye size={13} className="text-sky-600 shrink-0" />
-                    <span className="text-xs font-semibold text-sky-800">ตัวอย่างจากข้อมูลที่ตั้งค่า</span>
-                  </div>
-                  <div className="px-4 py-3">
-                    <p className="text-sm text-slate-400 italic">ยังไม่ได้ระบุนโยบายการลดที่นั่ง</p>
-                  </div>
-                </div>
-              )
-            }
             const lines: { text: string; missing: boolean }[] = []
             if (sp.mode === 'SINGLE') {
               if (sp.maxReducePercent != null) {
@@ -2716,7 +2667,7 @@ export function SeatReductionSection({ value, onChange, readOnly, currency, erro
           })()}
 
           {/* ── Card 2: Step Rules (only in STEP_RULE mode) ── */}
-          {sp.allowReduction === 'ALLOW' && sp.mode === 'STEP_RULE' && (
+          {sp.mode === 'STEP_RULE' && (
             <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
               <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-200 bg-slate-50">
                 <Layers size={14} className="text-slate-500" />

@@ -869,14 +869,13 @@ export function migrateSeatReductionPolicy(raw: any): CondSeatReductionPolicy {
 }
 
 export function formatSeatReductionSummary(sp: CondSeatReductionPolicy): string {
-  if (!sp.enabled) return 'ไม่เปิดใช้งาน'
-  if (sp.allowReduction === 'UNSPECIFIED') return 'ลดที่นั่ง: ยังไม่ตั้งค่า'
+  if (!sp.enabled) return 'ลดที่นั่ง: ไม่ได้เปิดใช้งาน'
   const shortRemark = sp.remark?.trim()
     ? ' — ' + (sp.remark.trim().length > 80 ? sp.remark.trim().slice(0, 80) + '…' : sp.remark.trim())
     : ''
 
   if (sp.mode === 'STEP_RULE') {
-    if (sp.rules.length === 0) return 'ลดที่นั่ง: ใช้กฎขั้นบันได (ยังไม่มีกฎ)' + shortRemark
+    if (sp.rules.length === 0) return 'ลดที่นั่ง: อนุญาต · ใช้กฎขั้นบันได (ยังไม่มีกฎ)' + shortRemark
     const ruleShort = (r: CondSeatReductionRule): string => {
       const range =
         r.rangeType === 'FROM_DAY_UP' ? `${r.fromDays ?? '?'}+ วัน` :
@@ -889,16 +888,13 @@ export function formatSeatReductionSummary(sp: CondSeatReductionPolicy): string 
       return `${range}${pct}${over}`
     }
     const detail = sp.rules.map(ruleShort).join(' · ')
-    return `ลดที่นั่ง: ใช้กฎขั้นบันได ${sp.rules.length} ช่วง · ${detail}${shortRemark}`
-  }
-  const allowLabel: Record<CondSeatReductionAllow, string> = {
-    ALLOW: 'อนุญาต', UNSPECIFIED: 'ยังไม่ระบุ',
+    return `ลดที่นั่ง: อนุญาต · ใช้กฎขั้นบันได ${sp.rules.length} ช่วง · ${detail}${shortRemark}`
   }
   const overLimitLabel: Record<CondSingleOverLimit, string> = {
     UNSPECIFIED: 'ยังไม่กำหนด', NO_FORFEIT: 'ไม่ยึดเงิน',
     FORFEIT: 'ยึดเงิน', PENALTY: 'คิดค่าปรับ', REQUIRE_APPROVAL: 'ต้องขออนุมัติ',
   }
-  const parts: string[] = ['ลดที่นั่ง:', allowLabel[sp.allowReduction] ?? 'ยังไม่ระบุ']
+  const parts: string[] = ['ลดที่นั่ง: อนุญาต']
   if (sp.maxReducePercent != null) parts.push(`ลดได้ ${sp.maxReducePercent}%`)
   if (sp.noticeDays != null) parts.push(`แจ้งลดไม่น้อยกว่า ${sp.noticeDays} วันก่อนเดินทาง`)
   parts.push(`เกินเงื่อนไข: ${overLimitLabel[sp.singleOverLimitAction]}`)
@@ -912,7 +908,7 @@ export function formatSeatReductionSummary(sp: CondSeatReductionPolicy): string 
     else if (sp.singlePenaltyType === 'FIXED' && sp.singlePenaltyAmount != null)
       parts.push(`ปรับ ${sp.singlePenaltyAmount}`)
   }
-  return parts.join(' ') + shortRemark
+  return parts.join(' · ') + shortRemark
 }
 
 export function defaultSeatReturnPolicy(): CondSeatReturnPolicy {

@@ -473,13 +473,10 @@ export default function ConditionTemplateDetailPage({ params }: { params: Promis
               <div className="flex items-center gap-2">
                 <TrendingDown size={14} className="text-slate-400" />
                 <CardTitle>เงื่อนไขการลดที่นั่ง</CardTitle>
-                {sp.allowReduction === 'UNSPECIFIED'
-                  ? <Chip color="slate">ยังไม่กำหนดนโยบาย</Chip>
-                  : <Chip color="green">อนุญาตให้ลด</Chip>}
+                <Chip color="green">อนุญาตให้ลด</Chip>
               </div>
             </CardHeader>
-            {sp.allowReduction !== 'UNSPECIFIED' && (
-              <CardContent className="space-y-3">
+            <CardContent className="space-y-3">
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   <Kv label="โหมด">
                     <Chip color="blue">{sp.mode === 'SINGLE' ? 'เงื่อนไขเดียว' : 'กฎขั้นบันได'}</Chip>
@@ -545,7 +542,6 @@ export default function ConditionTemplateDetailPage({ params }: { params: Promis
                   <p className="text-xs text-slate-500 italic border-t border-slate-100 pt-2">{sp.remark}</p>
                 )}
               </CardContent>
-            )}
           </Card>
         )}
 
