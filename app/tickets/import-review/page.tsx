@@ -23,7 +23,7 @@ import {
 } from '@/lib/demo-storage'
 import type { DemoStock, DemoPNR, DemoSector, DemoLog } from '@/lib/demo-storage'
 import type { AppStockCondition } from '@/lib/condition-schema'
-import { newConditionId, newStageId, defaultBaggagePolicy, defaultSeatReductionPolicy, defaultSeatReturnPolicy, defaultRefundTerms, defaultCancelGroupTerms, defaultTtlRule } from '@/lib/condition-schema'
+import { newConditionId, newStageId, defaultBaggagePolicy, defaultSeatReductionPolicy, defaultSeatReturnPolicy, defaultRefundTerms, defaultCancelGroupTerms, defaultChangeTerms, defaultTtlRule } from '@/lib/condition-schema'
 import type { ImportReviewData, ImportPNR } from '@/lib/excel-import'
 import { addDays, format as fnsFormat, parseISO, isValid } from 'date-fns'
 import { ChevronLeft, CheckCircle, AlertCircle, AlertTriangle, Copy } from 'lucide-react'
@@ -284,6 +284,7 @@ function ImportReviewInner() {
         baggagePolicy: defaultBaggagePolicy(),
         seatReductionPolicy: defaultSeatReductionPolicy(),
         cancelGroupTerms:    defaultCancelGroupTerms(),
+        changeTerms:         defaultChangeTerms(),
         seatReturnPolicy: defaultSeatReturnPolicy(),
         refundPolicy: { enabled: false, refundType: null, description: '', tiers: [] },
         refundTerms: defaultRefundTerms(),

@@ -7,7 +7,7 @@ import {
   calcCondTtlDate,
   defaultBaggagePolicy, migrateBaggagePolicy,
   defaultSeatReductionPolicy, migrateSeatReductionPolicy, defaultSeatReturnPolicy, defaultRefundPolicy, defaultTtlRule,
-  migrateRefundTerms, defaultRefundTerms, defaultCancelGroupTerms,
+  migrateRefundTerms, defaultRefundTerms, defaultCancelGroupTerms, defaultChangeTerms,
 } from '@/lib/condition-schema'
 
 // Map removed calc types to the nearest active equivalent
@@ -504,6 +504,7 @@ export function getDemoStocks(): DemoStock[] {
         baggagePolicy:       migrateBaggagePolicy((cond as any).baggagePolicy ?? null) ?? defaultBaggagePolicy(),
         seatReductionPolicy: migrateSeatReductionPolicy((cond as any).seatReductionPolicy ?? null),
         cancelGroupTerms:    (cond as any).cancelGroupTerms ?? defaultCancelGroupTerms(),
+        changeTerms:         (cond as any).changeTerms ?? defaultChangeTerms(),
         seatReturnPolicy:    cond.seatReturnPolicy     ?? defaultSeatReturnPolicy(),
         refundPolicy:        cond.refundPolicy         ?? defaultRefundPolicy(),
         refundTerms:         migrateRefundTerms((cond as any).refundTerms ?? null),
@@ -589,6 +590,7 @@ export function getDemoStocks(): DemoStock[] {
             baggagePolicy:       defaultBaggagePolicy(),
             seatReductionPolicy: defaultSeatReductionPolicy(),
             cancelGroupTerms:    defaultCancelGroupTerms(),
+            changeTerms:         defaultChangeTerms(),
             seatReturnPolicy:    defaultSeatReturnPolicy(),
             refundPolicy: {
               enabled: !!(c.refundType),

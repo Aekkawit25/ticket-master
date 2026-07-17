@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { Modal } from '@/components/ui/modal'
 import {
   Pencil, Copy, PowerOff, Trash2, ArrowLeft,
-  CreditCard, Clock, Package, TrendingDown, X, RefreshCcw, FileText,
+  CreditCard, Clock, Package, TrendingDown, X, RefreshCcw, FileText, Edit2,
 } from 'lucide-react'
 import {
   type AppConditionTemplate, type CondStage, type CondSeatReductionRule,
@@ -214,6 +214,7 @@ export default function ConditionTemplateDetailPage({ params }: { params: Promis
   const bp  = c.baggagePolicy
   const sp  = c.seatReductionPolicy
   const cg  = c.cancelGroupTerms
+  const ch  = c.changeTerms
   const rt  = c.refundTerms
 
   // Section visibility
@@ -222,6 +223,7 @@ export default function ConditionTemplateDetailPage({ params }: { params: Promis
   const hasBaggage   = bp.checkedBagStatus !== 'UNSPECIFIED' || bp.carryOnStatus !== 'UNSPECIFIED' || !!bp.remark.trim()
   const hasSeatRed   = sp.enabled
   const hasCancelGrp = cg.enabled
+  const hasChange    = !!(ch?.enabled)
   const hasRefund    = rt.enabled || c.refundPolicy.enabled
   const hasExtra     = !!(c.freeTextCondition?.trim() || c.freeTextHtml?.trim())
   const hasNote      = !!c.internalNote?.trim()
@@ -592,6 +594,56 @@ export default function ConditionTemplateDetailPage({ params }: { params: Promis
                   <p className="text-xs text-slate-500 italic border-t border-slate-100 pt-2">{cg.remark}</p>
                 )}
               </CardContent>
+          </Card>
+        )}
+
+        {/* ── Change Terms ──────────────────────────────────────────────────── */}
+        {hasChange && ch && (
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Edit2 size={14} className="text-slate-400" />
+                <CardTitle>เงื่อนไขการเปลี่ยน</CardTitle>
+                <Chip color="blue">อนุญาตตามเงื่อนไข</Chip>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {([
+                { key: 'dateChange',   label: 'เปลี่ยนวันเดินทาง', showNotice: true },
+                { key: 'nameChange',   label: 'เปลี่ยนชื่อผู้โดยสาร', showNotice: false },
+                { key: 'flightChange', label: 'เปลี่ยนเที่ยวบิน', showNotice: true },
+              ] as const).map(({ key, label, showNotice }) => {
+                const term = ch[key]
+                if (!term || term.policy === 'UNSPECIFIED') return null
+                const chipColor = term.policy === 'ALLOW' ? 'green' : term.policy === 'NOT_ALLOW' ? 'red' : 'amber'
+                const policyLabel: Record<string, string> = { ALLOW: 'อนุญาต', NOT_ALLOW: 'ไม่อนุญาต', REQUIRE_APPROVAL: 'ต้องขออนุมัติ' }
+                return (
+                  <div key={key} className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-[10px] font-medium text-slate-500">{label}</span>
+                      <Chip color={chipColor}>{policyLabel[term.policy]}</Chip>
+                    </div>
+                    {term.policy === 'ALLOW' && (
+                      <div className="text-xs text-slate-600 space-y-0.5">
+                        {term.feeType === 'NONE' && <span>ไม่มีค่าธรรมเนียม</span>}
+                        {term.feeType === 'FIXED' && term.feeAmount != null && (
+                          <span>ค่าธรรมเนียม: {term.feeAmount.toLocaleString()} {term.feeCurrency || template.currency}</span>
+                        )}
+                        {term.feeType === 'PERCENT' && term.feePercent != null && (
+                          <span>ค่าธรรมเนียม: {term.feePercent}%</span>
+                        )}
+                        {showNotice && term.noticeDays != null && (
+                          <span className="block">แจ้งล่วงหน้า {term.noticeDays} วัน</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+              {ch.remark.trim() && (
+                <p className="text-xs text-slate-500 italic border-t border-slate-100 pt-2">{ch.remark}</p>
+              )}
+            </CardContent>
           </Card>
         )}
 

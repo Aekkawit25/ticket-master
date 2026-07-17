@@ -333,6 +333,27 @@ export type CondRefundPenaltyMode = 'NONE' | 'SINGLE' | 'STEP_RULE'
 
 export type CondNameChangePolicy = 'UNSPECIFIED' | 'ALLOW' | 'NOT_ALLOW' | 'REQUIRE_APPROVAL'
 
+// ─── Change / Reissue types ──────────────────────────────────────────────────
+export type CondChangePolicy  = 'UNSPECIFIED' | 'ALLOW' | 'NOT_ALLOW' | 'REQUIRE_APPROVAL'
+export type CondChangeFeeType = 'NONE' | 'FIXED' | 'PERCENT'
+
+export interface CondChangeSingleTerm {
+  policy:      CondChangePolicy
+  feeType:     CondChangeFeeType
+  feeAmount:   number | null
+  feePercent:  number | null
+  feeCurrency: string
+  noticeDays:  number | null
+}
+
+export interface CondChangeTerms {
+  enabled:      boolean
+  dateChange:   CondChangeSingleTerm
+  nameChange:   CondChangeSingleTerm
+  flightChange: CondChangeSingleTerm
+  remark:       string
+}
+
 export interface CondRefundPenaltyStepRule {
   id: string
   fromDaysBefore: number | null
@@ -500,9 +521,10 @@ export interface AppCondition {
   // § 3 สัมภาระ
   baggagePolicy: CondBaggagePolicy
 
-  // § 4 ลดที่นั่ง / ยกเลิกกรุ๊ป
+  // § 4 ลดที่นั่ง / ยกเลิกกรุ๊ป / การเปลี่ยนแปลง
   seatReductionPolicy: CondSeatReductionPolicy
   cancelGroupTerms: CondCancelGroupTerms
+  changeTerms: CondChangeTerms
 
   // § 5 คืนที่นั่ง (legacy — kept for migration)
   seatReturnPolicy: CondSeatReturnPolicy
@@ -759,6 +781,19 @@ export function defaultCancelGroupTerms(): CondCancelGroupTerms {
     penaltyCurrency: '',
     penaltyCalcBase: 'GROUP_PRICE',
     refundable: 'UNSPECIFIED',
+    remark: '',
+  }
+}
+
+export function defaultChangeSingleTerm(): CondChangeSingleTerm {
+  return { policy: 'UNSPECIFIED', feeType: 'NONE', feeAmount: null, feePercent: null, feeCurrency: '', noticeDays: null }
+}
+export function defaultChangeTerms(): CondChangeTerms {
+  return {
+    enabled: false,
+    dateChange:   defaultChangeSingleTerm(),
+    nameChange:   defaultChangeSingleTerm(),
+    flightChange: defaultChangeSingleTerm(),
     remark: '',
   }
 }
@@ -1078,6 +1113,7 @@ export function defaultCondition(partial?: Partial<AppCondition>): AppCondition 
     baggagePolicy:       defaultBaggagePolicy(),
     seatReductionPolicy: defaultSeatReductionPolicy(),
     cancelGroupTerms:    defaultCancelGroupTerms(),
+    changeTerms:         defaultChangeTerms(),
     seatReturnPolicy:    defaultSeatReturnPolicy(),
     refundPolicy:        defaultRefundPolicy(),
     refundTerms:         defaultRefundTerms(),
