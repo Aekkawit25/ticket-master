@@ -51,6 +51,7 @@ import { CurrencyCombobox } from '@/components/shared/CurrencyCombobox'
 import { AirlineCombobox } from '@/components/shared/AirlineCombobox'
 import RichTextEditor from '@/components/condition-builder/RichTextEditor'
 import { SearchableSelect } from '@/components/ui/searchable-select'
+import { TimeInput } from '@/components/ui/time-input'
 
 // ─── Tab definitions ──────────────────────────────────────────────────────────
 
@@ -775,7 +776,7 @@ function TtlRuleForm({ label, sublabel, rule, setRule, readOnly }: {
           </div>
           <div>
             <Label>เวลา Deadline</Label>
-            <FInput type="time" value={rule.time} onChange={v => setRule('time', v)} disabled={readOnly} />
+            <TimeInput value={rule.time} onChange={v => setRule('time', v)} disabled={readOnly} />
           </div>
         </div>
       )}
@@ -787,7 +788,7 @@ function TtlRuleForm({ label, sublabel, rule, setRule, readOnly }: {
           </div>
           <div>
             <Label>เวลา Deadline</Label>
-            <FInput type="time" value={rule.time} onChange={v => setRule('time', v)} disabled={readOnly} />
+            <TimeInput value={rule.time} onChange={v => setRule('time', v)} disabled={readOnly} />
           </div>
         </div>
       )}
@@ -1396,7 +1397,7 @@ function StageCard({ stage, idx, total, currency, readOnly, open, onToggle, onCh
                 </div>
                 <div>
                   <Label>เวลา Deadline</Label>
-                  <FInput type="time" value={stage.dueTime} onChange={v => set('dueTime', v)} disabled={readOnly || timeUnspecified} />
+                  <TimeInput value={stage.dueTime} onChange={v => set('dueTime', v)} disabled={readOnly || timeUnspecified} />
                   {!readOnly && (
                     <label className="flex items-center gap-1.5 mt-1.5 cursor-pointer select-none">
                       <input
@@ -1441,7 +1442,7 @@ function StageCard({ stage, idx, total, currency, readOnly, open, onToggle, onCh
               </div>
               <div>
                 <Label>เวลา Deadline</Label>
-                <FInput type="time" value={stage.dueTime} onChange={v => set('dueTime', v)} disabled={readOnly || timeUnspecified} />
+                <TimeInput value={stage.dueTime} onChange={v => set('dueTime', v)} disabled={readOnly || timeUnspecified} />
                 {!readOnly && (
                   <label className="flex items-center gap-1.5 mt-1.5 cursor-pointer select-none">
                     <input

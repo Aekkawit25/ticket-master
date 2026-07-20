@@ -8,6 +8,7 @@ import { formatDate, buildRouteText } from '@/lib/utils'
 import { calcTtlDateFromTravel, type TtlType } from '@/lib/ttl-utils'
 import type { PnrFormValues, PnrModalFlightSet, PnrModalCondition, PnrSectorRow } from '@/lib/pnr-shared-utils'
 import { EMPTY_PNR_FORM, validatePnrFormValues, buildSectorRows } from '@/lib/pnr-shared-utils'
+import { TimeInput } from '@/components/ui/time-input'
 import type { DemoStock } from '@/lib/demo-storage'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -450,7 +451,7 @@ export function SinglePnrModal({
                   />
                 </Field>
                 <Field label="เวลา (ไม่บังคับ)">
-                  <input type="time" value={values.ttlTime} onChange={e => patch({ ttlTime: e.target.value })} className={cls('ttlTime')} />
+                  <TimeInput value={values.ttlTime} onChange={v => patch({ ttlTime: v })} className={cls('ttlTime')} />
                 </Field>
               </div>
               {ttlDisplayDate && (
@@ -470,7 +471,7 @@ export function SinglePnrModal({
                 <input type="date" value={values.ttlDate} onChange={e => patch({ ttlDate: e.target.value })} className={cls('ttlDate')} />
               </Field>
               <Field label="เวลา (ไม่บังคับ)">
-                <input type="time" value={values.ttlTime} onChange={e => patch({ ttlTime: e.target.value })} className={cls('ttlTime')} />
+                <TimeInput value={values.ttlTime} onChange={v => patch({ ttlTime: v })} className={cls('ttlTime')} />
               </Field>
             </div>
           )}

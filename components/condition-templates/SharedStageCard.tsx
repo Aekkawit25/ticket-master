@@ -18,6 +18,7 @@ import {
   type DueCalculationType,
 } from '@/lib/template-storage'
 import type { PaymentType, PercentBase } from '@/types'
+import { TimeInput } from '@/components/ui/time-input'
 
 // ─── Exported constants ───────────────────────────────────────────────────────
 
@@ -473,9 +474,11 @@ export const StageCard = memo(function StageCard({
 
                 {/* เวลา Deadline */}
                 <Slot label="เวลา Deadline" gone={!showDueTime}>
-                  <input type="time" className={iCls}
-                    value={stage.dueTime}
-                    onChange={e => handleChange({ dueTime: e.target.value })} />
+                  <TimeInput
+                    value={stage.dueTime ?? ''}
+                    onChange={v => handleChange({ dueTime: v })}
+                    className={iCls}
+                  />
                 </Slot>
               </div>
 

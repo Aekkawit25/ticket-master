@@ -1,3 +1,5 @@
+import { normalizeTime } from './time-utils'
+
 // ─── Column guides ─────────────────────────────────────────────────────────────
 export const PASTE_COLUMN_GUIDE = [
   { no: 1,  name: 'PNR',             example: 'SD1SD2 หรือว่าง' },
@@ -185,14 +187,6 @@ function addDaysToDateStr(dateStr: string, days: number): string {
   return `${y}-${m}-${dd}`
 }
 
-function normalizeTime(raw: string): string {
-  const s = (raw ?? '').trim()
-  if (/^\d{1,2}:\d{2}$/.test(s)) {
-    const [h, min] = s.split(':')
-    return `${h.padStart(2, '0')}:${min}`
-  }
-  return s
-}
 
 // ─── parsePastedExcel ─────────────────────────────────────────────────────────
 export function parsePastedExcel(text: string): string[][] {

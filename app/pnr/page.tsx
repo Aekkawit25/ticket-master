@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button'
 import { StatCard } from '@/components/ui/card'
 import { Badge, PNRStatusBadge, TicketTypeBadge } from '@/components/ui/badge'
 import { Table, TableHead, TableBody, Th, Td, TableRow, EmptyRow } from '@/components/ui/table'
+import { TimeInput } from '@/components/ui/time-input'
 import { Modal } from '@/components/ui/modal'
 import {
   Search, X, Eye, ExternalLink, Link2, Repeat,
@@ -2072,8 +2073,8 @@ function ViewDrawer({
                         </div>
                         <div>
                           <label className="text-xs font-medium text-slate-600 block mb-1">เวลา</label>
-                          <input type="time" value={txActionForm.effectiveTime}
-                            onChange={e => setTxActionForm(f => ({ ...f, effectiveTime: e.target.value }))}
+                          <TimeInput value={txActionForm.effectiveTime}
+                            onChange={v => setTxActionForm(f => ({ ...f, effectiveTime: v }))}
                             className={inputCls} />
                         </div>
                       </div>
@@ -2335,8 +2336,8 @@ function ViewDrawer({
                   {txModal === 'payment' && (
                     <div>
                       <label className="text-xs font-medium text-slate-600 block mb-1">เวลา</label>
-                      <input type="time" value={txForm.transactionTime}
-                        onChange={e => setTxForm(f => ({ ...f, transactionTime: e.target.value }))}
+                      <TimeInput value={txForm.transactionTime}
+                        onChange={v => setTxForm(f => ({ ...f, transactionTime: v }))}
                         className={inputCls} />
                     </div>
                   )}
