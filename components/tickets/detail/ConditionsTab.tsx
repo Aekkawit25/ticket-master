@@ -7,7 +7,7 @@ import { Modal } from '@/components/ui/modal'
 import {
   CheckCircle2, AlertTriangle, X, FileText, Search, Check,
   ChevronDown, ChevronRight, Pencil, Copy, RefreshCw, Plus, Clock,
-  GitCompare, ArrowUpCircle, Info,
+  GitCompare, ArrowUpCircle, Info, ExternalLink, ArrowRightLeft, Unlink,
 } from 'lucide-react'
 import { saveDemoStock } from '@/lib/demo-storage'
 import type { DemoStock, DemoLog } from '@/lib/demo-storage'
@@ -376,6 +376,8 @@ export function ConditionsTab({
   const [expandedIds, setExpandedIds]               = useState<Set<string>>(new Set())
   const [showDiffId, setShowDiffId]                 = useState<string | null>(null)
   const [toast, setToast]                           = useState('')
+  const [pendingChangeTemplate, setPendingChangeTemplate] = useState<AppConditionTemplate | null>(null)
+  const [showRemoveConfirm, setShowRemoveConfirm]         = useState<AppStockCondition | null>(null)
 
   // Template list (loaded once; refreshed after reset)
   const [allTemplates, setAllTemplates] = useState<AppConditionTemplate[]>(() => getConditionTemplates())
@@ -393,6 +395,8 @@ export function ConditionsTab({
   }, [jumpToEdit])
 
   const conditions = liveStock?.conditions ?? []
+  const hasTemplateCond = conditions.some(c => c.source === 'template')
+  const directPnrConditions = liveStock?.pnrs.filter(p => p.conditionTemplateId) ?? []
 
   const toggleCard = (id: string) =>
     setExpandedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
@@ -500,6 +504,14 @@ export function ConditionsTab({
   const handleUseTemplate = useCallback((tmpl: AppConditionTemplate) => {
     if (!liveStock) return
     setShowTemplatePicker(false)
+
+    // If there's already a template condition, show change confirmation instead
+    const existingTemplateCond = liveStock.conditions.find(c => c.source === 'template')
+    if (existingTemplateCond) {
+      setPendingChangeTemplate(tmpl)
+      return
+    }
+
     const sc = snapshotTemplateToCondition(tmpl, 'ผู้ใช้งาน')
     const existingCodes = liveStock.conditions.map(c => c.condition.conditionCode)
     if (existingCodes.includes(sc.condition.conditionCode)) {
@@ -517,6 +529,41 @@ export function ConditionsTab({
     setExpandedIds(prev => new Set([...prev, sc.condition.conditionId]))
     showToast(`รับ Condition จาก Template ${tmpl.condition.conditionCode} v${tmpl.version} สำเร็จ`)
     refreshTemplates()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveStock])
+
+  // ── Confirm change to a different template ────────────────────────────────────
+  const handleConfirmChangeTemplate = useCallback(() => {
+    if (!liveStock || !pendingChangeTemplate) return
+    const sc = snapshotTemplateToCondition(pendingChangeTemplate, 'ผู้ใช้งาน')
+    const nonTemplateCodes = liveStock.conditions.filter(c => c.source !== 'template').map(c => c.condition.conditionCode)
+    if (nonTemplateCodes.includes(sc.condition.conditionCode)) {
+      sc.condition.conditionId = newConditionId()
+      sc.condition.conditionCode = generateConditionCode(nonTemplateCodes)
+    }
+    sc.condition.airline = liveStock.airlineCode
+    sc.condition.currency = liveStock.currency
+    sc.condition.status = 'Active'
+    const nonTemplateConds = liveStock.conditions.filter(c => c.source !== 'template')
+    const tmpl = pendingChangeTemplate
+    persistUpdate(
+      [sc, ...nonTemplateConds],
+      `เปลี่ยน Template Condition เป็น "${sc.condition.conditionName}" จาก ${tmpl.condition.conditionCode} v${tmpl.version}`,
+    )
+    setPendingChangeTemplate(null)
+    setExpandedIds(prev => new Set([...prev, sc.condition.conditionId]))
+    showToast(`เปลี่ยน Condition เป็น ${tmpl.condition.conditionCode} v${tmpl.version} สำเร็จ`)
+    refreshTemplates()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveStock, pendingChangeTemplate])
+
+  // ── Remove condition from series ─────────────────────────────────────────────
+  const handleRemoveCondition = useCallback((sc: AppStockCondition) => {
+    if (!liveStock) return
+    const newConditions = liveStock.conditions.filter(c => c.condition.conditionId !== sc.condition.conditionId)
+    persistUpdate(newConditions, `ยกเลิกการใช้ Condition "${sc.condition.conditionName}"`)
+    setShowRemoveConfirm(null)
+    showToast(`ยกเลิกการใช้ Condition "${sc.condition.conditionName}" แล้ว`)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [liveStock])
 
@@ -638,7 +685,7 @@ export function ConditionsTab({
         <div className="flex items-center gap-2 flex-wrap">
           <Button size="sm" variant="outline" icon={<FileText size={13} />}
             onClick={() => setShowTemplatePicker(true)}>
-            ใช้ Template Condition
+            {hasTemplateCond ? 'เปลี่ยน Template Condition' : 'ใช้ Template Condition'}
           </Button>
           <Button size="sm" variant="outline" icon={<Plus size={13} />}
             onClick={handleAddNew}>
@@ -649,7 +696,7 @@ export function ConditionsTab({
 
       {/* Read-only condition cards */}
       <div className="space-y-3">
-        {conditions.length === 0 ? (
+        {conditions.length === 0 && directPnrConditions.length === 0 ? (
           <Card>
             <CardContent>
               <div className="flex flex-col items-center py-10 gap-4 text-center">
@@ -676,10 +723,20 @@ export function ConditionsTab({
             </CardContent>
           </Card>
         ) : (
-          conditions.map(sc => {
+          <>
+            {/* Section 1: Series-level conditions */}
+            {conditions.length === 0 ? (
+              <div className="flex items-center gap-2 px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-500">
+                <Clock size={13} className="text-slate-400 shrink-0" />
+                ยังไม่ได้กำหนด Condition ให้ Series
+              </div>
+            ) : (
+              conditions.map(sc => {
             const c = sc.condition
             const isExpanded = expandedIds.has(c.conditionId)
-            const pnrCount = liveStock?.pnrs.filter(p => p.conditionCode === c.conditionCode || p.conditionCode === c.conditionId).length ?? 0
+            const pnrCount = sc.source === 'template'
+              ? (liveStock?.pnrs.filter(p => !p.conditionTemplateId).length ?? 0)
+              : (liveStock?.pnrs.filter(p => p.conditionCode === c.conditionCode || p.conditionCode === c.conditionId).length ?? 0)
             return (
               <Card key={c.conditionId}>
                 <div
@@ -701,12 +758,26 @@ export function ConditionsTab({
                       {/* Row 2: badges */}
                       <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                         <RelationshipBadge sc={sc} allTemplates={allTemplates} />
+                        {sc.source === 'template' && sc.sourceTemplateId && (() => {
+                          const rel = getSeriesConditionRelationship(sc, allTemplates)
+                          return (
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-blue-50 text-blue-600 border border-blue-100">
+                              <FileText size={9} />
+                              รับจาก {rel.templateCode || sc.sourceTemplateId} v{sc.sourceTemplateVersion ?? 1}
+                            </span>
+                          )
+                        })()}
                         <span className={`inline-flex items-center px-1.5 py-px rounded text-[10px] font-semibold ${c.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
                           {c.status}
                         </span>
                         <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 font-medium">{c.stages.length} งวด</span>
                         {pnrCount > 0 && (
                           <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 font-medium">{pnrCount} PNR ใช้งาน</span>
+                        )}
+                        {sc.appliedAt && sc.source === 'template' && (
+                          <span className="text-[10px] text-slate-400">
+                            นำมาใช้ {new Date(sc.appliedAt).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })}
+                          </span>
                         )}
                         {c.description && (
                           <span className="text-[10px] text-slate-400 truncate max-w-xs">{c.description}</span>
@@ -720,6 +791,13 @@ export function ConditionsTab({
                       const rel = getSeriesConditionRelationship(sc, allTemplates)
                       return (
                         <>
+                          {/* ดู Template ต้นทาง */}
+                          <button type="button"
+                            title="ดู Template ต้นทาง"
+                            onClick={() => window.open(`/tickets/condition-templates/${sc.sourceTemplateId}`, '_self')}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition">
+                            <ExternalLink size={13} />
+                          </button>
                           {/* Compare button */}
                           <button type="button"
                             title="เปรียบเทียบกับ Template"
@@ -738,6 +816,24 @@ export function ConditionsTab({
                               onClick={() => setShowResetConfirm(sc)}
                               className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition">
                               <RefreshCw size={13} />
+                            </button>
+                          )}
+                          {/* เปลี่ยน Template Condition */}
+                          {canEdit && (
+                            <button type="button"
+                              title="เปลี่ยน Template Condition"
+                              onClick={() => setShowTemplatePicker(true)}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition">
+                              <ArrowRightLeft size={13} />
+                            </button>
+                          )}
+                          {/* ยกเลิกการใช้ Condition */}
+                          {canEdit && (
+                            <button type="button"
+                              title="ยกเลิกการใช้ Condition"
+                              onClick={() => setShowRemoveConfirm(sc)}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition">
+                              <Unlink size={13} />
                             </button>
                           )}
                         </>
@@ -964,7 +1060,41 @@ export function ConditionsTab({
                 )}
               </Card>
             )
-          })
+              })
+            )}
+
+            {/* Section 2: Direct PNR conditions */}
+            {directPnrConditions.length > 0 && (
+              <div className="space-y-2 mt-2">
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-1.5">
+                  <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-blue-100 text-blue-600 text-[9px] font-bold">{directPnrConditions.length}</span>
+                  Condition เฉพาะ PNR (กำหนดโดยตรง)
+                </p>
+                {directPnrConditions.map(pnr => {
+                  const tmpl = allTemplates.find(t => t.templateId === pnr.conditionTemplateId)
+                  const pnrDisplay = pnr.pnrCode || pnr.dummyPnr || pnr.pnrDisplay || pnr.pnrId
+                  return (
+                    <div key={pnr.pnrId} className="flex items-center gap-3 px-4 py-2.5 rounded-xl border border-blue-100 bg-blue-50">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-mono text-xs font-bold text-slate-700">{pnrDisplay}</span>
+                          <span className="inline-flex px-1.5 py-px rounded text-[9px] font-medium bg-blue-100 text-blue-700 border border-blue-200">กำหนดโดยตรง</span>
+                        </div>
+                        {tmpl ? (
+                          <p className="text-[10px] text-slate-500 mt-0.5">
+                            {tmpl.condition.conditionCode} · {tmpl.condition.conditionName}
+                            <span className="text-blue-400 ml-1">v{tmpl.version}</span>
+                          </p>
+                        ) : (
+                          <p className="text-[10px] text-slate-400 mt-0.5">{pnr.conditionTemplateId}</p>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -1003,6 +1133,82 @@ export function ConditionsTab({
         onSaveDraft={canEdit ? saveDraftEdit : undefined}
         onSave={saveEdit}
       />
+
+      {/* Change template confirm */}
+      <Modal
+        open={!!pendingChangeTemplate}
+        onClose={() => setPendingChangeTemplate(null)}
+        title="เปลี่ยน Template Condition"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setPendingChangeTemplate(null)}>ยกเลิก</Button>
+            <Button onClick={handleConfirmChangeTemplate}>ยืนยัน — เปลี่ยน Condition</Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          {/* Old condition */}
+          {conditions.find(c => c.source === 'template') && (() => {
+            const old = conditions.find(c => c.source === 'template')!
+            return (
+              <div className="rounded-xl bg-slate-50 border border-slate-200 p-3">
+                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-1.5">Condition เดิม</p>
+                <p className="text-sm font-semibold text-slate-700">{old.condition.conditionName}</p>
+                <p className="text-xs text-slate-500 font-mono">{old.condition.conditionCode} · v{old.sourceTemplateVersion ?? 1}</p>
+              </div>
+            )
+          })()}
+          <div className="flex items-center justify-center text-slate-300 text-lg">↓</div>
+          {/* New condition */}
+          {pendingChangeTemplate && (
+            <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-3">
+              <p className="text-[10px] font-semibold text-emerald-500 uppercase tracking-wide mb-1.5">Condition ใหม่</p>
+              <p className="text-sm font-semibold text-emerald-700">{pendingChangeTemplate.condition.conditionName}</p>
+              <p className="text-xs text-emerald-600 font-mono">{pendingChangeTemplate.condition.conditionCode} · v{pendingChangeTemplate.version}</p>
+            </div>
+          )}
+          {/* Affected PNR count */}
+          {liveStock && (
+            <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+              <AlertTriangle size={13} className="shrink-0" />
+              {liveStock.pnrs.filter(p => !p.conditionTemplateId).length} PNR ใน Series นี้จะได้รับ Condition ใหม่
+            </div>
+          )}
+        </div>
+      </Modal>
+
+      {/* Remove condition confirm */}
+      <Modal
+        open={!!showRemoveConfirm}
+        onClose={() => setShowRemoveConfirm(null)}
+        title="ยกเลิกการใช้ Condition"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setShowRemoveConfirm(null)}>กลับ</Button>
+            <Button variant="danger" onClick={() => showRemoveConfirm && handleRemoveCondition(showRemoveConfirm)}>
+              ยืนยัน — ยกเลิกการใช้
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <div className="rounded-xl bg-amber-50 border border-amber-200 p-3">
+            <div className="flex items-start gap-2">
+              <AlertTriangle size={13} className="shrink-0 text-amber-600 mt-0.5" />
+              <div>
+                <p className="text-xs font-semibold text-amber-800 mb-1">Condition ที่จะถูกยกเลิก</p>
+                <p className="text-sm font-semibold text-slate-700">{showRemoveConfirm?.condition.conditionName}</p>
+                <p className="text-xs text-slate-500 font-mono">{showRemoveConfirm?.condition.conditionCode}</p>
+              </div>
+            </div>
+          </div>
+          {liveStock && (
+            <p className="text-xs text-slate-600">
+              {liveStock.pnrs.filter(p => !p.conditionTemplateId).length} PNR ใน Series นี้ที่รับ Condition จาก Series จะหยุดใช้ Condition นี้
+            </p>
+          )}
+        </div>
+      </Modal>
 
       {/* Reset from template confirm */}
       <Modal

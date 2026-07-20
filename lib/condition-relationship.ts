@@ -327,3 +327,62 @@ export function getPnrConditionSourceType(pnr: DemoPNR, stock: DemoStock): PnrCo
   if (stock.conditions.length > 0) return 'SERIES'
   return 'NONE'
 }
+
+// ─── Effective condition resolution ──────────────────────────────────────────
+
+export interface EffectiveConditionInfo {
+  conditionCode: string
+  conditionName: string
+  source: 'DIRECT' | 'SERIES'
+  templateId?: string
+}
+
+/**
+ * Single source of truth for a PNR's effective condition.
+ * Priority: direct template assignment > explicit conditionCode > inherited series condition.
+ */
+export function getEffectiveConditionForPnr(
+  pnr: DemoPNR,
+  stock: DemoStock,
+  allTemplates: AppConditionTemplate[],
+): EffectiveConditionInfo | null {
+  // 1. Direct template assignment (set from Template Condition page)
+  if (pnr.conditionTemplateId) {
+    const tmpl = allTemplates.find(t => t.templateId === pnr.conditionTemplateId)
+    if (tmpl) return {
+      conditionCode: tmpl.condition.conditionCode,
+      conditionName: tmpl.condition.conditionName,
+      source: 'DIRECT',
+      templateId: tmpl.templateId,
+    }
+  }
+
+  // 2. Explicit conditionCode (set from PNR tab dropdown)
+  if (pnr.conditionCode) {
+    const sc = stock.conditions.find(c => c.condition.conditionCode === pnr.conditionCode)
+    return {
+      conditionCode: pnr.conditionCode,
+      conditionName: sc?.condition.conditionName ?? pnr.conditionCode,
+      source: 'DIRECT',
+    }
+  }
+
+  // 3. Inherit from series template condition
+  const seriesCond = stock.conditions.find(c => c.source === 'template')
+  if (seriesCond) return {
+    conditionCode: seriesCond.condition.conditionCode,
+    conditionName: seriesCond.condition.conditionName,
+    source: 'SERIES',
+    templateId: seriesCond.sourceTemplateId,
+  }
+
+  // 4. Inherit from any active series condition
+  const activeSC = stock.conditions.find(c => c.condition.status === 'Active')
+  if (activeSC) return {
+    conditionCode: activeSC.condition.conditionCode,
+    conditionName: activeSC.condition.conditionName,
+    source: 'SERIES',
+  }
+
+  return null
+}

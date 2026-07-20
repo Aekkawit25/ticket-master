@@ -54,9 +54,22 @@ export default function TicketDetailPage() {
   useEffect(() => { setLiveStock(getDemoStockById(id) ?? getDemoStockByCode(id)); setIsMounted(true) }, [id])
 
   useEffect(() => {
-    const handle = () => setLiveStock(getDemoStockById(id) ?? getDemoStockByCode(id))
-    window.addEventListener('demo_stock_updated', handle)
-    return () => window.removeEventListener('demo_stock_updated', handle)
+    const refetch = () => setLiveStock(getDemoStockById(id) ?? getDemoStockByCode(id))
+    const handleUpdate = () => refetch()
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'ticket_stock_demo_data') refetch()
+    }
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') refetch()
+    }
+    window.addEventListener('demo_stock_updated', handleUpdate)
+    window.addEventListener('storage', handleStorage)
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => {
+      window.removeEventListener('demo_stock_updated', handleUpdate)
+      window.removeEventListener('storage', handleStorage)
+      document.removeEventListener('visibilitychange', handleVisibility)
+    }
   }, [id])
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {

@@ -25,6 +25,9 @@ import { TtlField } from '@/components/shared/TtlField'
 import type { ConditionTtlInfo } from '@/components/shared/TtlField'
 import { buildDemoPnrFromForm, generateDummyPnrCode, pnrToFormValues } from '@/lib/pnr-shared-utils'
 import type { PnrFormValues, PnrModalCondition } from '@/lib/pnr-shared-utils'
+import { getConditionTemplates } from '@/lib/condition-storage'
+import { getEffectiveConditionForPnr } from '@/lib/condition-relationship'
+import type { AppConditionTemplate } from '@/lib/condition-schema'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -48,6 +51,7 @@ interface PNRRow {
   breakdown: boolean
   condition: string | null
   condition_code: string | null
+  condition_source?: 'DIRECT' | 'SERIES' | null
   next_ttl: string | null
   ttl_type: TtlType | null
   ttl_days_before: number | null
@@ -131,6 +135,7 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
   const [showBulkCancel, setShowBulkCancel]     = useState(false)
   const [bulkCancelReason, setBulkCancelReason] = useState('')
   const [bulkCancelReasonError, setBulkCancelReasonError] = useState('')
+  const [allTemplates] = useState<AppConditionTemplate[]>(() => getConditionTemplates())
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000) }
 
@@ -403,8 +408,9 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
         tax_type: p.taxType,
         tax: p.tax ?? 0,
         total_amount: p.total,
-        condition: liveStock.conditions.find(c => c.condition.conditionCode === p.conditionCode)?.condition.conditionName || null,
-        condition_code: p.conditionCode || null,
+        condition: (() => { const e = getEffectiveConditionForPnr(p, liveStock, allTemplates); return e?.conditionName || null })(),
+        condition_code: (() => { const e = getEffectiveConditionForPnr(p, liveStock, allTemplates); return e?.conditionCode || null })(),
+        condition_source: (() => { const e = getEffectiveConditionForPnr(p, liveStock, allTemplates); return e?.source || null })(),
         next_ttl: p.ttlDateTime,
         ttl_type: p.ttlType ?? null,
         ttl_days_before: p.ttlDaysBefore ?? null,
@@ -419,7 +425,7 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
   const pnrStatusLabels: Record<string, string> = { Pending: 'รอยืนยัน', Confirmed: 'ยืนยันแล้ว' }
 
   const activeConditions = conditions.filter(c => c.condition.status === 'Active')
-  const noCond = (liveStock?.pnrs ?? []).filter(p => !p.conditionCode)
+  const noCond = liveStock ? liveStock.pnrs.filter(p => !getEffectiveConditionForPnr(p, liveStock, allTemplates)) : []
 
   const applyConditionChange = (pnrIds: string[], newCode: string) => {
     if (!liveStock) return
@@ -703,7 +709,12 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                                 </td>
                                 {/* Condition */}
                                 <td rowSpan={rowCount} className="px-2 py-1.5 align-top">
-                                  {canEdit ? (
+                                  {canEdit && demoPnr?.conditionTemplateId ? (
+                                    <div className="flex flex-col gap-0.5">
+                                      <span className="text-[10px] font-semibold text-emerald-700 leading-tight">{p.condition ?? p.condition_code ?? '—'}</span>
+                                      <span className="inline-flex w-fit px-1.5 py-px rounded text-[9px] font-medium bg-blue-50 text-blue-600 border border-blue-100 whitespace-nowrap">กำหนดโดยตรง</span>
+                                    </div>
+                                  ) : canEdit ? (
                                     <div className="relative inline-block min-w-[110px]">
                                       <select
                                         value={p.condition_code ?? ''}
@@ -730,8 +741,14 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                                       </select>
                                       <ChevronDown size={9} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400" />
                                     </div>
+                                  ) : p.condition ? (
+                                    <div className="flex flex-col gap-0.5">
+                                      <Badge variant="green">{p.condition}</Badge>
+                                      {p.condition_source === 'DIRECT' && <span className="text-[9px] text-blue-600">กำหนดโดยตรง</span>}
+                                      {p.condition_source === 'SERIES' && <span className="text-[9px] text-slate-400">รับจาก Series</span>}
+                                    </div>
                                   ) : (
-                                    p.condition ? <Badge variant="green">{p.condition}</Badge> : <span className="text-slate-300 italic text-[10px]">ไม่ระบุ</span>
+                                    <span className="text-slate-300 italic text-[10px]">ไม่ระบุ</span>
                                   )}
                                 </td>
                                 {/* TTL Date — date first, then label */}
