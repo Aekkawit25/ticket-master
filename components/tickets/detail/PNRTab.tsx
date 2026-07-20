@@ -1,11 +1,11 @@
 'use client'
 
-import { useState, useEffect, useCallback, Fragment } from 'react'
+import { useState, useEffect, useCallback, useMemo, Fragment } from 'react'
 import { Button } from '@/components/ui/button'
 import { Badge, PnrConfirmationStatusBadge } from '@/components/ui/badge'
 import { Modal } from '@/components/ui/modal'
 import {
-  PlusCircle, Pencil, Trash2, X, CheckCircle2, AlertTriangle, PlusSquare, ChevronDown,
+  PlusCircle, Pencil, Trash2, X, CheckCircle2, AlertTriangle, PlusSquare,
 } from 'lucide-react'
 import { PnrActionMenu } from '@/components/tickets/PnrActionMenu'
 import { BulkPnrBuilder } from '@/components/shared/BulkPnrBuilder'
@@ -26,7 +26,7 @@ import type { ConditionTtlInfo } from '@/components/shared/TtlField'
 import { buildDemoPnrFromForm, generateDummyPnrCode, pnrToFormValues } from '@/lib/pnr-shared-utils'
 import type { PnrFormValues, PnrModalCondition } from '@/lib/pnr-shared-utils'
 import { getConditionTemplates } from '@/lib/condition-storage'
-import { getEffectiveConditionForPnr } from '@/lib/condition-relationship'
+import { getEffectiveConditionForPnr, computeTemplateReadiness } from '@/lib/condition-relationship'
 import type { AppConditionTemplate } from '@/lib/condition-schema'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -120,10 +120,20 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
   const [toast, setToast]   = useState('')
 
   const [selectedPnrIds, setSelectedPnrIds] = useState<Set<string>>(new Set())
-  const [condChangeConfirm, setCondChangeConfirm] = useState<{ pnrIds: string[]; newCode: string } | null>(null)
-  const [showBulkCond, setShowBulkCond]     = useState(false)
-  const [bulkCondCode, setBulkCondCode]     = useState('')
-  const [detailPnr, setDetailPnr]           = useState<PNRRow | null>(null)
+  const [editingCondPnrId, setEditingCondPnrId] = useState<string | null>(null)
+  const [condSearchQuery, setCondSearchQuery]   = useState('')
+  const [condDropdownPos, setCondDropdownPos]   = useState<{ top: number; left: number } | null>(null)
+  const [condChangeConfirm, setCondChangeConfirm] = useState<{
+    pnrIds: string[]
+    pnrDisplays: string[]
+    newTemplateId: string | null
+    newCondName: string
+    newSource: 'SERIES' | 'DIRECT'
+    oldCondName?: string | null
+  } | null>(null)
+  const [showBulkCond, setShowBulkCond]             = useState(false)
+  const [bulkCondTemplateId, setBulkCondTemplateId] = useState('')
+  const [detailPnr, setDetailPnr]                   = useState<PNRRow | null>(null)
 
   // PNR operational status modals
   const [closingPnr, setClosingPnr]             = useState<DemoPNR | null>(null)
@@ -160,6 +170,16 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jumpToEdit])
+
+  // Close condition dropdown on Escape
+  useEffect(() => {
+    if (!editingCondPnrId) return
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { setEditingCondPnrId(null); setCondSearchQuery(''); setCondDropdownPos(null) }
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [editingCondPnrId])
 
   const closeSinglePnrModal = () => {
     setShowSinglePnrModal(false)
@@ -427,27 +447,78 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
   const activeConditions = conditions.filter(c => c.condition.status === 'Active')
   const noCond = liveStock ? liveStock.pnrs.filter(p => !getEffectiveConditionForPnr(p, liveStock, allTemplates)) : []
 
-  const applyConditionChange = (pnrIds: string[], newCode: string) => {
+  // Series condition info (for inline dropdown)
+  const seriesTemplateCond = liveStock?.conditions.find(c => c.source === 'template')
+  const seriesAnyActiveCond = liveStock?.conditions.find(c => c.condition.status === 'Active')
+  const seriesCondName = seriesTemplateCond?.condition.conditionName ?? seriesAnyActiveCond?.condition.conditionName ?? null
+  const seriesTemplateId = seriesTemplateCond?.sourceTemplateId ?? null
+  const hasSeriesCond = !!(seriesTemplateCond || seriesAnyActiveCond)
+
+  // Templates eligible for PNR direct condition assignment
+  const eligibleTemplates = useMemo(() => {
+    if (!liveStock) return []
+    return allTemplates.filter(t => {
+      if (t.isArchived) return false
+      if (t.condition.status !== 'Active') return false
+      if (computeTemplateReadiness(t).status !== 'ready') return false
+      if (t.airlineCode && t.airlineCode !== liveStock.airlineCode) return false
+      if (t.ticketType !== 'All' && t.ticketType !== liveStock.ticketType) return false
+      return true
+    })
+  }, [allTemplates, liveStock])
+
+  const applyConditionChangeDirect = (
+    pnrIds: string[],
+    pnrDisplays: string[],
+    newTemplateId: string | null,
+    newCondName: string,
+    newSource: 'SERIES' | 'DIRECT',
+  ) => {
     if (!liveStock) return
     const now = new Date().toISOString()
-    const condName = conditions.find(c => c.condition.conditionCode === newCode)?.condition.conditionName ?? newCode
     const updatedPnrs = liveStock.pnrs.map(p => {
       if (!pnrIds.includes(p.pnrId)) return p
-      return { ...p, conditionCode: newCode }
+      if (newSource === 'SERIES') {
+        return { ...p, conditionTemplateId: null as string | null, conditionOverride: false, conditionCode: '' }
+      }
+      return { ...p, conditionTemplateId: newTemplateId, conditionOverride: true, conditionCode: '' }
     })
+    const logMsg = pnrIds.length === 1
+      ? (newSource === 'SERIES'
+          ? `${pnrDisplays[0]}: กลับไปใช้ Condition จาก Series (${newCondName})`
+          : `${pnrDisplays[0]}: กำหนด Condition โดยตรง → "${newCondName}"`)
+      : (newSource === 'SERIES'
+          ? `${pnrIds.length} PNR: กลับไปใช้ Condition จาก Series (${newCondName})`
+          : `${pnrIds.length} PNR: กำหนด Condition เป็น "${newCondName}"`)
     const log: DemoLog = {
       logId: newId('LOG'),
       action: 'เปลี่ยน Condition',
-      message: newCode ? `เปลี่ยน Condition เป็น "${condName}" (${pnrIds.length} PNR)` : `ลบ Condition ออก (${pnrIds.length} PNR)`,
-      createdAt: now, createdBy: 'System',
+      message: logMsg,
+      createdAt: now,
+      createdBy: 'System',
+      pnrDisplay: pnrIds.length === 1 ? pnrDisplays[0] : undefined,
+      scope: pnrIds.length > 1 ? 'batch' : 'single',
+      affectedPnrCount: pnrIds.length,
     }
-    const updated: DemoStock = { ...liveStock, pnrs: updatedPnrs, summary: calculateStockSummary(updatedPnrs), updatedAt: now, logs: [log, ...liveStock.logs] }
+    const updated: DemoStock = {
+      ...liveStock,
+      pnrs: updatedPnrs,
+      summary: calculateStockSummary(updatedPnrs),
+      updatedAt: now,
+      logs: [log, ...liveStock.logs],
+    }
     saveDemoStock(updated)
     onUpdate(updated)
-    setSelectedPnrIds(new Set())
+    setEditingCondPnrId(null)
+    setCondSearchQuery('')
+    setCondDropdownPos(null)
     setCondChangeConfirm(null)
     setShowBulkCond(false)
-    showToast(newCode ? `เปลี่ยน Condition เป็น "${condName}" (${pnrIds.length} PNR)` : `ลบ Condition ออก (${pnrIds.length} PNR)`)
+    setSelectedPnrIds(new Set())
+    showToast(pnrIds.length === 1
+      ? (newSource === 'SERIES' ? 'ใช้ Condition จาก Series' : `กำหนด Condition เป็น "${newCondName}"`)
+      : `อัปเดต Condition ${pnrIds.length} PNR สำเร็จ`
+    )
   }
 
   // Build singlePnrConditions for the modal
@@ -489,8 +560,8 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
             {selectedPnrIds.size > 0 && (
               <>
                 <span className="text-xs text-slate-500 ml-1">เลือก {selectedPnrIds.size} PNR</span>
-                <Button size="sm" variant="outline" onClick={() => { setBulkCondCode(''); setShowBulkCond(true) }}>
-                  เปลี่ยน Condition
+                <Button size="sm" variant="outline" onClick={() => { setBulkCondTemplateId(''); setShowBulkCond(true) }}>
+                  กำหนด Condition
                 </Button>
                 <Button size="sm" variant="outline"
                   onClick={() => handleBulkActivatePnr(selectedPnrIds)}
@@ -520,6 +591,14 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
             </div>
           )}
         </div>
+      )}
+
+      {/* Click overlay — closes inline condition dropdown */}
+      {editingCondPnrId && (
+        <div
+          className="fixed inset-0 z-[1040]"
+          onClick={() => { setEditingCondPnrId(null); setCondSearchQuery(''); setCondDropdownPos(null) }}
+        />
       )}
 
       {/* Table */}
@@ -707,41 +786,177 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                                     ? <span className="text-slate-300">—</span>
                                     : p.yq > 0 ? formatNumber(p.yq) : <span className="text-slate-400">0</span>}
                                 </td>
-                                {/* Condition */}
-                                <td rowSpan={rowCount} className="px-2 py-1.5 align-top">
-                                  {canEdit && demoPnr?.conditionTemplateId ? (
-                                    <div className="flex flex-col gap-0.5">
-                                      <span className="text-[10px] font-semibold text-emerald-700 leading-tight">{p.condition ?? p.condition_code ?? '—'}</span>
-                                      <span className="inline-flex w-fit px-1.5 py-px rounded text-[9px] font-medium bg-blue-50 text-blue-600 border border-blue-100 whitespace-nowrap">กำหนดโดยตรง</span>
-                                    </div>
-                                  ) : canEdit ? (
-                                    <div className="relative inline-block min-w-[110px]">
-                                      <select
-                                        value={p.condition_code ?? ''}
-                                        onChange={e => {
-                                          const v = e.target.value
-                                          if (v !== (p.condition_code ?? ''))
-                                            setCondChangeConfirm({ pnrIds: [p.id], newCode: v })
-                                        }}
-                                        className={`text-[10px] font-semibold rounded-full pl-2.5 pr-6 py-0.5 border appearance-none cursor-pointer w-full ${
-                                          p.condition_code
-                                            ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:border-emerald-400'
-                                            : 'bg-slate-100 border-slate-200 text-slate-400 hover:border-slate-400'
-                                        }`}
-                                      >
-                                        <option value="">— ไม่ระบุ —</option>
-                                        {activeConditions.map(c => (
-                                          <option key={c.condition.conditionCode} value={c.condition.conditionCode}>
-                                            {c.condition.conditionName}
-                                          </option>
-                                        ))}
-                                        {p.condition_code && !activeConditions.find(c => c.condition.conditionCode === p.condition_code) && (
-                                          <option value={p.condition_code ?? ''}>{p.condition} (ปิดใช้งาน)</option>
+                                {/* Condition — inline searchable dropdown */}
+                                <td rowSpan={rowCount} className="px-2 py-1.5 align-top min-w-[150px]">
+                                  {canEdit ? (() => {
+                                    const isOpen = editingCondPnrId === p.id
+                                    const pnrLabel = p.pnr_code ?? p.dummy_pnr ?? p.id
+                                    return (
+                                      <div className="relative">
+                                        <button
+                                          className="w-full text-left group rounded-md px-1 py-0.5 hover:bg-slate-50 transition-colors"
+                                          onClick={e => {
+                                            if (isOpen) {
+                                              setEditingCondPnrId(null); setCondSearchQuery(''); setCondDropdownPos(null)
+                                            } else {
+                                              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                                              setCondDropdownPos({ top: rect.bottom + 4, left: rect.left })
+                                              setEditingCondPnrId(p.id)
+                                              setCondSearchQuery('')
+                                            }
+                                          }}
+                                        >
+                                          {p.condition ? (
+                                            <div className="flex flex-col gap-0.5">
+                                              <span className="text-[10px] font-semibold text-emerald-700 leading-tight">{p.condition}</span>
+                                              {p.condition_source === 'DIRECT'
+                                                ? <span className="inline-flex w-fit px-1.5 py-px rounded text-[9px] font-medium bg-blue-50 text-blue-600 border border-blue-100 whitespace-nowrap">กำหนดโดยตรง</span>
+                                                : <span className="inline-flex w-fit px-1.5 py-px rounded text-[9px] font-medium bg-slate-100 text-slate-500 border border-slate-200 whitespace-nowrap">รับจาก Series</span>
+                                              }
+                                            </div>
+                                          ) : (
+                                            <span className="text-slate-300 italic text-[10px]">ยังไม่ระบุ</span>
+                                          )}
+                                          <span className="text-[9px] text-slate-400 opacity-0 group-hover:opacity-100 flex items-center gap-0.5 mt-0.5 transition-opacity">
+                                            <Pencil size={8} /> แก้ไข
+                                          </span>
+                                        </button>
+                                        {/* Fixed-position dropdown (avoids table overflow clipping) */}
+                                        {isOpen && condDropdownPos && (
+                                          <div
+                                            style={{ position: 'fixed', top: condDropdownPos.top, left: condDropdownPos.left, zIndex: 1050, width: 268 }}
+                                            className="bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden"
+                                          >
+                                            <div className="p-2 border-b border-slate-100">
+                                              <input
+                                                autoFocus
+                                                type="text"
+                                                placeholder="ค้นหา Condition Code หรือชื่อ..."
+                                                value={condSearchQuery}
+                                                onChange={e => setCondSearchQuery(e.target.value)}
+                                                className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-[#05a94f]/30"
+                                              />
+                                            </div>
+                                            <div className="max-h-52 overflow-y-auto">
+                                              {/* ใช้ตาม Series — first option when series has condition */}
+                                              {hasSeriesCond && seriesCondName && (
+                                                <button
+                                                  className="w-full text-left px-3 py-2.5 hover:bg-emerald-50 transition-colors border-b border-slate-100"
+                                                  onClick={() => {
+                                                    setEditingCondPnrId(null); setCondSearchQuery(''); setCondDropdownPos(null)
+                                                    const eff = demoPnr ? getEffectiveConditionForPnr(demoPnr, liveStock!, allTemplates) : null
+                                                    if (eff && eff.source === 'DIRECT') {
+                                                      setCondChangeConfirm({
+                                                        pnrIds: [p.id], pnrDisplays: [pnrLabel],
+                                                        newTemplateId: null, newCondName: seriesCondName,
+                                                        newSource: 'SERIES', oldCondName: eff.conditionName,
+                                                      })
+                                                    } else if (!eff) {
+                                                      applyConditionChangeDirect([p.id], [pnrLabel], null, seriesCondName, 'SERIES')
+                                                    }
+                                                  }}
+                                                >
+                                                  <div className="flex items-center justify-between gap-2">
+                                                    <div className="flex flex-col gap-0.5 min-w-0">
+                                                      <span className="text-[10px] font-semibold text-slate-700">ใช้ตาม Series</span>
+                                                      <span className="text-[9px] text-slate-500 truncate">{seriesCondName}</span>
+                                                    </div>
+                                                    <span className="text-[9px] px-1.5 py-px rounded bg-slate-100 text-slate-400 whitespace-nowrap shrink-0">Series</span>
+                                                  </div>
+                                                </button>
+                                              )}
+                                              {/* ยังไม่ระบุ — only when series has no condition */}
+                                              {!hasSeriesCond && (
+                                                <button
+                                                  className="w-full text-left px-3 py-2 hover:bg-slate-50 transition-colors text-[10px] text-slate-400 italic border-b border-slate-100"
+                                                  onClick={() => {
+                                                    setEditingCondPnrId(null); setCondSearchQuery(''); setCondDropdownPos(null)
+                                                    const eff = demoPnr ? getEffectiveConditionForPnr(demoPnr, liveStock!, allTemplates) : null
+                                                    if (eff) {
+                                                      setCondChangeConfirm({
+                                                        pnrIds: [p.id], pnrDisplays: [pnrLabel],
+                                                        newTemplateId: null, newCondName: 'ยังไม่ระบุ',
+                                                        newSource: 'SERIES', oldCondName: eff.conditionName,
+                                                      })
+                                                    }
+                                                  }}
+                                                >
+                                                  ยังไม่ระบุ
+                                                </button>
+                                              )}
+                                              {/* Eligible templates */}
+                                              {(() => {
+                                                const q = condSearchQuery.trim().toLowerCase()
+                                                const filtered = eligibleTemplates.filter(t =>
+                                                  !q ||
+                                                  t.condition.conditionCode.toLowerCase().includes(q) ||
+                                                  t.condition.conditionName.toLowerCase().includes(q)
+                                                )
+                                                if (filtered.length === 0 && q) {
+                                                  return (
+                                                    <div className="px-3 py-4 text-[10px] text-slate-400 text-center italic">
+                                                      ไม่พบ &ldquo;{condSearchQuery}&rdquo;
+                                                    </div>
+                                                  )
+                                                }
+                                                return filtered.map(t => {
+                                                  const isCurrent = demoPnr?.conditionTemplateId === t.templateId
+                                                  const isSeriesMatch = !!(seriesTemplateId && seriesTemplateId === t.templateId)
+                                                  return (
+                                                    <button
+                                                      key={t.templateId}
+                                                      className={`w-full text-left px-3 py-2.5 hover:bg-emerald-50 transition-colors ${isCurrent ? 'bg-emerald-50/60' : ''}`}
+                                                      onClick={() => {
+                                                        setEditingCondPnrId(null); setCondSearchQuery(''); setCondDropdownPos(null)
+                                                        // Selecting same template as series → revert to series (spec point 7)
+                                                        if (isSeriesMatch && hasSeriesCond) {
+                                                          const eff = demoPnr ? getEffectiveConditionForPnr(demoPnr, liveStock!, allTemplates) : null
+                                                          if (eff?.source === 'DIRECT') {
+                                                            setCondChangeConfirm({
+                                                              pnrIds: [p.id], pnrDisplays: [pnrLabel],
+                                                              newTemplateId: null, newCondName: t.condition.conditionName,
+                                                              newSource: 'SERIES', oldCondName: eff.conditionName,
+                                                            })
+                                                          }
+                                                          return
+                                                        }
+                                                        if (isCurrent) return
+                                                        const eff = demoPnr ? getEffectiveConditionForPnr(demoPnr, liveStock!, allTemplates) : null
+                                                        if (eff) {
+                                                          setCondChangeConfirm({
+                                                            pnrIds: [p.id], pnrDisplays: [pnrLabel],
+                                                            newTemplateId: t.templateId, newCondName: t.condition.conditionName,
+                                                            newSource: 'DIRECT', oldCondName: eff.conditionName,
+                                                          })
+                                                        } else {
+                                                          applyConditionChangeDirect([p.id], [pnrLabel], t.templateId, t.condition.conditionName, 'DIRECT')
+                                                        }
+                                                      }}
+                                                    >
+                                                      <div className="flex items-start justify-between gap-2">
+                                                        <div className="flex flex-col gap-0.5 min-w-0">
+                                                          <span className="text-[10px] font-semibold text-slate-700 leading-tight">
+                                                            {t.condition.conditionCode}
+                                                          </span>
+                                                          <span className="text-[9px] text-slate-500 truncate">{t.condition.conditionName}</span>
+                                                          {isSeriesMatch && hasSeriesCond && (
+                                                            <span className="text-[8px] text-slate-400">= ตรงกับ Series</span>
+                                                          )}
+                                                        </div>
+                                                        {isCurrent && (
+                                                          <span className="text-[9px] px-1 py-px rounded bg-emerald-100 text-emerald-600 whitespace-nowrap shrink-0">ปัจจุบัน</span>
+                                                        )}
+                                                      </div>
+                                                    </button>
+                                                  )
+                                                })
+                                              })()}
+                                            </div>
+                                          </div>
                                         )}
-                                      </select>
-                                      <ChevronDown size={9} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400" />
-                                    </div>
-                                  ) : p.condition ? (
+                                      </div>
+                                    )
+                                  })() : p.condition ? (
                                     <div className="flex flex-col gap-0.5">
                                       <Badge variant="green">{p.condition}</Badge>
                                       {p.condition_source === 'DIRECT' && <span className="text-[9px] text-blue-600">กำหนดโดยตรง</span>}
@@ -969,25 +1184,61 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
           footer={
             <>
               <Button variant="ghost" onClick={() => setCondChangeConfirm(null)}>ยกเลิก</Button>
-              <Button onClick={() => applyConditionChange(condChangeConfirm.pnrIds, condChangeConfirm.newCode)}>ดำเนินการต่อ</Button>
+              <Button onClick={() => applyConditionChangeDirect(
+                condChangeConfirm.pnrIds,
+                condChangeConfirm.pnrDisplays,
+                condChangeConfirm.newTemplateId,
+                condChangeConfirm.newCondName,
+                condChangeConfirm.newSource,
+              )}>ยืนยันการเปลี่ยน</Button>
             </>
           }
         >
           <div className="space-y-3">
-            <p className="text-sm">
-              {condChangeConfirm.newCode
-                ? <>เปลี่ยน Condition เป็น <strong>&ldquo;{conditions.find(c => c.condition.conditionCode === condChangeConfirm.newCode)?.condition.conditionName ?? condChangeConfirm.newCode}&rdquo;</strong> สำหรับ {condChangeConfirm.pnrIds.length} PNR</>
-                : <>ลบ Condition ออกจาก {condChangeConfirm.pnrIds.length} PNR</>
-              }
-            </p>
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs space-y-1">
-              <p className="font-semibold text-amber-700 flex items-center gap-1.5"><AlertTriangle size={12} /> ผลกระทบ</p>
-              <ul className="space-y-0.5 text-amber-600 list-disc list-inside">
-                <li>Payment Schedule อาจเปลี่ยนแปลง</li>
-                <li>เงื่อนไข Refund และ No-show จะใช้ตาม Condition ใหม่</li>
-                <li>TTL ของแต่ละ PNR ยังคงเดิม — แก้ไขได้ในฟอร์ม PNR</li>
-              </ul>
-            </div>
+            {condChangeConfirm.pnrIds.length === 1 ? (
+              <>
+                <div className="space-y-2 text-xs">
+                  <div className="flex items-start gap-2">
+                    <span className="text-slate-400 shrink-0 w-24 pt-px">PNR</span>
+                    <span className="font-mono font-semibold text-slate-800">{condChangeConfirm.pnrDisplays[0]}</span>
+                  </div>
+                  {condChangeConfirm.oldCondName && (
+                    <div className="flex items-start gap-2">
+                      <span className="text-slate-400 shrink-0 w-24 pt-px">Condition เดิม</span>
+                      <span className="text-slate-600">{condChangeConfirm.oldCondName}</span>
+                    </div>
+                  )}
+                  <div className="flex items-start gap-2">
+                    <span className="text-slate-400 shrink-0 w-24 pt-px">Condition ใหม่</span>
+                    <span className="font-semibold text-slate-800">{condChangeConfirm.newCondName}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-slate-400 shrink-0 w-24">แหล่งที่มาใหม่</span>
+                    {condChangeConfirm.newSource === 'SERIES'
+                      ? <span className="inline-flex px-1.5 py-px rounded text-[9px] font-medium bg-slate-100 text-slate-500 border border-slate-200">รับจาก Series</span>
+                      : <span className="inline-flex px-1.5 py-px rounded text-[9px] font-medium bg-blue-50 text-blue-600 border border-blue-100">กำหนดโดยตรง</span>
+                    }
+                  </div>
+                </div>
+                <p className="text-xs text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
+                  การเปลี่ยนนี้มีผลเฉพาะ PNR รายการนี้ และไม่กระทบ PNR อื่น
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-sm">
+                  เปลี่ยน Condition <strong>{condChangeConfirm.pnrIds.length} PNR</strong> เป็น{' '}
+                  <strong>&ldquo;{condChangeConfirm.newCondName}&rdquo;</strong>
+                </p>
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs space-y-1">
+                  <p className="font-semibold text-amber-700 flex items-center gap-1.5"><AlertTriangle size={12} /> ผลกระทบ</p>
+                  <ul className="space-y-0.5 text-amber-600 list-disc list-inside">
+                    <li>Payment Schedule อาจเปลี่ยนแปลง</li>
+                    <li>เงื่อนไข Refund และ No-show จะใช้ตาม Condition ใหม่</li>
+                  </ul>
+                </div>
+              </>
+            )}
           </div>
         </Modal>
       )}
@@ -996,16 +1247,39 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
       <Modal
         open={showBulkCond}
         onClose={() => setShowBulkCond(false)}
-        title={`เปลี่ยน Condition — ${selectedPnrIds.size} PNR`}
+        title={`กำหนด Condition — ${selectedPnrIds.size} PNR`}
         size="sm"
         footer={
           <>
             <Button variant="ghost" onClick={() => setShowBulkCond(false)}>ยกเลิก</Button>
             <Button
-              disabled={bulkCondCode === ''}
+              disabled={!bulkCondTemplateId}
               onClick={() => {
+                if (!bulkCondTemplateId) return
                 setShowBulkCond(false)
-                setCondChangeConfirm({ pnrIds: Array.from(selectedPnrIds), newCode: bulkCondCode })
+                const pnrIds = Array.from(selectedPnrIds)
+                const pnrDisplays = pnrIds.map(id => {
+                  const dp = liveStock?.pnrs.find(p => p.pnrId === id)
+                  return dp?.pnrDisplay ?? id
+                })
+                if (bulkCondTemplateId === '__SERIES__') {
+                  setCondChangeConfirm({
+                    pnrIds, pnrDisplays,
+                    newTemplateId: null,
+                    newCondName: seriesCondName ?? 'Series Condition',
+                    newSource: 'SERIES',
+                  })
+                } else {
+                  const tmpl = eligibleTemplates.find(t => t.templateId === bulkCondTemplateId)
+                  if (tmpl) {
+                    setCondChangeConfirm({
+                      pnrIds, pnrDisplays,
+                      newTemplateId: tmpl.templateId,
+                      newCondName: tmpl.condition.conditionName,
+                      newSource: 'DIRECT',
+                    })
+                  }
+                }
               }}
             >
               ดำเนินการต่อ
@@ -1014,18 +1288,21 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
         }
       >
         <div className="space-y-3">
-          <p className="text-xs text-slate-500">เลือก Condition ที่ต้องการใช้กับ {selectedPnrIds.size} PNR ที่เลือกไว้</p>
+          <p className="text-xs text-slate-500">เลือก Condition สำหรับ {selectedPnrIds.size} PNR ที่เลือกไว้</p>
           <div>
             <label className="block text-xs font-medium text-slate-700 mb-1">Condition <span className="text-red-500">*</span></label>
             <select
-              value={bulkCondCode}
-              onChange={e => setBulkCondCode(e.target.value)}
+              value={bulkCondTemplateId}
+              onChange={e => setBulkCondTemplateId(e.target.value)}
               className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30"
             >
               <option value="">— เลือก Condition —</option>
-              {activeConditions.map(c => (
-                <option key={c.condition.conditionCode} value={c.condition.conditionCode}>
-                  {c.condition.conditionName}
+              {hasSeriesCond && seriesCondName && (
+                <option value="__SERIES__">ใช้ตาม Series — {seriesCondName}</option>
+              )}
+              {eligibleTemplates.map(t => (
+                <option key={t.templateId} value={t.templateId}>
+                  {t.condition.conditionCode} — {t.condition.conditionName}
                 </option>
               ))}
             </select>
