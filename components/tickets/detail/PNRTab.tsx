@@ -120,15 +120,16 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
   const [toast, setToast]   = useState('')
 
   const [selectedPnrIds, setSelectedPnrIds] = useState<Set<string>>(new Set())
-  const [editingCondPnrId, setEditingCondPnrId] = useState<string | null>(null)
+  const [condPickerPnr, setCondPickerPnr]       = useState<DemoPNR | null>(null)
   const [condSearchQuery, setCondSearchQuery]   = useState('')
-  const [condDropdownPos, setCondDropdownPos]   = useState<{ top: number; left: number } | null>(null)
   const [condChangeConfirm, setCondChangeConfirm] = useState<{
     pnrIds: string[]
     pnrDisplays: string[]
     newTemplateId: string | null
+    newCondCode: string
     newCondName: string
     newSource: 'SERIES' | 'DIRECT'
+    oldCondCode?: string | null
     oldCondName?: string | null
   } | null>(null)
   const [showBulkCond, setShowBulkCond]             = useState(false)
@@ -171,15 +172,6 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jumpToEdit])
 
-  // Close condition dropdown on Escape
-  useEffect(() => {
-    if (!editingCondPnrId) return
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { setEditingCondPnrId(null); setCondSearchQuery(''); setCondDropdownPos(null) }
-    }
-    document.addEventListener('keydown', handler)
-    return () => document.removeEventListener('keydown', handler)
-  }, [editingCondPnrId])
 
   const closeSinglePnrModal = () => {
     setShowSinglePnrModal(false)
@@ -447,9 +439,10 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
   const activeConditions = conditions.filter(c => c.condition.status === 'Active')
   const noCond = liveStock ? liveStock.pnrs.filter(p => !getEffectiveConditionForPnr(p, liveStock, allTemplates)) : []
 
-  // Series condition info (for inline dropdown)
+  // Series condition info
   const seriesTemplateCond = liveStock?.conditions.find(c => c.source === 'template')
   const seriesAnyActiveCond = liveStock?.conditions.find(c => c.condition.status === 'Active')
+  const seriesCondCode = seriesTemplateCond?.condition.conditionCode ?? seriesAnyActiveCond?.condition.conditionCode ?? null
   const seriesCondName = seriesTemplateCond?.condition.conditionName ?? seriesAnyActiveCond?.condition.conditionName ?? null
   const seriesTemplateId = seriesTemplateCond?.sourceTemplateId ?? null
   const hasSeriesCond = !!(seriesTemplateCond || seriesAnyActiveCond)
@@ -509,9 +502,8 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
     }
     saveDemoStock(updated)
     onUpdate(updated)
-    setEditingCondPnrId(null)
+    setCondPickerPnr(null)
     setCondSearchQuery('')
-    setCondDropdownPos(null)
     setCondChangeConfirm(null)
     setShowBulkCond(false)
     setSelectedPnrIds(new Set())
@@ -591,14 +583,6 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
             </div>
           )}
         </div>
-      )}
-
-      {/* Click overlay — closes inline condition dropdown */}
-      {editingCondPnrId && (
-        <div
-          className="fixed inset-0 z-[1040]"
-          onClick={() => { setEditingCondPnrId(null); setCondSearchQuery(''); setCondDropdownPos(null) }}
-        />
       )}
 
       {/* Table */}
@@ -786,181 +770,35 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                                     ? <span className="text-slate-300">—</span>
                                     : p.yq > 0 ? formatNumber(p.yq) : <span className="text-slate-400">0</span>}
                                 </td>
-                                {/* Condition — inline searchable dropdown */}
-                                <td rowSpan={rowCount} className="px-2 py-1.5 align-top min-w-[150px]">
-                                  {canEdit ? (() => {
-                                    const isOpen = editingCondPnrId === p.id
-                                    const pnrLabel = p.pnr_code ?? p.dummy_pnr ?? p.id
-                                    return (
-                                      <div className="relative">
-                                        <button
-                                          className="w-full text-left group rounded-md px-1 py-0.5 hover:bg-slate-50 transition-colors"
-                                          onClick={e => {
-                                            if (isOpen) {
-                                              setEditingCondPnrId(null); setCondSearchQuery(''); setCondDropdownPos(null)
-                                            } else {
-                                              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-                                              setCondDropdownPos({ top: rect.bottom + 4, left: rect.left })
-                                              setEditingCondPnrId(p.id)
-                                              setCondSearchQuery('')
-                                            }
-                                          }}
-                                        >
-                                          {p.condition ? (
-                                            <div className="flex flex-col gap-0.5">
-                                              <span className="text-[10px] font-semibold text-emerald-700 leading-tight">{p.condition}</span>
-                                              {p.condition_source === 'DIRECT'
-                                                ? <span className="inline-flex w-fit px-1.5 py-px rounded text-[9px] font-medium bg-blue-50 text-blue-600 border border-blue-100 whitespace-nowrap">กำหนดโดยตรง</span>
-                                                : <span className="inline-flex w-fit px-1.5 py-px rounded text-[9px] font-medium bg-slate-100 text-slate-500 border border-slate-200 whitespace-nowrap">รับจาก Series</span>
-                                              }
-                                            </div>
-                                          ) : (
-                                            <span className="text-slate-300 italic text-[10px]">ยังไม่ระบุ</span>
-                                          )}
-                                          <span className="text-[9px] text-slate-400 opacity-0 group-hover:opacity-100 flex items-center gap-0.5 mt-0.5 transition-opacity">
-                                            <Pencil size={8} /> แก้ไข
-                                          </span>
-                                        </button>
-                                        {/* Fixed-position dropdown (avoids table overflow clipping) */}
-                                        {isOpen && condDropdownPos && (
-                                          <div
-                                            style={{ position: 'fixed', top: condDropdownPos.top, left: condDropdownPos.left, zIndex: 1050, width: 268 }}
-                                            className="bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden"
-                                          >
-                                            <div className="p-2 border-b border-slate-100">
-                                              <input
-                                                autoFocus
-                                                type="text"
-                                                placeholder="ค้นหา Condition Code หรือชื่อ..."
-                                                value={condSearchQuery}
-                                                onChange={e => setCondSearchQuery(e.target.value)}
-                                                className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-[#05a94f]/30"
-                                              />
-                                            </div>
-                                            <div className="max-h-52 overflow-y-auto">
-                                              {/* ใช้ตาม Series — first option when series has condition */}
-                                              {hasSeriesCond && seriesCondName && (
-                                                <button
-                                                  className="w-full text-left px-3 py-2.5 hover:bg-emerald-50 transition-colors border-b border-slate-100"
-                                                  onClick={() => {
-                                                    setEditingCondPnrId(null); setCondSearchQuery(''); setCondDropdownPos(null)
-                                                    const eff = demoPnr ? getEffectiveConditionForPnr(demoPnr, liveStock!, allTemplates) : null
-                                                    if (eff && eff.source === 'DIRECT') {
-                                                      setCondChangeConfirm({
-                                                        pnrIds: [p.id], pnrDisplays: [pnrLabel],
-                                                        newTemplateId: null, newCondName: seriesCondName,
-                                                        newSource: 'SERIES', oldCondName: eff.conditionName,
-                                                      })
-                                                    } else if (!eff) {
-                                                      applyConditionChangeDirect([p.id], [pnrLabel], null, seriesCondName, 'SERIES')
-                                                    }
-                                                  }}
-                                                >
-                                                  <div className="flex items-center justify-between gap-2">
-                                                    <div className="flex flex-col gap-0.5 min-w-0">
-                                                      <span className="text-[10px] font-semibold text-slate-700">ใช้ตาม Series</span>
-                                                      <span className="text-[9px] text-slate-500 truncate">{seriesCondName}</span>
-                                                    </div>
-                                                    <span className="text-[9px] px-1.5 py-px rounded bg-slate-100 text-slate-400 whitespace-nowrap shrink-0">Series</span>
-                                                  </div>
-                                                </button>
-                                              )}
-                                              {/* ยังไม่ระบุ — only when series has no condition */}
-                                              {!hasSeriesCond && (
-                                                <button
-                                                  className="w-full text-left px-3 py-2 hover:bg-slate-50 transition-colors text-[10px] text-slate-400 italic border-b border-slate-100"
-                                                  onClick={() => {
-                                                    setEditingCondPnrId(null); setCondSearchQuery(''); setCondDropdownPos(null)
-                                                    const eff = demoPnr ? getEffectiveConditionForPnr(demoPnr, liveStock!, allTemplates) : null
-                                                    if (eff) {
-                                                      setCondChangeConfirm({
-                                                        pnrIds: [p.id], pnrDisplays: [pnrLabel],
-                                                        newTemplateId: null, newCondName: 'ยังไม่ระบุ',
-                                                        newSource: 'SERIES', oldCondName: eff.conditionName,
-                                                      })
-                                                    }
-                                                  }}
-                                                >
-                                                  ยังไม่ระบุ
-                                                </button>
-                                              )}
-                                              {/* Eligible templates */}
-                                              {(() => {
-                                                const q = condSearchQuery.trim().toLowerCase()
-                                                const filtered = eligibleTemplates.filter(t =>
-                                                  !q ||
-                                                  t.condition.conditionCode.toLowerCase().includes(q) ||
-                                                  t.condition.conditionName.toLowerCase().includes(q)
-                                                )
-                                                if (filtered.length === 0 && q) {
-                                                  return (
-                                                    <div className="px-3 py-4 text-[10px] text-slate-400 text-center italic">
-                                                      ไม่พบ &ldquo;{condSearchQuery}&rdquo;
-                                                    </div>
-                                                  )
-                                                }
-                                                return filtered.map(t => {
-                                                  const isCurrent = demoPnr?.conditionTemplateId === t.templateId
-                                                  const isSeriesMatch = !!(seriesTemplateId && seriesTemplateId === t.templateId)
-                                                  return (
-                                                    <button
-                                                      key={t.templateId}
-                                                      className={`w-full text-left px-3 py-2.5 hover:bg-emerald-50 transition-colors ${isCurrent ? 'bg-emerald-50/60' : ''}`}
-                                                      onClick={() => {
-                                                        setEditingCondPnrId(null); setCondSearchQuery(''); setCondDropdownPos(null)
-                                                        // Selecting same template as series → revert to series (spec point 7)
-                                                        if (isSeriesMatch && hasSeriesCond) {
-                                                          const eff = demoPnr ? getEffectiveConditionForPnr(demoPnr, liveStock!, allTemplates) : null
-                                                          if (eff?.source === 'DIRECT') {
-                                                            setCondChangeConfirm({
-                                                              pnrIds: [p.id], pnrDisplays: [pnrLabel],
-                                                              newTemplateId: null, newCondName: t.condition.conditionName,
-                                                              newSource: 'SERIES', oldCondName: eff.conditionName,
-                                                            })
-                                                          }
-                                                          return
-                                                        }
-                                                        if (isCurrent) return
-                                                        const eff = demoPnr ? getEffectiveConditionForPnr(demoPnr, liveStock!, allTemplates) : null
-                                                        if (eff) {
-                                                          setCondChangeConfirm({
-                                                            pnrIds: [p.id], pnrDisplays: [pnrLabel],
-                                                            newTemplateId: t.templateId, newCondName: t.condition.conditionName,
-                                                            newSource: 'DIRECT', oldCondName: eff.conditionName,
-                                                          })
-                                                        } else {
-                                                          applyConditionChangeDirect([p.id], [pnrLabel], t.templateId, t.condition.conditionName, 'DIRECT')
-                                                        }
-                                                      }}
-                                                    >
-                                                      <div className="flex items-start justify-between gap-2">
-                                                        <div className="flex flex-col gap-0.5 min-w-0">
-                                                          <span className="text-[10px] font-semibold text-slate-700 leading-tight">
-                                                            {t.condition.conditionCode}
-                                                          </span>
-                                                          <span className="text-[9px] text-slate-500 truncate">{t.condition.conditionName}</span>
-                                                          {isSeriesMatch && hasSeriesCond && (
-                                                            <span className="text-[8px] text-slate-400">= ตรงกับ Series</span>
-                                                          )}
-                                                        </div>
-                                                        {isCurrent && (
-                                                          <span className="text-[9px] px-1 py-px rounded bg-emerald-100 text-emerald-600 whitespace-nowrap shrink-0">ปัจจุบัน</span>
-                                                        )}
-                                                      </div>
-                                                    </button>
-                                                  )
-                                                })
-                                              })()}
-                                            </div>
-                                          </div>
-                                        )}
-                                      </div>
-                                    )
-                                  })() : p.condition ? (
+                                {/* Condition */}
+                                <td rowSpan={rowCount} className="px-2 py-1.5 align-top min-w-[155px]">
+                                  {canEdit ? (
+                                    <button
+                                      className="w-full text-left group rounded-md px-1 py-0.5 hover:bg-slate-50 transition-colors"
+                                      onClick={() => { setCondPickerPnr(demoPnr ?? null); setCondSearchQuery('') }}
+                                    >
+                                      {p.condition ? (
+                                        <div className="flex flex-col gap-0.5">
+                                          <span className="text-[10px] font-mono font-bold text-slate-500 leading-tight">{p.condition_code}</span>
+                                          <span className="text-[10px] font-semibold text-emerald-700 leading-tight">{p.condition}</span>
+                                          {p.condition_source === 'DIRECT'
+                                            ? <span className="inline-flex w-fit px-1.5 py-px rounded text-[9px] font-medium bg-blue-50 text-blue-600 border border-blue-100 whitespace-nowrap">กำหนดโดยตรง</span>
+                                            : <span className="inline-flex w-fit px-1.5 py-px rounded text-[9px] font-medium bg-slate-100 text-slate-500 border border-slate-200 whitespace-nowrap">รับจาก Series</span>
+                                          }
+                                        </div>
+                                      ) : (
+                                        <span className="text-slate-300 italic text-[10px]">ยังไม่ระบุ</span>
+                                      )}
+                                      <span className="text-[9px] text-[#05a94f] opacity-0 group-hover:opacity-100 flex items-center gap-0.5 mt-0.5 transition-opacity whitespace-nowrap">
+                                        <Pencil size={8} /> เปลี่ยน Condition
+                                      </span>
+                                    </button>
+                                  ) : p.condition ? (
                                     <div className="flex flex-col gap-0.5">
-                                      <Badge variant="green">{p.condition}</Badge>
-                                      {p.condition_source === 'DIRECT' && <span className="text-[9px] text-blue-600">กำหนดโดยตรง</span>}
-                                      {p.condition_source === 'SERIES' && <span className="text-[9px] text-slate-400">รับจาก Series</span>}
+                                      <span className="text-[10px] font-mono font-bold text-slate-500 leading-tight">{p.condition_code}</span>
+                                      <span className="text-[10px] font-semibold text-emerald-700 leading-tight">{p.condition}</span>
+                                      {p.condition_source === 'DIRECT' && <span className="inline-flex w-fit px-1.5 py-px rounded text-[9px] font-medium bg-blue-50 text-blue-600 border border-blue-100 whitespace-nowrap">กำหนดโดยตรง</span>}
+                                      {p.condition_source === 'SERIES' && <span className="inline-flex w-fit px-1.5 py-px rounded text-[9px] font-medium bg-slate-100 text-slate-500 border border-slate-200 whitespace-nowrap">รับจาก Series</span>}
                                     </div>
                                   ) : (
                                     <span className="text-slate-300 italic text-[10px]">ไม่ระบุ</span>
@@ -1038,6 +876,188 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
             </tbody>
           </table>
       </div>
+
+      {/* Condition Picker Modal */}
+      <Modal
+        open={!!condPickerPnr}
+        onClose={() => { setCondPickerPnr(null); setCondSearchQuery('') }}
+        title="เลือก Condition ใหม่"
+        size="md"
+        footer={<Button variant="ghost" onClick={() => { setCondPickerPnr(null); setCondSearchQuery('') }}>ปิด</Button>}
+      >
+        {condPickerPnr && liveStock && (() => {
+          const pnrLabel = condPickerPnr.pnrDisplay || condPickerPnr.pnrCode || condPickerPnr.dummyPnr || condPickerPnr.pnrId
+          const eff = getEffectiveConditionForPnr(condPickerPnr, liveStock, allTemplates)
+          const q = condSearchQuery.trim().toLowerCase()
+          const filtered = eligibleTemplates.filter(t =>
+            !q ||
+            t.condition.conditionCode.toLowerCase().includes(q) ||
+            t.condition.conditionName.toLowerCase().includes(q) ||
+            (t.airlineCode ?? '').toLowerCase().includes(q)
+          )
+
+          const closeAndSelectSeries = () => {
+            setCondPickerPnr(null); setCondSearchQuery('')
+            if (!seriesCondName) return
+            if (eff?.source === 'SERIES') { showToast('PNR รับ Condition จาก Series อยู่แล้ว'); return }
+            if (eff?.source === 'DIRECT') {
+              setCondChangeConfirm({
+                pnrIds: [condPickerPnr.pnrId], pnrDisplays: [pnrLabel],
+                newTemplateId: null, newCondCode: seriesCondCode ?? '', newCondName: seriesCondName,
+                newSource: 'SERIES', oldCondCode: eff.conditionCode, oldCondName: eff.conditionName,
+              })
+            } else {
+              applyConditionChangeDirect([condPickerPnr.pnrId], [pnrLabel], null, seriesCondName, 'SERIES')
+            }
+          }
+
+          const closeAndSelectNone = () => {
+            setCondPickerPnr(null); setCondSearchQuery('')
+            if (!eff) return
+            setCondChangeConfirm({
+              pnrIds: [condPickerPnr.pnrId], pnrDisplays: [pnrLabel],
+              newTemplateId: null, newCondCode: '', newCondName: 'ยังไม่ระบุ Condition',
+              newSource: 'SERIES', oldCondCode: eff.conditionCode, oldCondName: eff.conditionName,
+            })
+          }
+
+          const closeAndSelectTemplate = (t: AppConditionTemplate) => {
+            setCondPickerPnr(null); setCondSearchQuery('')
+            // Already using this condition (spec §12)
+            if (eff?.templateId === t.templateId) {
+              showToast('PNR ใช้ Condition นี้อยู่แล้ว')
+              return
+            }
+            // Same as series template → revert to series (spec §7)
+            if (seriesTemplateId === t.templateId && hasSeriesCond) {
+              if (eff) {
+                setCondChangeConfirm({
+                  pnrIds: [condPickerPnr.pnrId], pnrDisplays: [pnrLabel],
+                  newTemplateId: null, newCondCode: t.condition.conditionCode, newCondName: t.condition.conditionName,
+                  newSource: 'SERIES', oldCondCode: eff.conditionCode, oldCondName: eff.conditionName,
+                })
+              } else {
+                applyConditionChangeDirect([condPickerPnr.pnrId], [pnrLabel], null, t.condition.conditionName, 'SERIES')
+              }
+              return
+            }
+            if (eff) {
+              setCondChangeConfirm({
+                pnrIds: [condPickerPnr.pnrId], pnrDisplays: [pnrLabel],
+                newTemplateId: t.templateId, newCondCode: t.condition.conditionCode, newCondName: t.condition.conditionName,
+                newSource: 'DIRECT', oldCondCode: eff.conditionCode, oldCondName: eff.conditionName,
+              })
+            } else {
+              applyConditionChangeDirect([condPickerPnr.pnrId], [pnrLabel], t.templateId, t.condition.conditionName, 'DIRECT')
+            }
+          }
+
+          return (
+            <div className="space-y-3">
+              {/* Header: PNR + current condition */}
+              <div className="bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5 text-xs space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-400 w-20 shrink-0">PNR</span>
+                  <span className="font-mono font-semibold text-slate-800">{pnrLabel}</span>
+                </div>
+                {eff ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-slate-400 w-20 shrink-0">Condition เดิม</span>
+                    <span className="font-semibold text-slate-700">
+                      {eff.conditionCode} — {eff.conditionName}
+                    </span>
+                    {eff.source === 'DIRECT'
+                      ? <span className="inline-flex px-1.5 py-px rounded text-[9px] font-medium bg-blue-50 text-blue-600 border border-blue-100">กำหนดโดยตรง</span>
+                      : <span className="inline-flex px-1.5 py-px rounded text-[9px] font-medium bg-slate-100 text-slate-500 border border-slate-200">รับจาก Series</span>
+                    }
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span className="text-slate-400 w-20 shrink-0">Condition เดิม</span>
+                    <span className="text-slate-300 italic">ยังไม่ระบุ</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Search */}
+              <input
+                autoFocus
+                type="text"
+                placeholder="ค้นหาด้วย Condition Code, ชื่อ หรือ Airline Code..."
+                value={condSearchQuery}
+                onChange={e => setCondSearchQuery(e.target.value)}
+                className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30"
+              />
+
+              {/* List */}
+              <div className="border border-slate-200 rounded-xl overflow-hidden divide-y divide-slate-100 max-h-72 overflow-y-auto">
+                {/* ใช้ตาม Series — first, when series has condition */}
+                {hasSeriesCond && seriesCondName && (
+                  <button
+                    className="w-full text-left px-4 py-3 hover:bg-emerald-50 transition-colors"
+                    onClick={closeAndSelectSeries}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-semibold text-slate-700">
+                          ใช้ตาม Series — {seriesCondCode && <span className="font-mono">{seriesCondCode}</span>} {seriesCondName}
+                        </div>
+                        <div className="text-xs text-slate-400 mt-0.5">ยกเลิก Override · ให้ PNR รับ Condition จาก Series</div>
+                      </div>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 whitespace-nowrap shrink-0 font-medium">Series</span>
+                    </div>
+                  </button>
+                )}
+                {/* ยังไม่ระบุ — only when series has no condition */}
+                {!hasSeriesCond && (
+                  <button
+                    className="w-full text-left px-4 py-3 hover:bg-slate-50 transition-colors"
+                    onClick={closeAndSelectNone}
+                  >
+                    <span className="text-sm text-slate-400 italic">ยังไม่ระบุ Condition</span>
+                  </button>
+                )}
+                {/* Eligible templates */}
+                {filtered.length === 0 && q ? (
+                  <div className="px-4 py-6 text-sm text-slate-400 text-center italic">ไม่พบ &ldquo;{condSearchQuery}&rdquo;</div>
+                ) : filtered.map(t => {
+                  const isCurrent = eff?.templateId === t.templateId
+                  const isSeriesMatch = seriesTemplateId === t.templateId
+                  const currencyMismatch = !!(t.currency && liveStock.currency && t.currency !== liveStock.currency)
+                  return (
+                    <button
+                      key={t.templateId}
+                      className={`w-full text-left px-4 py-3 hover:bg-emerald-50 transition-colors ${isCurrent ? 'bg-emerald-50/40' : ''}`}
+                      onClick={() => closeAndSelectTemplate(t)}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold text-slate-800 leading-snug">
+                            <span className="font-mono text-slate-600">{t.condition.conditionCode}</span>
+                            {' — '}{t.condition.conditionName}
+                          </div>
+                          <div className="text-xs text-slate-400 mt-0.5 flex items-center gap-1.5 flex-wrap">
+                            <span>{t.airlineCode ?? 'All Airlines'}</span>
+                            <span>·</span>
+                            <span>{t.currency ?? 'THB'}</span>
+                            <span>·</span>
+                            <span className="text-emerald-600">Active</span>
+                            {isSeriesMatch && <><span>·</span><span className="text-slate-500 font-medium">ตรงกับ Series</span></>}
+                            {currencyMismatch && <><span>·</span><span className="text-amber-500">⚠ สกุลเงินต่างกัน</span></>}
+                          </div>
+                        </div>
+                        {isCurrent && (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 whitespace-nowrap shrink-0 font-medium">กำลังใช้งาน</span>
+                        )}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )
+        })()}
+      </Modal>
 
       {/* Single PNR Add/Edit Modal */}
       <SinglePnrModal
@@ -1205,15 +1225,23 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                   {condChangeConfirm.oldCondName && (
                     <div className="flex items-start gap-2">
                       <span className="text-slate-400 shrink-0 w-24 pt-px">Condition เดิม</span>
-                      <span className="text-slate-600">{condChangeConfirm.oldCondName}</span>
+                      <span className="text-slate-600">
+                        {condChangeConfirm.oldCondCode
+                          ? <><span className="font-mono">{condChangeConfirm.oldCondCode}</span> — </>
+                          : null}{condChangeConfirm.oldCondName}
+                      </span>
                     </div>
                   )}
                   <div className="flex items-start gap-2">
                     <span className="text-slate-400 shrink-0 w-24 pt-px">Condition ใหม่</span>
-                    <span className="font-semibold text-slate-800">{condChangeConfirm.newCondName}</span>
+                    <span className="font-semibold text-slate-800">
+                      {condChangeConfirm.newCondCode
+                        ? <><span className="font-mono">{condChangeConfirm.newCondCode}</span> — </>
+                        : null}{condChangeConfirm.newCondName}
+                    </span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-slate-400 shrink-0 w-24">แหล่งที่มาใหม่</span>
+                    <span className="text-slate-400 shrink-0 w-24">ผลการเปลี่ยน</span>
                     {condChangeConfirm.newSource === 'SERIES'
                       ? <span className="inline-flex px-1.5 py-px rounded text-[9px] font-medium bg-slate-100 text-slate-500 border border-slate-200">รับจาก Series</span>
                       : <span className="inline-flex px-1.5 py-px rounded text-[9px] font-medium bg-blue-50 text-blue-600 border border-blue-100">กำหนดโดยตรง</span>
@@ -1221,7 +1249,7 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                   </div>
                 </div>
                 <p className="text-xs text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
-                  การเปลี่ยนนี้มีผลเฉพาะ PNR รายการนี้ และไม่กระทบ PNR อื่น
+                  มีผลเฉพาะ PNR นี้ · ไม่กระทบ PNR อื่นใน Series
                 </p>
               </>
             ) : (
@@ -1266,6 +1294,7 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                   setCondChangeConfirm({
                     pnrIds, pnrDisplays,
                     newTemplateId: null,
+                    newCondCode: seriesCondCode ?? '',
                     newCondName: seriesCondName ?? 'Series Condition',
                     newSource: 'SERIES',
                   })
@@ -1275,6 +1304,7 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                     setCondChangeConfirm({
                       pnrIds, pnrDisplays,
                       newTemplateId: tmpl.templateId,
+                      newCondCode: tmpl.condition.conditionCode,
                       newCondName: tmpl.condition.conditionName,
                       newSource: 'DIRECT',
                     })
