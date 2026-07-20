@@ -8,7 +8,7 @@ import { Badge, TicketTypeBadge, PnrOperationalStatusBadge } from '@/components/
 import { Table, TableHead, TableBody, Th, Td, TableRow, EmptyRow } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
-import { formatDate, formatDateTime, formatNumber, formatStockPeriod, PAYMENT_TYPE_LABELS } from '@/lib/utils'
+import { formatDate, formatDateTime, formatNumber, formatStockPeriod, formatPeriodDisplay, buildRouteText, PAYMENT_TYPE_LABELS } from '@/lib/utils'
 import {
   ChevronLeft, Pencil, FileDown, AlertCircle, X, CheckCircle2,
 } from 'lucide-react'
@@ -47,6 +47,9 @@ export default function TicketDetailPage() {
 
   // Toast
   const [toast, setToast]                     = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
+
+  // Periods modal
+  const [showPeriodsModal, setShowPeriodsModal] = useState(false)
 
   useEffect(() => { setLiveStock(getDemoStockById(id) ?? getDemoStockByCode(id)); setIsMounted(true) }, [id])
 
@@ -181,7 +184,42 @@ export default function TicketDetailPage() {
   const paymentSchedule: PaymentScheduleItem[] = buildPaymentSchedule(liveStock)
 
   const depDates    = pnrRows.map(p => p.travel_start).filter(Boolean).sort()
-  const stockPeriod = formatStockPeriod(depDates[0] ?? null, depDates[depDates.length - 1] ?? null)
+  const periodInfo  = formatPeriodDisplay(depDates)
+  const stockPeriod = periodInfo.dateRange || formatStockPeriod(depDates[0] ?? null, depDates[depDates.length - 1] ?? null)
+
+  // Periods modal rows — one row per unique travelStart, with return date derived from sectorSchedules
+  const periodRows: { no: number; depDate: string; retDate: string | null; route: string }[] = (() => {
+    const BKK = ['BKK', 'DMK']
+    const byDep = new Map<string, typeof liveStock.pnrs[0]>()
+    for (const pnr of liveStock.pnrs) {
+      if (pnr.travelStart && !byDep.has(pnr.travelStart)) byDep.set(pnr.travelStart, pnr)
+    }
+    return Array.from(byDep.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([depDate, pnr], i) => {
+        const flightSet = (liveStock.flightSets ?? []).find(fs => fs.flightSetId === pnr.flightSetId)
+          ?? liveStock.flightSets?.[0]
+        const fsSectors = flightSet?.sectors ?? liveStock.sectors
+        const route = buildRouteText(fsSectors.map(s => ({ dep_airport_code: s.depAirportCode, arr_airport_code: s.arrAirportCode })))
+        let retDate: string | null = null
+        if (pnr.sectorSchedules && pnr.sectorSchedules.length > 0) {
+          const arrivals = pnr.sectorSchedules.filter(ss => ss.sectorType === 'Arrival')
+          let found: typeof arrivals[0] | null = null
+          for (let j = arrivals.length - 1; j >= 0; j--) {
+            const fsSec = fsSectors.find(s => s.sectorId === arrivals[j].flightSetSectorId)
+            if (fsSec && BKK.includes(fsSec.arrAirportCode)) { found = arrivals[j]; break }
+          }
+          retDate = found
+            ? found.departureDate
+            : arrivals.length > 0
+              ? arrivals[arrivals.length - 1].departureDate
+              : pnr.sectorSchedules[pnr.sectorSchedules.length - 1].departureDate
+        } else {
+          retDate = pnr.travelEnd || null
+        }
+        return { no: i + 1, depDate, retDate, route }
+      })
+  })()
 
   // Summary edit button
   const showSummaryEditBtn = !summaryEditMode
@@ -248,8 +286,18 @@ export default function TicketDetailPage() {
           <p className="font-mono font-bold text-slate-800 text-sm">{stock.route_text || '—'}</p>
         </div>
         <div className="bg-white rounded-xl border border-slate-200 p-3">
-          <p className="text-xs text-slate-400">Period</p>
-          <p className="text-sm font-medium">{stockPeriod}</p>
+          <p className="text-xs text-slate-400">ช่วงวันเดินทาง (Period)</p>
+          {periodInfo.count === 0 ? (
+            <p className="text-xs text-slate-400 italic mt-0.5">ยังไม่กำหนดวันเดินทาง</p>
+          ) : (
+            <>
+              <p className="text-sm font-medium leading-snug">{periodInfo.dateRange}</p>
+              <button onClick={() => setShowPeriodsModal(true)}
+                className="text-[10px] text-[#05a94f] hover:underline mt-0.5">
+                {periodInfo.count} Period{periodInfo.count > 1 ? 's' : ''}
+              </button>
+            </>
+          )}
         </div>
         <div className="bg-white rounded-xl border border-slate-200 p-3">
           <p className="text-xs text-slate-400">Seat (Bal / Total)</p>
@@ -285,6 +333,9 @@ export default function TicketDetailPage() {
           paymentSchedule={paymentSchedule}
           stockCode={stock.stock_code}
           stockPeriod={stockPeriod}
+          periodCount={periodInfo.count}
+          periodAllDates={periodInfo.allDates}
+          onShowPeriods={() => setShowPeriodsModal(true)}
           routeText={stock.route_text}
           ticketType={stock.ticket_type}
           groupType={stock.group_type}
@@ -478,6 +529,90 @@ export default function TicketDetailPage() {
         <p className="text-sm text-slate-700">คุณมีการเปลี่ยนแปลงที่ยังไม่ได้บันทึก ต้องการออกจากหน้านี้หรือไม่?</p>
         <p className="text-xs text-slate-500 mt-1.5">ข้อมูลที่แก้ไขจะสูญหาย</p>
       </Modal>
+
+      {/* ── Periods Modal ── */}
+      {showPeriodsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col max-h-[80vh]">
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-200 shrink-0">
+              <div>
+                <h3 className="font-semibold text-slate-800 text-sm">วันเดินทางทั้งหมด</h3>
+                <p className="text-xs text-slate-400 mt-0.5">{periodInfo.count} Period{periodInfo.count !== 1 ? 's' : ''}</p>
+              </div>
+              <button onClick={() => setShowPeriodsModal(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition">
+                <X size={15} />
+              </button>
+            </div>
+
+            {/* Scrollable body */}
+            <div className="flex-1 overflow-y-auto min-h-0">
+              {/* Desktop table */}
+              <table className="w-full text-sm hidden sm:table">
+                <thead className="sticky top-0 bg-slate-50 border-b border-slate-100">
+                  <tr>
+                    <th className="text-[11px] font-medium text-slate-400 text-right px-4 py-2.5 w-8">#</th>
+                    <th className="text-[11px] font-medium text-slate-500 text-left px-4 py-2.5">วันเดินทางขาไป</th>
+                    <th className="text-[11px] font-medium text-slate-500 text-left px-4 py-2.5">วันเดินทางขากลับ</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {periodRows.map(row => (
+                    <tr key={row.depDate} className="border-t border-slate-100 hover:bg-slate-50/60">
+                      <td className="text-[11px] text-slate-400 text-right px-4 py-3 align-top">{row.no}</td>
+                      <td className="px-4 py-3 align-top">
+                        <div className="font-medium text-slate-800 text-sm">{formatDate(row.depDate)}</div>
+                        {row.route && <div className="text-[11px] text-slate-400 mt-0.5 font-mono tracking-wide">{row.route}</div>}
+                      </td>
+                      <td className="px-4 py-3 align-top">
+                        {row.retDate
+                          ? <span className="font-medium text-slate-800 text-sm">{formatDate(row.retDate)}</span>
+                          : <span className="text-xs text-slate-400 italic">ยังไม่กำหนด</span>
+                        }
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              {/* Mobile cards */}
+              <div className="sm:hidden divide-y divide-slate-100">
+                {periodRows.map(row => (
+                  <div key={row.depDate} className="px-4 py-3.5 flex items-start gap-3">
+                    <span className="text-xs text-slate-400 w-5 text-right shrink-0 pt-0.5">{row.no}</span>
+                    <div className="flex-1 min-w-0">
+                      {row.route && <div className="text-[10px] text-slate-400 font-mono tracking-wide mb-1.5">{row.route}</div>}
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <div className="text-[10px] text-slate-400 mb-0.5">ขาไป</div>
+                          <div className="text-sm font-medium text-slate-800">{formatDate(row.depDate)}</div>
+                        </div>
+                        <div className="text-slate-300 pt-3 text-xs">→</div>
+                        <div className="text-right">
+                          <div className="text-[10px] text-slate-400 mb-0.5">ขากลับ</div>
+                          {row.retDate
+                            ? <div className="text-sm font-medium text-slate-800">{formatDate(row.retDate)}</div>
+                            : <div className="text-xs text-slate-400 italic">ยังไม่กำหนด</div>
+                          }
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-5 py-3 border-t border-slate-100 shrink-0">
+              <button onClick={() => setShowPeriodsModal(false)}
+                className="w-full text-xs text-slate-500 hover:text-slate-700 transition py-1.5 rounded-lg hover:bg-slate-50">
+                ปิด
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </AppLayout>
   )

@@ -352,7 +352,7 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
       return
     }
     const now = new Date().toISOString()
-    const log: DemoLog = { logId: newId('LOG'), action: 'เปลี่ยน Dummy → PNR จริง', message: `${convertingPnr.dummyPnr} → ${convertCode.trim()}`, createdAt: now, createdBy: 'System' }
+    const log: DemoLog = { logId: newId('LOG'), action: 'เปลี่ยน Dummy → PNR', message: `${convertingPnr.dummyPnr} → ${convertCode.trim()}`, createdAt: now, createdBy: 'System' }
     const updated_pnr: DemoPNR = { ...convertingPnr, pnrCode: convertCode.trim(), dummyPnr: '', pnrType: 'real', pnrDisplay: convertCode.trim() }
     const newPnrs = liveStock.pnrs.map(p => p.pnrId === convertingPnr.pnrId ? updated_pnr : p)
     const updated: DemoStock = { ...liveStock, pnrs: newPnrs, summary: calculateStockSummary(newPnrs), updatedAt: now, logs: [log, ...liveStock.logs] }
@@ -362,7 +362,7 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
     setConvertingPnr(null)
     setConvertCode('')
     setConvertError('')
-    showToast('เปลี่ยนเป็น PNR จริงสำเร็จ')
+    showToast('เปลี่ยนเป็น PNR สำเร็จ')
   }
 
   // Derive PNRRow[] display
@@ -918,7 +918,7 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
       <Modal
         open={showConvertModal}
         onClose={() => { setShowConvertModal(false); setConvertingPnr(null); setConvertCode(''); setConvertError('') }}
-        title="เปลี่ยนเป็น PNR จริง"
+        title="เปลี่ยนเป็น PNR"
         footer={
           <>
             <Button variant="ghost" onClick={() => { setShowConvertModal(false); setConvertingPnr(null); setConvertCode(''); setConvertError('') }}>ยกเลิก</Button>
@@ -928,9 +928,9 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
       >
         {convertingPnr && (
           <div className="space-y-3">
-            <p className="text-xs text-slate-500">เปลี่ยน <strong className="font-mono text-amber-600">{convertingPnr.dummyPnr}</strong> เป็น PNR จริง</p>
+            <p className="text-xs text-slate-500">เปลี่ยน <strong className="font-mono text-amber-600">{convertingPnr.dummyPnr}</strong> เป็น PNR</p>
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">PNR Code จริง <span className="text-red-500">*</span></label>
+              <label className="block text-xs font-medium text-slate-700 mb-1">PNR Code <span className="text-red-500">*</span></label>
               <input
                 type="text" placeholder="เช่น TG9999" value={convertCode}
                 onChange={e => { setConvertCode(e.target.value); setConvertError('') }}

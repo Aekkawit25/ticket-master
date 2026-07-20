@@ -25,6 +25,9 @@ export interface SummaryTabProps {
   paymentSchedule: PaymentScheduleItem[]
   stockCode: string
   stockPeriod: string
+  periodCount?: number
+  periodAllDates?: string[]
+  onShowPeriods?: () => void
   routeText: string
   ticketType: string
   groupType?: string
@@ -51,10 +54,10 @@ export interface SummaryTabProps {
 // ─── Sub-components ────────────────────────────────────────────────────────────
 
 /** Compact key–value row used inside summary cards */
-function SR({ label, value, hi }: { label: string; value: string | number; hi?: boolean }) {
+function SR({ label, value, hi, tooltip }: { label: string; value: string | number; hi?: boolean; tooltip?: string }) {
   return (
     <div className="flex items-center justify-between py-1.5 border-b border-slate-50 last:border-0">
-      <span className="text-xs text-slate-500">{label}</span>
+      <span className="text-xs text-slate-500" title={tooltip}>{label}</span>
       <span className={`text-sm font-semibold ${hi ? 'text-[#05a94f]' : 'text-slate-800'}`}>{value}</span>
     </div>
   )
@@ -97,6 +100,8 @@ export function SummaryTab({
   paymentSchedule,
   stockCode,
   stockPeriod,
+  periodCount = 0,
+  onShowPeriods,
   routeText,
   ticketType,
   groupType,
@@ -240,7 +245,7 @@ export function SummaryTab({
                   <div><span className="text-slate-400">{stockTypeCfg.codeLabel}: </span><span className="font-mono font-bold">{stockCode}</span></div>
                   <div><span className="text-slate-400">Ticket Type: </span><span>{ticketType}</span></div>
                   <div><span className="text-slate-400">Route: </span><span className="font-mono font-medium text-[#05a94f]">{routeText || '—'}</span></div>
-                  <div><span className="text-slate-400">Period: </span><span>{stockPeriod || '—'}</span></div>
+                  <div><span className="text-slate-400">ช่วงวันเดินทาง: </span><span>{stockPeriod || '—'}</span></div>
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -285,8 +290,20 @@ export function SummaryTab({
                 <p className="font-mono font-bold text-[#05a94f]">{routeText || '—'}</p>
               </div>
               <div>
-                <p className="text-[10px] text-slate-400 mb-0.5">Period</p>
-                <p className="text-slate-700">{stockPeriod || '—'}</p>
+                <p className="text-[10px] text-slate-400 mb-0.5">ช่วงวันเดินทาง (Period)</p>
+                {periodCount === 0 ? (
+                  <p className="text-xs text-slate-400 italic">ยังไม่กำหนดวันเดินทาง</p>
+                ) : (
+                  <>
+                    <p className="text-slate-700">{stockPeriod}</p>
+                    {onShowPeriods && (
+                      <button onClick={onShowPeriods}
+                        className="text-[10px] text-[#05a94f] hover:underline mt-0.5">
+                        {periodCount} Period{periodCount > 1 ? 's' : ''} — ดูทั้งหมด
+                      </button>
+                    )}
+                  </>
+                )}
               </div>
               <div>
                 <p className="text-[10px] text-slate-400 mb-0.5">Trip Type</p>
@@ -307,20 +324,46 @@ export function SummaryTab({
       {/* ── Summary grid (2 col) ─────────────────────────────── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 
-        {/* 2. PNR Summary */}
+        {/* 2. PNR & Seat Summary */}
         <SCard
-          title="PNR Summary"
+          title="PNR & Seat Summary"
           onNavigate={() => onNavigateTab('PNR')}
           empty={pnrStats.total === 0}
           emptyText="ยังไม่มี PNR"
         >
-          <SR label="PNR ทั้งหมด" value={pnrStats.total} hi />
-          <SR label="Real / Dummy" value={`${pnrStats.real} / ${pnrStats.dummy}`} />
-          <SR label="Seat Total" value={pnrStats.seatTotal} />
-          <SR label="Used / Balance" value={`${pnrStats.seatUsed} / ${pnrStats.seatBalance}`} />
-          {pnrStats.dominant && (
-            <SR label="สถานะหลัก" value={pnrStats.dominant} />
-          )}
+          <div className="flex flex-col sm:flex-row">
+            {/* ─ PNR group ─ */}
+            <div className="flex-1 sm:pr-4 sm:border-r border-slate-100 pb-3 sm:pb-0">
+              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">PNR</p>
+              <SR label="PNR ทั้งหมด" value={pnrStats.total} hi />
+              <SR
+                label="PNR / Dummy PNR"
+                value={`${pnrStats.real} / ${pnrStats.dummy}`}
+                tooltip="PNR: รหัสการจองจริงที่ได้รับจากสายการบิน | Dummy PNR: รหัสชั่วคราวที่ระบบสร้างขึ้นก่อนรับรหัสจริง"
+              />
+              {pnrStats.dominant && (
+                <SR label="สถานะหลัก" value={pnrStats.dominant} />
+              )}
+            </div>
+            {/* ─ Seat group ─ */}
+            <div className="flex-1 sm:pl-4 pt-3 sm:pt-0 border-t sm:border-t-0 border-slate-100">
+              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Seat</p>
+              <SR label="Seat Total" value={seatTotal} />
+              <SR label="Used"       value={seatUsed} />
+              <SR label="Balance"    value={seatBalance} hi />
+              <div className="mt-2.5">
+                <div className="flex items-center justify-between mb-1 text-[10px] text-slate-400">
+                  <span>Utilization</span><span>{seatPct}%</span>
+                </div>
+                <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                  <div className="h-1.5 rounded-full transition-all" style={{
+                    width: `${seatPct}%`,
+                    background: seatPct >= 80 ? '#ef4444' : seatPct >= 60 ? '#f59e0b' : '#05a94f',
+                  }} />
+                </div>
+              </div>
+            </div>
+          </div>
         </SCard>
 
         {/* 3. Flight Set Summary */}
@@ -416,23 +459,6 @@ export function SummaryTab({
           )}
         </SCard>
 
-        {/* 6. Seat Summary */}
-        <SCard title="Seat Summary">
-          <SR label="Total"   value={seatTotal} />
-          <SR label="Used"    value={seatUsed} />
-          <SR label="Balance" value={seatBalance} hi />
-          <div className="mt-3">
-            <div className="flex items-center justify-between mb-1 text-[10px] text-slate-400">
-              <span>การใช้งาน</span><span>{seatPct}%</span>
-            </div>
-            <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-              <div className="h-2 rounded-full transition-all" style={{
-                width: `${seatPct}%`,
-                background: seatPct >= 80 ? '#ef4444' : seatPct >= 60 ? '#f59e0b' : '#05a94f',
-              }} />
-            </div>
-          </div>
-        </SCard>
 
       </div>
 

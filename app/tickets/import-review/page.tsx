@@ -78,7 +78,7 @@ function PNRCell({ code, dummy }: { code: string; dummy: string }) {
       </span>
       {code ? (
         <span className="inline-flex w-fit px-1.5 py-px rounded text-[9px] font-medium bg-blue-50 text-blue-600 border border-blue-200 whitespace-nowrap">
-          PNR จริง
+          PNR
         </span>
       ) : dummy ? (
         <span className="inline-flex w-fit px-1.5 py-px rounded text-[9px] font-medium bg-amber-50 text-amber-600 border border-amber-200 whitespace-nowrap">

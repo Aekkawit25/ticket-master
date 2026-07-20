@@ -306,7 +306,7 @@ export default function TicketTable({ tickets, filterType, filterGroupType, filt
       message: (
         <div className="space-y-1 text-sm">
           <p>คัดลอกโครงสร้าง Stock <strong>{stock.stockCode}</strong> "{stock.groupName}" ไปยัง Stock ใหม่?</p>
-          <p className="text-slate-500 text-xs">PNR จริง, Seat Used, Booking, TTL จะไม่ถูกคัดลอก</p>
+          <p className="text-slate-500 text-xs">PNR, Seat Used, Booking, TTL จะไม่ถูกคัดลอก</p>
         </div>
       ),
       confirmLabel: 'Duplicate',

@@ -164,6 +164,45 @@ export function formatStockPeriod(
   return `${s} – ${formatDate(periodEnd)}`
 }
 
+/**
+ * Compute a smart period display from an array of departure date strings.
+ * - Deduplicates and sorts dates
+ * - Smart range format: same month ("15–29 Jul 26"), same year ("15 Jul – 20 Aug 26"), cross-year ("15 Dec 26 – 10 Jan 27")
+ */
+export function formatPeriodDisplay(depDates: string[]): {
+  dateRange: string
+  count: number
+  allDates: string[]
+} {
+  const allDates = [...new Set(depDates.filter(Boolean))].sort()
+  const count = allDates.length
+  if (count === 0) return { dateRange: '', count: 0, allDates: [] }
+
+  const d1 = parseDateSafe(allDates[0])
+  if (!isValid(d1)) return { dateRange: allDates[0], count, allDates }
+
+  if (count === 1) {
+    return { dateRange: format(d1, 'dd MMM yy'), count, allDates }
+  }
+
+  const d2 = parseDateSafe(allDates[count - 1])
+  if (!isValid(d2)) return { dateRange: format(d1, 'dd MMM yy'), count, allDates }
+
+  const y1 = d1.getFullYear(), m1 = d1.getMonth()
+  const y2 = d2.getFullYear(), m2 = d2.getMonth()
+
+  if (y1 === y2 && m1 === m2) {
+    // "15–29 Jul 26"
+    return { dateRange: `${format(d1, 'd')}–${format(d2, 'dd MMM yy')}`, count, allDates }
+  }
+  if (y1 === y2) {
+    // "15 Jul – 20 Aug 26"
+    return { dateRange: `${format(d1, 'dd MMM')} – ${format(d2, 'dd MMM yy')}`, count, allDates }
+  }
+  // "15 Dec 26 – 10 Jan 27"
+  return { dateRange: `${format(d1, 'dd MMM yy')} – ${format(d2, 'dd MMM yy')}`, count, allDates }
+}
+
 /** DD MMM YY HH:mm  e.g. 25 Feb 26 18:00.  Always interprets datetime strings in local time. */
 export function formatDateTime(date: string | null | undefined): string {
   if (!date) return '-'

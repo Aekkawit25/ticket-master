@@ -2920,7 +2920,7 @@ function ReplaceDummyModal({
     <Modal
       open={open}
       onClose={handleReplaceClose}
-      title="เปลี่ยน Dummy PNR เป็น PNR จริง"
+      title="เปลี่ยน Dummy PNR เป็น PNR"
       size="sm"
       footer={
         <>
@@ -2937,7 +2937,7 @@ function ReplaceDummyModal({
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1.5">
-              PNR จริงใหม่ <span className="text-red-500">*</span>
+              PNR ใหม่ <span className="text-red-500">*</span>
             </label>
             <input
               value={newPnr}
@@ -3111,7 +3111,7 @@ export default function ListPNRPage() {
     const data = filtered.map(r => ({
       'PNR': r.pnrDisplay,
       'Dummy PNR': r.dummyPnr || '',
-      'PNR Type': r.pnrType === 'real' ? 'Real PNR' : 'Dummy PNR',
+      'PNR Type': r.pnrType === 'real' ? 'PNR' : 'Dummy PNR',
       'Series Code': r.stockCode,
       'Series Name': r.groupName,
       'Ticket Type': r.ticketType,
@@ -3231,7 +3231,7 @@ export default function ListPNRPage() {
       {/* Summary Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-5">
         <StatCard title="PNR ทั้งหมด" value={summary.total} icon={<Hash size={18} />} color="#05a94f" />
-        <StatCard title="PNR จริง" value={summary.real} icon={<CheckCircle2 size={18} />} color="#3b82f6" />
+        <StatCard title="PNR" value={summary.real} icon={<CheckCircle2 size={18} />} color="#3b82f6" />
         <StatCard title="Dummy PNR" value={summary.dummy} icon={<AlertCircle size={18} />} color="#f59e0b" />
         <StatCard title="มีที่นั่งคงเหลือ" value={summary.hasSeats} icon={<Users size={18} />} color="#10b981" />
         <StatCard title="ยังไม่ Map" value={summary.notMapped} icon={<Link2 size={18} />} color="#8b5cf6" />
@@ -3279,7 +3279,7 @@ export default function ListPNRPage() {
               <label className="text-[11px] font-medium text-slate-500 block mb-1">PNR Type</label>
               <select value={filters.pnrType} onChange={e => setFilter('pnrType', e.target.value)} className={selectClass}>
                 <option value="">ทั้งหมด</option>
-                <option value="real">Real PNR</option>
+                <option value="real">PNR</option>
                 <option value="dummy">Dummy PNR</option>
               </select>
             </div>
