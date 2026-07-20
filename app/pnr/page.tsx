@@ -2075,7 +2075,7 @@ function ViewDrawer({
                           <label className="text-xs font-medium text-slate-600 block mb-1">เวลา</label>
                           <TimeInput value={txActionForm.effectiveTime}
                             onChange={v => setTxActionForm(f => ({ ...f, effectiveTime: v }))}
-                            className={inputCls} />
+                            className="border-slate-200 rounded-lg" />
                         </div>
                       </div>
 
@@ -2338,7 +2338,7 @@ function ViewDrawer({
                       <label className="text-xs font-medium text-slate-600 block mb-1">เวลา</label>
                       <TimeInput value={txForm.transactionTime}
                         onChange={v => setTxForm(f => ({ ...f, transactionTime: v }))}
-                        className={inputCls} />
+                        className="border-slate-200 rounded-lg" />
                     </div>
                   )}
                 </div>

@@ -477,7 +477,7 @@ export const StageCard = memo(function StageCard({
                   <TimeInput
                     value={stage.dueTime ?? ''}
                     onChange={v => handleChange({ dueTime: v })}
-                    className={iCls}
+                    className="h-10 border-slate-300 rounded-lg"
                   />
                 </Slot>
               </div>

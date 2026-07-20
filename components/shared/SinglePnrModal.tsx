@@ -451,7 +451,7 @@ export function SinglePnrModal({
                   />
                 </Field>
                 <Field label="เวลา (ไม่บังคับ)">
-                  <TimeInput value={values.ttlTime} onChange={v => patch({ ttlTime: v })} className={cls('ttlTime')} />
+                  <TimeInput value={values.ttlTime} onChange={v => patch({ ttlTime: v })} className="border-slate-300 rounded-lg" />
                 </Field>
               </div>
               {ttlDisplayDate && (

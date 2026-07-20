@@ -318,8 +318,12 @@ export function TimeInput({
       <div
         ref={wrapperRef}
         className={cn(
-          'group/time flex items-center transition-colors',
-          highlight && 'border-amber-400 bg-amber-50/30',
+          // Default: looks like a standard text input — border, bg, rounded, focus ring
+          'group/time flex items-center w-full border border-slate-200 rounded-xl bg-white transition-colors',
+          // Focus ring on the wrapper (focus-within targets the inner input's focus state)
+          'focus-within:ring-2 focus-within:ring-[#05a94f]/30 focus-within:border-[#05a94f]',
+          disabled && 'bg-slate-50 opacity-70',
+          highlight && 'border-amber-400 bg-amber-50/30 focus-within:border-amber-400',
           className,
         )}
       >
