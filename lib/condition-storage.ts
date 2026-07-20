@@ -9,6 +9,7 @@ import {
   defaultTemplate,
   newTemplateId,
   generateTemplateCode,
+  generateCondCode,
   defaultCondition,
   defaultTtlRule,
   defaultRefundPolicy,
@@ -139,6 +140,10 @@ export function duplicateConditionTemplate(id: string): AppConditionTemplate | n
   if (!src) return null
   const now = new Date().toISOString()
   const existing = getConditionTemplates().map(t => t.condition.conditionCode)
+  const airline = src.airlineCode || src.condition.airline || ''
+  const dupCode = airline
+    ? generateCondCode(airline, existing)
+    : generateTemplateCode(existing)
   const dup: AppConditionTemplate = {
     ...src,
     templateId: newTemplateId(),
@@ -148,7 +153,7 @@ export function duplicateConditionTemplate(id: string): AppConditionTemplate | n
     condition: {
       ...src.condition,
       conditionId:   `CON-${Date.now()}-copy`,
-      conditionCode: generateTemplateCode(existing),
+      conditionCode: dupCode,
       conditionName: src.condition.conditionName + ' (Copy)',
       stages:        src.condition.stages.map(s => ({ ...s, stageId: `STG-${Date.now()}-${Math.random().toString(36).slice(2, 5)}` })),
     },

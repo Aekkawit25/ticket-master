@@ -1,16 +1,18 @@
 'use client'
 
 import { use, useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import AppLayout from '@/components/layout/AppLayout'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Modal } from '@/components/ui/modal'
+import { cn } from '@/lib/utils'
 import {
   Pencil, Copy, PowerOff, Trash2, ArrowLeft,
   CreditCard, Clock, Package, TrendingDown, X, RefreshCcw, FileText, Edit2,
 } from 'lucide-react'
+import ConditionUsageTab from '@/components/condition-builder/ConditionUsageTab'
 import {
   type AppConditionTemplate, type CondStage, type CondSeatReductionRule,
   COND_PAYMENT_TYPE_LABELS, COND_DUE_TYPE_LABELS,
@@ -217,9 +219,13 @@ function SrPenaltySummary({ overLimit, forfeitSrc, penType, penAmount, penPercen
 
 export default function ConditionTemplateDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
-  const router = useRouter()
-  const [template, setTemplate] = useState<AppConditionTemplate | null>(null)
-  const [deleteModal, setDeleteModal] = useState(false)
+  const router       = useRouter()
+  const searchParams = useSearchParams()
+  const [template, setTemplate]         = useState<AppConditionTemplate | null>(null)
+  const [deleteModal, setDeleteModal]   = useState(false)
+  const [activeTab, setActiveTab]       = useState<'detail' | 'usage'>(() =>
+    searchParams.get('tab') === 'usage' ? 'usage' : 'detail'
+  )
 
   useEffect(() => {
     const t = getConditionTemplateById(id)
@@ -267,15 +273,15 @@ export default function ConditionTemplateDetailPage({ params }: { params: Promis
 
   return (
     <AppLayout title="Template Condition">
-      <div className="max-w-3xl mx-auto space-y-4">
+      <div className="space-y-4">
 
         {/* ── Toolbar ───────────────────────────────────────────────────────── */}
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
           <button type="button" onClick={() => router.push('/tickets/condition-templates')}
-            className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800 transition">
+            className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800 transition shrink-0">
             <ArrowLeft size={14} /> กลับ
           </button>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap justify-end">
             <Button size="sm" variant="outline" icon={<Copy size={12} />} onClick={handleDuplicate}>คัดลอก</Button>
             <Button size="sm" variant="outline" icon={<PowerOff size={12} />} onClick={handleToggleStatus}>
               {c.status === 'Active' ? 'ปิดใช้งาน' : 'เปิดใช้งาน'}
@@ -288,7 +294,29 @@ export default function ConditionTemplateDetailPage({ params }: { params: Promis
           </div>
         </div>
 
+        {/* ── Tabs ──────────────────────────────────────────────────────────── */}
+        <div className="flex gap-0 border-b border-slate-200">
+          {(['detail', 'usage'] as const).map(t => (
+            <button
+              key={t}
+              onClick={() => setActiveTab(t)}
+              className={cn(
+                'px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap',
+                activeTab === t
+                  ? 'border-[#05a94f] text-[#05a94f]'
+                  : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300',
+              )}
+            >
+              {t === 'detail' ? 'รายละเอียด Condition' : 'การใช้งาน Condition'}
+            </button>
+          ))}
+        </div>
+
+        {/* ── Usage tab ─────────────────────────────────────────────────────── */}
+        {activeTab === 'usage' && <ConditionUsageTab template={template} />}
+
         {/* ── Overview ──────────────────────────────────────────────────────── */}
+        {activeTab === 'detail' && (<div className="max-w-3xl mx-auto space-y-4">
         <Card>
           <CardHeader>
             <div className="flex flex-wrap items-center gap-2">
@@ -907,6 +935,8 @@ export default function ConditionTemplateDetailPage({ params }: { params: Promis
             </CardContent>
           </Card>
         )}
+
+        </div>)}
 
         {/* ── Delete modal ──────────────────────────────────────────────────── */}
         <Modal

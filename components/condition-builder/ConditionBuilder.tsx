@@ -74,7 +74,8 @@ export function validateTab(key: TabKey, v: AppCondition, conditionMode: Conditi
   switch (key) {
     case 'basic': {
       const errs: string[] = []
-      if (!v.conditionCode.trim()) errs.push('กรุณาระบุรหัส Condition')
+      // conditionCode เป็น auto-generate ใน template mode — ไม่ต้องตรวจ required
+      if (conditionMode === 'series' && !v.conditionCode.trim()) errs.push('กรุณาระบุรหัส Condition')
       if (!v.conditionName.trim()) errs.push('กรุณาระบุชื่อ Condition')
       // In series/template mode, airline/currency are locked from parent — skip those checks
       // templateInfo being present means airline/currency always come from the template header
@@ -534,7 +535,7 @@ export function getTabSummary(key: TabKey, v: AppCondition, currency = 'THB', co
       const inTemplateMode = conditionMode === 'template' && !!templateInfo
       if (!v.conditionCode && !v.conditionName && !effAirline && !inTemplateMode) return 'ยังไม่ระบุ'
       const airline = effAirline ? getAirlineName(effAirline)
-        : inTemplateMode ? 'ทุกสายการบิน'
+        : inTemplateMode ? 'ยังไม่ได้เลือกสายการบิน'
         : 'ยังไม่เลือก Airline'
       const parts = [
         v.conditionCode || '—',
@@ -844,7 +845,7 @@ export function BasicInfoSection({ value, onChange, readOnly, errors = [], condi
             <div>
               <p className="text-[10px] text-emerald-500 font-semibold uppercase tracking-wide mb-0.5">Airline</p>
               <p className="text-sm font-semibold text-emerald-900">
-                {airlineObj ? `${airlineObj.code} — ${airlineObj.name}` : (templateInfo.airlineCode || 'ทุกสายการบิน')}
+                {airlineObj ? `${airlineObj.code} — ${airlineObj.name}` : (templateInfo.airlineCode || 'ยังไม่ได้เลือกสายการบิน')}
               </p>
             </div>
             <div>
@@ -891,25 +892,38 @@ export function BasicInfoSection({ value, onChange, readOnly, errors = [], condi
         </div>
       )}
 
-      {/* Row 1: Code (full width) */}
+      {/* Row 1: Code — always read-only (system-generated) */}
       <div>
-        <Label required>รหัส Condition</Label>
-        {isSeries ? (
-          <div className="flex items-center gap-2 h-9 px-3 rounded-xl border border-slate-200 bg-slate-50">
-            <Lock size={12} className="text-slate-400 shrink-0" />
-            <span className="font-mono text-sm text-slate-700 select-all">{value.conditionCode || '—'}</span>
-          </div>
-        ) : (
-          <FInput
-            value={value.conditionCode}
-            onChange={v => set('conditionCode', v.toUpperCase().replace(/\s/g, ''))}
-            placeholder="C001"
-            disabled={readOnly}
-            className={hasErr(['conditionCode']) ? 'border-red-300 focus:border-red-400' : ''}
-          />
-        )}
+        <Label>รหัส Condition</Label>
+        <div className="flex items-center gap-2 h-9 px-3 rounded-xl border border-slate-200 bg-slate-50">
+          {isSeries ? (
+            <>
+              <Lock size={12} className="text-slate-400 shrink-0" />
+              <span className="font-mono text-sm text-slate-700 select-all">{value.conditionCode || '—'}</span>
+            </>
+          ) : value.conditionCode ? (
+            <>
+              <span className="font-mono text-sm font-semibold text-slate-800 select-all flex-1">{value.conditionCode}</span>
+              <button
+                type="button"
+                onClick={() => navigator.clipboard?.writeText(value.conditionCode)}
+                className="shrink-0 text-slate-400 hover:text-slate-600 transition"
+                title="คัดลอกรหัส"
+              >
+                <Copy size={13} />
+              </button>
+            </>
+          ) : (
+            <span className="text-xs text-slate-400 italic">ระบบจะสร้างรหัสหลังเลือกสายการบิน</span>
+          )}
+        </div>
         <p className="text-[10px] text-slate-400 mt-1">
-          {isSeries ? 'รหัสสร้างอัตโนมัติจาก Series — ไม่สามารถแก้ไขได้' : 'ตัวอักษร+เลข ไม่มีช่องว่าง เช่น C001, GRP-TG-01'}
+          {isSeries
+            ? 'รหัสสร้างอัตโนมัติจาก Series — ไม่สามารถแก้ไขได้'
+            : value.conditionCode
+              ? 'รหัสตัวอย่าง — รหัสจริงจะยืนยันและล็อกเมื่อบันทึก'
+              : 'รหัส Condition จะสร้างอัตโนมัติ (COND-{สายการบิน}-NNNN) หลังเลือกสายการบิน'
+          }
         </p>
       </div>
 

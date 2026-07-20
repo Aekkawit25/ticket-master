@@ -1390,3 +1390,16 @@ export function generateConditionCode(existing: string[] = []): string {
   }
   return `C${Date.now()}`
 }
+
+/**
+ * สร้างรหัส Condition ในรูปแบบ COND-{AIRLINE}-{NNNN}
+ * Running number แยกตามสายการบิน เริ่มที่ 0001
+ */
+export function generateCondCode(airlineCode: string, existing: string[] = []): string {
+  const prefix = `COND-${airlineCode.toUpperCase().trim()}-`
+  for (let i = 1; i <= 9999; i++) {
+    const code = `${prefix}${String(i).padStart(4, '0')}`
+    if (!existing.includes(code)) return code
+  }
+  return `${prefix}${Date.now()}`
+}

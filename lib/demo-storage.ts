@@ -398,6 +398,8 @@ export interface DemoPNR {
   remark: string
   initialSeatCount?: number                         // seat count at PNR creation (INITIAL_SEAT basis)
   stageSnapshots?: Record<string, PNRStageSnapshot> // keyed by stageId
+  conditionTemplateId?: string | null               // directly-assigned condition template ID
+  conditionOverride?: boolean                       // true = this PNR overrides its Series' condition
 }
 
 export interface DemoSummary {

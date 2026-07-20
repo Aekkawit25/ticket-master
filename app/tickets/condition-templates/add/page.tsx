@@ -11,26 +11,31 @@ import {
   type AppConditionTemplate,
   type AppCondition,
   defaultTemplate,
-  generateTemplateCode,
+  generateCondCode,
 } from '@/lib/condition-schema'
 import { getConditionTemplates, saveConditionTemplate } from '@/lib/condition-storage'
 
 export default function AddConditionTemplatePage() {
   const router = useRouter()
   const [isMounted, setIsMounted] = useState(false)
-  const [template, setTemplate] = useState<AppConditionTemplate>(() => defaultTemplate())
+  const [template, setTemplate] = useState<AppConditionTemplate>(() => defaultTemplate({ ticketType: 'Group' }))
+  const [airlineError, setAirlineError] = useState('')
 
+  // Initial mount
+  useEffect(() => { setIsMounted(true) }, [])
+
+  // Preview conditionCode whenever airlineCode changes
   useEffect(() => {
+    const airline = template.airlineCode
+    if (!airline) {
+      setTemplate(prev => ({ ...prev, condition: { ...prev.condition, conditionCode: '' } }))
+      return
+    }
     const existingCodes = getConditionTemplates().map(t => t.condition.conditionCode)
-    setTemplate(defaultTemplate({
-      ticketType: 'Group',
-      condition: {
-        ...defaultTemplate().condition,
-        conditionCode: generateTemplateCode(existingCodes),
-      },
-    }))
-    setIsMounted(true)
-  }, [])
+    const preview = generateCondCode(airline, existingCodes)
+    setTemplate(prev => ({ ...prev, condition: { ...prev.condition, conditionCode: preview } }))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [template.airlineCode])
 
   const setMeta = <K extends keyof AppConditionTemplate>(k: K, v: AppConditionTemplate[K]) =>
     setTemplate(prev => ({ ...prev, [k]: v }))
@@ -38,13 +43,21 @@ export default function AddConditionTemplatePage() {
   if (!isMounted) return null
 
   const handleSave = (cond: AppCondition) => {
+    if (!template.airlineCode) {
+      setAirlineError('กรุณาเลือกสายการบิน')
+      return
+    }
     const now = new Date().toISOString()
+    // Generate final code fresh at save time (prevent race / duplicate)
+    const existingCodes = getConditionTemplates().map(t => t.condition.conditionCode)
+    const finalCode = generateCondCode(template.airlineCode, existingCodes)
     const toSave: AppConditionTemplate = {
       ...template,
       currency: template.currency,
       condition: {
         ...cond,
-        airline:  template.airlineCode ?? cond.airline,
+        conditionCode: finalCode,
+        airline:  template.airlineCode,
         currency: template.currency,
       },
       createdAt: now,
@@ -70,15 +83,22 @@ export default function AddConditionTemplatePage() {
             <div className="flex items-center justify-between mb-3">
               <p className="text-xs font-semibold text-slate-500">ข้อมูล Template</p>
               <span className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full font-medium">
-                เงื่อนไขนี้ใช้กับ Group Booking เท่านั้น
+                ใช้สำหรับ Group Booking ของสายการบินที่เลือก
               </span>
             </div>
             <div className="grid grid-cols-3 gap-3">
               <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">สายการบิน</label>
                 <AirlineCombobox
+                  label="สายการบิน"
+                  required
+                  showAllOption={false}
+                  buttonPlaceholder="เลือกสายการบิน"
                   value={template.airlineCode ?? ''}
-                  onChange={v => setMeta('airlineCode', v === '' ? null : v)}
+                  onChange={v => {
+                    setMeta('airlineCode', v || null)
+                    if (v) setAirlineError('')
+                  }}
+                  error={airlineError}
                 />
               </div>
               <div>

@@ -18,6 +18,9 @@ export interface AirlineComboboxProps {
   disabled?: boolean
   error?: string
   helper?: string
+  /** Placeholder shown on the trigger button when nothing is selected */
+  buttonPlaceholder?: string
+  /** Placeholder shown inside the search input */
   placeholder?: string
   className?: string
 }
@@ -36,6 +39,7 @@ export function AirlineCombobox({
   disabled = false,
   error,
   helper,
+  buttonPlaceholder,
   placeholder = 'ค้นหา Code หรือชื่อสายการบิน',
   className,
 }: AirlineComboboxProps) {
@@ -228,7 +232,7 @@ export function AirlineCombobox({
                 <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-medium shrink-0">Inactive</span>
               </>
             ) : (
-              displayText || placeholder
+              displayText || buttonPlaceholder || placeholder
             )}
           </span>
           <ChevronDown size={14} className="text-slate-400 shrink-0 ml-1" />

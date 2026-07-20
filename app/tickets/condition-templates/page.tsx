@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import AppLayout from '@/components/layout/AppLayout'
 import { Card } from '@/components/ui/card'
@@ -28,8 +28,16 @@ import {
   toggleConditionTemplateStatus,
   seedTemplatesIfEmpty,
 } from '@/lib/condition-storage'
+import {
+  computeUsageStats,
+  type UsageStats,
+} from '@/lib/condition-usage'
 import { formatDate } from '@/lib/utils'
 import { cn } from '@/lib/utils'
+
+// ── Types ──────────────────────────────────────────────────────────────────────
+
+type UsageFilter = 'all' | 'unused' | 'inuse' | 'has_series' | 'has_pnr' | 'has_override'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -86,6 +94,10 @@ function getSeatChip(c: AppCondition): { label: string; cls: string } {
   return { label: 'ยังไม่ระบุ', cls: 'bg-slate-50 text-slate-400 border border-slate-100' }
 }
 
+function isInUse(s: UsageStats | undefined): boolean {
+  return !!s && (s.series.length > 0 || s.directPnrs.length > 0)
+}
+
 // ── Chip component ─────────────────────────────────────────────────────────────
 function SummaryChip({ label, value, cls }: { label: string; value: string; cls: string }) {
   return (
@@ -96,34 +108,179 @@ function SummaryChip({ label, value, cls }: { label: string; value: string; cls:
   )
 }
 
+// ── Usage badge with hover tooltip ────────────────────────────────────────────
+function UsageBadge({
+  stats,
+  templateId,
+  onClick,
+}: {
+  stats: UsageStats
+  templateId: string
+  onClick: () => void
+}) {
+  const overrideCount = stats.directPnrs.filter(p => p.relationship === 'OVERRIDE').length
+  const totalPnr      = stats.inheritedPnrs.length + stats.directPnrs.length
+  const inUse         = stats.series.length > 0 || stats.directPnrs.length > 0
+  const tooltipRef    = useRef<HTMLDivElement>(null)
+  const [tooltipPos, setTooltipPos] = useState<'below' | 'above'>('below')
+
+  const handleHover = (e: React.MouseEvent) => {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    setTooltipPos(rect.bottom + 130 > window.innerHeight ? 'above' : 'below')
+  }
+
+  if (!inUse) {
+    return (
+      <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-400 border border-slate-200 select-none">
+        ยังไม่ถูกใช้งาน
+      </span>
+    )
+  }
+
+  return (
+    <div className="relative group inline-flex flex-col gap-0.5">
+      {/* Main badge */}
+      <button
+        type="button"
+        onMouseEnter={handleHover}
+        onClick={onClick}
+        className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors"
+      >
+        ใช้งานแล้ว · {stats.series.length} Series · {totalPnr} PNR
+      </button>
+      {/* Override sub-badge */}
+      {overrideCount > 0 && (
+        <span className="text-[9px] font-medium px-1.5 py-px rounded-full bg-orange-50 text-orange-600 border border-orange-200 self-start">
+          Override {overrideCount}
+        </span>
+      )}
+
+      {/* Hover tooltip */}
+      <div
+        ref={tooltipRef}
+        className={cn(
+          'absolute left-0 z-30 hidden group-hover:block w-52 bg-white border border-slate-200 rounded-xl shadow-lg p-3 pointer-events-none',
+          tooltipPos === 'above' ? 'bottom-full mb-1.5' : 'top-full mt-1.5',
+        )}
+      >
+        <p className="text-[10px] font-semibold text-slate-700 mb-2">รายละเอียดการใช้งาน</p>
+        <div className="space-y-1.5">
+          <Row label="Series ที่กำหนดโดยตรง" value={stats.series.length} />
+          <Row label="PNR ที่รับจาก Series"  value={stats.inheritedPnrs.length} />
+          <Row label="PNR ที่กำหนดโดยตรง"   value={stats.directPnrs.length} />
+          {overrideCount > 0 && <Row label="Override" value={overrideCount} highlight />}
+        </div>
+        <p className="text-[9px] text-slate-400 mt-2 pt-2 border-t border-slate-100">คลิกเพื่อดูรายละเอียด</p>
+      </div>
+    </div>
+  )
+}
+
+function Row({ label, value, highlight }: { label: string; value: number; highlight?: boolean }) {
+  return (
+    <div className="flex justify-between items-center">
+      <span className="text-[10px] text-slate-500">{label}</span>
+      <span className={cn('text-[10px] font-semibold tabular-nums', highlight ? 'text-orange-600' : 'text-slate-700')}>
+        {value}
+      </span>
+    </div>
+  )
+}
+
+// ── Filter pill ────────────────────────────────────────────────────────────────
+const FILTER_OPTS: { value: UsageFilter; label: string }[] = [
+  { value: 'all',          label: 'ทั้งหมด' },
+  { value: 'unused',       label: 'ยังไม่ถูกใช้งาน' },
+  { value: 'inuse',        label: 'ใช้งานแล้ว' },
+  { value: 'has_series',   label: 'มี Series ใช้งาน' },
+  { value: 'has_pnr',      label: 'มี PNR กำหนดโดยตรง' },
+  { value: 'has_override', label: 'มี Override' },
+]
+
+function matchFilter(s: UsageStats | undefined, f: UsageFilter): boolean {
+  if (f === 'all') return true
+  if (!s)          return f === 'unused'
+  const totalPnr   = s.inheritedPnrs.length + s.directPnrs.length
+  const inUse      = s.series.length > 0 || s.directPnrs.length > 0
+  const overrideCt = s.directPnrs.filter(p => p.relationship === 'OVERRIDE').length
+  switch (f) {
+    case 'unused':       return !inUse
+    case 'inuse':        return inUse
+    case 'has_series':   return s.series.length > 0
+    case 'has_pnr':      return s.directPnrs.length > 0
+    case 'has_override': return overrideCt > 0
+    default:             return true
+  }
+}
+
 // ── Main Component ─────────────────────────────────────────────────────────────
 
 export default function ConditionTemplatesPage() {
   const router = useRouter()
   const [templates, setTemplates] = useState<AppConditionTemplate[]>([])
-  const [search, setSearch] = useState('')
+  const [search, setSearch]       = useState('')
+  const [usageFilter, setUsageFilter] = useState<UsageFilter>('all')
   const [deleteModal, setDeleteModal] = useState<string | null>(null)
+  const [toggleWarning, setToggleWarning] = useState<{
+    templateId: string
+    currentStatus: string
+    seriesCount: number
+    totalPnrCount: number
+  } | null>(null)
 
-  const load = () => {
+  const load = useCallback(() => {
     seedTemplatesIfEmpty()
     setTemplates(getConditionTemplates())
-  }
-  useEffect(load, [])
+  }, [])
+  useEffect(load, [load])
+
+  // Compute usage stats for all templates (re-runs when templates reload)
+  const usageMap = useMemo(() => {
+    const map = new Map<string, UsageStats>()
+    for (const t of templates) {
+      map.set(t.templateId, computeUsageStats(t.templateId))
+    }
+    return map
+  }, [templates])
 
   const filtered = useMemo(() => {
     const groupOnly = templates.filter(t => t.ticketType === 'Group' || t.ticketType === 'All')
-    if (!search.trim()) return groupOnly
+    const byFilter  = groupOnly.filter(t => matchFilter(usageMap.get(t.templateId), usageFilter))
+    if (!search.trim()) return byFilter
     const q = search.toLowerCase()
-    return groupOnly.filter(t =>
+    return byFilter.filter(t =>
       t.condition.conditionCode.toLowerCase().includes(q) ||
       t.condition.conditionName.toLowerCase().includes(q) ||
       (t.condition.description ?? '').toLowerCase().includes(q) ||
       (t.airlineCode ?? '').toLowerCase().includes(q),
     )
-  }, [templates, search])
+  }, [templates, search, usageFilter, usageMap])
 
-  const handleDuplicate    = (id: string) => { duplicateConditionTemplate(id);    load() }
-  const handleToggleStatus = (id: string) => { toggleConditionTemplateStatus(id); load() }
+  const handleDuplicate = (id: string) => { duplicateConditionTemplate(id); load() }
+
+  const handleToggleClick = (t: AppConditionTemplate) => {
+    const s = usageMap.get(t.templateId)
+    // Warn only when deactivating an active, in-use condition
+    if (t.condition.status === 'Active' && s && isInUse(s)) {
+      setToggleWarning({
+        templateId: t.templateId,
+        currentStatus: t.condition.status,
+        seriesCount: s.series.length,
+        totalPnrCount: s.inheritedPnrs.length + s.directPnrs.length,
+      })
+    } else {
+      toggleConditionTemplateStatus(t.templateId)
+      load()
+    }
+  }
+
+  const handleToggleConfirm = () => {
+    if (!toggleWarning) return
+    toggleConditionTemplateStatus(toggleWarning.templateId)
+    setToggleWarning(null)
+    load()
+  }
+
   const handleDelete = () => {
     if (!deleteModal) return
     deleteConditionTemplate(deleteModal)
@@ -159,14 +316,36 @@ export default function ConditionTemplatesPage() {
           </Button>
         </div>
 
+        {/* ── Usage Filter ── */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {FILTER_OPTS.map(opt => (
+            <button
+              key={opt.value}
+              onClick={() => setUsageFilter(opt.value)}
+              className={cn(
+                'text-[11px] font-medium px-3 py-1 rounded-full border transition-colors',
+                usageFilter === opt.value
+                  ? 'bg-[#05a94f] text-white border-[#05a94f]'
+                  : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300 hover:bg-slate-50',
+              )}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+
         {/* ── Empty state ── */}
         {filtered.length === 0 && (
           <Card>
             <div className="flex flex-col items-center py-12 gap-3 text-slate-400">
-              <p className="text-sm font-medium">ยังไม่มี Template Condition</p>
-              <Button size="sm" onClick={() => router.push('/tickets/condition-templates/add')}>
-                สร้าง Template แรก
-              </Button>
+              <p className="text-sm font-medium">
+                {search || usageFilter !== 'all' ? 'ไม่พบ Template ที่ตรงกับเงื่อนไข' : 'ยังไม่มี Template Condition'}
+              </p>
+              {!search && usageFilter === 'all' && (
+                <Button size="sm" onClick={() => router.push('/tickets/condition-templates/add')}>
+                  สร้าง Template แรก
+                </Button>
+              )}
             </div>
           </Card>
         )}
@@ -175,6 +354,8 @@ export default function ConditionTemplatesPage() {
         <div className="space-y-2">
           {filtered.map(t => {
             const c            = t.condition
+            const stats        = usageMap.get(t.templateId)
+            const inUse        = isInUse(stats)
             const depositStage = getDepositStage(c.stages)
             const firstStage   = c.stages[0] ?? null
             const hasFullPay   = c.stages.some(s => s.paymentType === 'FULL_PAYMENT')
@@ -227,6 +408,14 @@ export default function ConditionTemplatesPage() {
                             เงื่อนไขเพิ่มเติม
                           </span>
                         )}
+                        {/* Usage badge */}
+                        {stats && (
+                          <UsageBadge
+                            stats={stats}
+                            templateId={t.templateId}
+                            onClick={() => router.push(`/tickets/condition-templates/${t.templateId}?tab=usage`)}
+                          />
+                        )}
                       </div>
                     </div>
 
@@ -249,7 +438,7 @@ export default function ConditionTemplatesPage() {
                       </button>
                       <button type="button"
                         title={c.status === 'Active' ? 'ปิดใช้งาน' : 'เปิดใช้งาน'}
-                        onClick={() => handleToggleStatus(t.templateId)}
+                        onClick={() => handleToggleClick(t)}
                         className={cn(
                           'p-1.5 rounded-lg transition',
                           c.status === 'Active'
@@ -258,11 +447,26 @@ export default function ConditionTemplatesPage() {
                         )}>
                         <PowerOff size={13} />
                       </button>
-                      <button type="button" title="ลบ"
-                        onClick={() => setDeleteModal(t.templateId)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition">
-                        <Trash2 size={13} />
-                      </button>
+
+                      {/* Delete — disabled if in use */}
+                      <span
+                        title={inUse ? 'ไม่สามารถลบได้ เนื่องจาก Condition นี้กำลังถูกใช้งาน' : 'ลบ'}
+                        className="inline-flex"
+                      >
+                        <button
+                          type="button"
+                          disabled={inUse}
+                          onClick={inUse ? undefined : () => setDeleteModal(t.templateId)}
+                          className={cn(
+                            'p-1.5 rounded-lg transition',
+                            inUse
+                              ? 'text-slate-200 cursor-not-allowed'
+                              : 'text-slate-400 hover:text-red-500 hover:bg-red-50',
+                          )}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -383,6 +587,39 @@ export default function ConditionTemplatesPage() {
         }
       >
         <p className="text-sm text-slate-600">ต้องการลบ Template นี้หรือไม่? ข้อมูลจะหายไปถาวร</p>
+      </Modal>
+
+      {/* ── Toggle (deactivate) Warning ── */}
+      <Modal
+        open={!!toggleWarning}
+        onClose={() => setToggleWarning(null)}
+        title="ยืนยันการปิดใช้งาน Condition"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setToggleWarning(null)}>ยกเลิก</Button>
+            <Button variant="danger" onClick={handleToggleConfirm}>ปิดใช้งาน</Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-slate-700">
+            Condition นี้กำลังถูกใช้งานอยู่ คุณต้องการปิดใช้งานหรือไม่?
+          </p>
+          {toggleWarning && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 space-y-1">
+              <p className="text-xs font-semibold text-amber-700 mb-1.5">ได้รับผลกระทบ</p>
+              <div className="flex justify-between text-xs">
+                <span className="text-amber-700">Series ที่กำหนดโดยตรง</span>
+                <span className="font-semibold text-amber-800">{toggleWarning.seriesCount}</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-amber-700">PNR รวม</span>
+                <span className="font-semibold text-amber-800">{toggleWarning.totalPnrCount}</span>
+              </div>
+            </div>
+          )}
+          <p className="text-xs text-slate-500">Condition จะยังคงผูกอยู่กับ Series และ PNR แต่สถานะจะเปลี่ยนเป็น Inactive</p>
+        </div>
       </Modal>
     </AppLayout>
   )
