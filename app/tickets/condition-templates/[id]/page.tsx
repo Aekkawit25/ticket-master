@@ -50,6 +50,7 @@ const OVER_LIMIT_COLORS: Record<string, string> = {
 }
 const FORFEIT_SOURCE_LABELS: Record<string, string> = {
   DEPOSIT: 'มัดจำ (Deposit)', RSVN_FEE: 'RSVN Fee', ALL: 'ทั้งหมด',
+  PAID_SO_FAR: 'ตามยอดที่ชำระแล้ว',
 }
 const PENALTY_TYPE_LABELS: Record<string, string> = {
   NONE: 'ไม่มีค่าปรับ', FIXED: 'จำนวนเงินคงที่', PERCENT: 'เปอร์เซ็นต์', FORFEIT_ALL: 'ยึดทั้งหมด',
@@ -58,10 +59,7 @@ const CALC_BASE_LABELS: Record<string, string> = {
   GROUP_PRICE: 'ราคากรุ๊ป', FARE: 'Fare', ALLIN: 'All-in',
   NET_FARE: 'Net Fare', DEPOSIT: 'Deposit', AMOUNT_PAID: 'ยอดที่จ่ายแล้ว',
 }
-const CG_DEADLINE_BASE_LABELS: Record<string, string> = {
-  DEPARTURE_DATE: 'วันเดินทางวันแรก', TICKET_ISSUE: 'วันออกตั๋ว',
-  SEAT_CONFIRMED: 'วันที่ Confirm ที่นั่ง', CUSTOM_DATE: 'วันที่กำหนดเอง',
-}
+
 const CG_REFUNDABLE_LABELS: Record<string, string> = {
   UNSPECIFIED: 'ยังไม่ระบุ', NON_REFUNDABLE: 'คืนไม่ได้',
   PARTIAL_REFUND: 'คืนได้บางส่วน', FULL_REFUND: 'คืนได้ทั้งหมด',
@@ -103,6 +101,17 @@ const CHANGE_FEE_BASIS_LABELS: Record<string, string> = {
 
 const ANCILLARY_LABELS: Record<string, string> = {
   UNSPECIFIED: 'ยังไม่ระบุ', YES: 'ได้', NO: 'ไม่ได้',
+}
+
+const CANCEL_RESULT_LABELS: Record<string, string> = {
+  NO_FEE:            'ยกเลิกได้โดยไม่เสียค่าใช้จ่าย',
+  FORFEIT_RSVN:      'ยึด RSVN Fee',
+  FORFEIT_DEPOSIT:   'ยึด Deposit',
+  FORFEIT_ALL_PAID:  'ยึดเงินที่ชำระแล้วทั้งหมด',
+  PARTIAL_REFUND:    'คืนเงินบางส่วน',
+  PENALTY:           'คิดค่าปรับ',
+  NOT_ALLOWED:       'ไม่อนุญาตให้ยกเลิก',
+  UNSPECIFIED:       'เอกสารไม่ได้ระบุ',
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -177,10 +186,17 @@ function SrPenaltySummary({ overLimit, forfeitSrc, penType, penAmount, penPercen
   penType: string; penAmount: number | null; penPercent: number | null; penCurrency: string; calcBase: string
 }) {
   if (overLimit === 'FORFEIT') {
+    const forfeitLabel = forfeitSrc === 'PAID_SO_FAR'
+      ? 'ยึดเงินตามยอดที่ชำระแล้ว'
+      : forfeitSrc === 'ALL'
+        ? 'ยึดเงินทั้งหมด'
+        : forfeitSrc
+          ? `ยึดเงินจาก: ${FORFEIT_SOURCE_LABELS[forfeitSrc] ?? forfeitSrc}`
+          : null
     return (
       <div className="flex flex-wrap gap-1.5 items-center">
         <OverLimitChip action="FORFEIT" />
-        {forfeitSrc && <Chip color="orange">จาก: {FORFEIT_SOURCE_LABELS[forfeitSrc] ?? forfeitSrc}</Chip>}
+        {forfeitLabel && <Chip color="orange">{forfeitLabel}</Chip>}
       </div>
     )
   }
@@ -485,8 +501,8 @@ export default function ConditionTemplateDetailPage({ params }: { params: Promis
                   <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5">
                     <p className="text-[10px] text-slate-400 mb-0.5">Deadline การแจ้งลดที่นั่ง</p>
                     <p className="text-xs font-medium text-slate-700">
-                      แจ้งลดไม่น้อยกว่า <span className="text-[#05a94f]">{sp.noticeDays} วัน</span>
-                      {' '}ก่อน{SEAT_NOTICE_BASE_LABELS[sp.noticeDaysBase] ?? 'วันเดินทางวันแรก'}
+                      ต้องแจ้งลดที่นั่งก่อนวันเดินทางอย่างน้อย{' '}
+                      <span className="text-[#05a94f]">{sp.noticeDays} วัน</span>
                     </p>
                   </div>
                 )}
@@ -551,46 +567,71 @@ export default function ConditionTemplateDetailPage({ params }: { params: Promis
               </div>
             </CardHeader>
             <CardContent className="space-y-3">
-                {/* Deadline — ประโยคเดียวเหมือน Card ลดที่นั่ง */}
+                {/* Deadline */}
                 <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5">
                   <p className="text-[10px] text-slate-400 mb-0.5">Deadline การยกเลิกกรุ๊ป (No Sell)</p>
-                  {cg.noticeDays != null ? (
+                  <p className="text-xs font-medium text-slate-700">
+                    {cg.noticeDays != null ? (
+                      <>
+                        แจ้ง No Sell ไม่น้อยกว่า{' '}
+                        <span className="text-[#05a94f]">{cg.noticeDays} วัน</span>
+                        {' '}ก่อนวันเดินทางวันแรก
+                      </>
+                    ) : (
+                      <span className="text-slate-500">คำนวณจากวันเดินทางวันแรก</span>
+                    )}
+                  </p>
+                </div>
+
+                {/* Cancel type details */}
+                {cg.cancelType && (
+                  <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5 space-y-2">
+                    <p className="text-[10px] text-slate-400">ประเภทเงื่อนไขการยกเลิก</p>
                     <p className="text-xs font-medium text-slate-700">
-                      แจ้ง No Sell ไม่น้อยกว่า{' '}
-                      <span className="text-[#05a94f]">{cg.noticeDays} วัน</span>
-                      {' '}ก่อน{CG_DEADLINE_BASE_LABELS[cg.deadlineBase] ?? cg.deadlineBase}
-                      {cg.deadlineBase === 'CUSTOM_DATE' && cg.deadlineCustomDate && (
-                        <span className="text-slate-400"> ({cg.deadlineCustomDate})</span>
-                      )}
+                      {cg.cancelType === 'STEP' && 'ยกเลิกตามช่วงวัน (เงื่อนไข Step)'}
+                      {cg.cancelType === 'PAYMENT_STAGE' && 'ยกเลิกตามงวดชำระเงิน'}
+                      {cg.cancelType === 'PENALTY' && 'ยกเลิกตามค่าปรับ (Penalty ตามข้อตกลง)'}
                     </p>
-                  ) : (
-                    <p className="text-xs text-slate-500">
-                      นับจาก{CG_DEADLINE_BASE_LABELS[cg.deadlineBase] ?? cg.deadlineBase}
-                      {cg.deadlineBase === 'CUSTOM_DATE' && cg.deadlineCustomDate && (
-                        <span className="text-slate-400"> ({cg.deadlineCustomDate})</span>
-                      )}
-                    </p>
-                  )}
-                </div>
 
-                {/* หากเกินเงื่อนไข */}
-                <div>
-                  <p className="text-[10px] text-slate-400 mb-1">หากเกินเงื่อนไข</p>
-                  <SrPenaltySummary
-                    overLimit={cg.overLimitAction} forfeitSrc={cg.forfeitSource}
-                    penType={cg.penaltyType} penAmount={cg.penaltyAmount}
-                    penPercent={cg.penaltyPercent} penCurrency={cg.penaltyCurrency || template.currency}
-                    calcBase={cg.penaltyCalcBase}
-                  />
-                </div>
+                    {cg.cancelType === 'STEP' && (cg.stepCancels ?? []).length > 0 && (
+                      <div className="space-y-1.5 mt-1">
+                        {(cg.stepCancels ?? []).map((s, i) => (
+                          <div key={s.stepId} className="text-[10px] text-slate-600 flex gap-1.5">
+                            <span className="text-slate-400 shrink-0">Step {i + 1}:</span>
+                            <span>
+                              {s.daysFrom != null && s.daysTo != null
+                                ? `${s.daysTo}–${s.daysFrom} วันก่อนเดินทาง`
+                                : s.daysFrom != null
+                                  ? `${s.daysFrom}+ วันก่อนเดินทาง`
+                                  : `ถึง ${s.daysTo ?? '?'} วันก่อนเดินทาง`}
+                              {' · '}
+                              {CANCEL_RESULT_LABELS[s.result] ?? 'เอกสารไม่ได้ระบุ'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
 
-                {/* คืนเงิน */}
-                {cg.refundable !== 'UNSPECIFIED' && (
-                  <Kv label="คืนเงิน">
-                    <Chip color={cg.refundable === 'NON_REFUNDABLE' ? 'red' : cg.refundable === 'FULL_REFUND' ? 'green' : 'amber'}>
-                      {CG_REFUNDABLE_LABELS[cg.refundable] ?? cg.refundable}
-                    </Chip>
-                  </Kv>
+                    {cg.cancelType === 'PAYMENT_STAGE' && (cg.paymentCancels ?? []).length > 0 && (
+                      <p className="text-[10px] text-slate-500">{(cg.paymentCancels ?? []).filter(e => e.result !== 'UNSPECIFIED').length} งวดที่ตั้งค่าแล้ว</p>
+                    )}
+
+                    {cg.cancelType === 'PENALTY' && cg.cancelPenalty && (
+                      <div className="text-[10px] text-slate-600 space-y-0.5">
+                        {cg.cancelPenalty.calcType === 'FIXED' && cg.cancelPenalty.fixedAmount != null && (
+                          <p>ค่าปรับ {cg.cancelPenalty.fixedAmount.toLocaleString()} {' '}
+                            {cg.cancelPenalty.basis === 'PER_SEAT' ? 'ต่อ Seat' : cg.cancelPenalty.basis === 'PER_PNR' ? 'ต่อ PNR' : cg.cancelPenalty.basis === 'PER_SERIES' ? 'ต่อ Series' : ''}</p>
+                        )}
+                        {cg.cancelPenalty.calcType === 'PERCENT' && cg.cancelPenalty.percent != null && (
+                          <p>ค่าปรับ {cg.cancelPenalty.percent}%{' '}
+                            {cg.cancelPenalty.basis === 'PER_SEAT' ? 'ต่อ Seat' : cg.cancelPenalty.basis === 'PER_PNR' ? 'ต่อ PNR' : cg.cancelPenalty.basis === 'PER_SERIES' ? 'ต่อ Series' : ''}</p>
+                        )}
+                        {cg.cancelPenalty.refund === 'REFUND_REMAINDER' && <p className="text-slate-400">คืนยอดคงเหลือหลังหักค่าปรับ</p>}
+                        {cg.cancelPenalty.refund === 'NON_REFUNDABLE' && <p className="text-slate-400">คืนไม่ได้</p>}
+                        {cg.cancelPenalty.refund === 'FULL_REFUND' && <p className="text-slate-400">คืนได้ทั้งหมด</p>}
+                      </div>
+                    )}
+                  </div>
                 )}
 
                 {cg.remark.trim() && (

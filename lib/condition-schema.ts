@@ -201,7 +201,7 @@ export type CondSeatReductionMode   = 'SINGLE' | 'STEP_RULE'
 export type CondSeatRangeType       = 'FROM_DAY_UP' | 'BETWEEN' | 'UNTIL_DAY'
 export type CondSingleOverLimit     = 'UNSPECIFIED' | 'NO_FORFEIT' | 'FORFEIT' | 'PENALTY' | 'REQUIRE_APPROVAL'
 export type CondRuleOverLimitAction = 'UNSPECIFIED' | 'NO_FORFEIT' | 'FORFEIT' | 'PENALTY' | 'REQUIRE_APPROVAL'
-export type CondForfeitSource       = 'DEPOSIT' | 'RSVN_FEE' | 'ALL'
+export type CondForfeitSource       = 'DEPOSIT' | 'RSVN_FEE' | 'ALL' | 'PAID_SO_FAR'
 export type CondStepPenaltyType     = 'NONE' | 'FIXED' | 'PERCENT' | 'FORFEIT_ALL'
 export type CondStepCalcBase        = 'GROUP_PRICE' | 'FARE' | 'ALLIN' | 'NET_FARE' | 'DEPOSIT' | 'AMOUNT_PAID'
 
@@ -209,6 +209,98 @@ export type CondStepCalcBase        = 'GROUP_PRICE' | 'FARE' | 'ALLIN' | 'NET_FA
 export type CondCancelGroupPolicy       = 'UNSPECIFIED' | 'ALLOW' | 'NOT_ALLOW' | 'REQUIRE_APPROVAL'
 export type CondCancelGroupDeadlineBase = 'DEPARTURE_DATE' | 'TICKET_ISSUE' | 'SEAT_CONFIRMED' | 'CUSTOM_DATE'
 export type CondCancelGroupRefundable   = 'UNSPECIFIED' | 'NON_REFUNDABLE' | 'PARTIAL_REFUND' | 'FULL_REFUND'
+
+// ─── Cancel Group (3-type condition system) ───────────────────────────────────
+
+export type CondCancelType = 'STEP' | 'PAYMENT_STAGE' | 'PENALTY'
+
+// Unified result for any cancel action (step-based, payment-stage-based, or penalty)
+export type CondCancelResult =
+  'NO_FEE'            // ยกเลิกได้โดยไม่เสียค่าใช้จ่าย
+  | 'FORFEIT_RSVN'    // ยึด RSVN Fee
+  | 'FORFEIT_DEPOSIT' // ยึด Deposit
+  | 'FORFEIT_ALL_PAID'// ยึดเงินที่ชำระแล้วทั้งหมด
+  | 'PARTIAL_REFUND'  // คืนเงินบางส่วน
+  | 'PENALTY'         // คิดค่าปรับ
+  | 'NOT_ALLOWED'     // ไม่อนุญาตให้ยกเลิก
+  | 'UNSPECIFIED'     // เอกสารไม่ได้ระบุ
+
+// PARTIAL_REFUND sub-fields
+export interface CondCancelPartialRefundSpec {
+  calcType: 'FIXED' | 'PERCENT' | null
+  amount: number | null
+  percent: number | null
+  fromStageId: string   // stageId ของงวดที่ต้องการคืน ('' = ไม่ระบุ)
+  detail: string
+}
+
+export function defaultCancelPartialRefundSpec(): CondCancelPartialRefundSpec {
+  return { calcType: null, amount: null, percent: null, fromStageId: '', detail: '' }
+}
+
+// Inline Penalty sub-fields (for use inside each step/entry)
+export interface CondCancelPenaltyInlineSpec {
+  basis: CondCancelPenaltyBasis | null
+  calcType: CondCancelPenaltyCalcType | null
+  fixedAmount: number | null
+  percent: number | null
+  percentBase: CondCancelPenaltyBase | null
+  remaining: 'REFUND_REMAINDER' | 'NO_REFUND' | 'UNSPECIFIED'
+}
+
+export function defaultCancelPenaltyInlineSpec(): CondCancelPenaltyInlineSpec {
+  return { basis: null, calcType: null, fixedAmount: null, percent: null, percentBase: null, remaining: 'UNSPECIFIED' }
+}
+
+// Type 1: Step-based cancellation
+// NOTE: CondCancelStepResult and CondCancelStepRefundable kept for backward compat
+export type CondCancelStepResult =
+  'NO_FEE' | 'FORFEIT_RSVN' | 'FORFEIT_DEPOSIT' | 'FORFEIT_ALL_PAID' |
+  'PENALTY' | 'NOT_ALLOWED' | 'UNSPECIFIED'
+
+export type CondCancelStepRefundable =
+  'NON_REFUNDABLE' | 'PARTIAL_REFUND' | 'FULL_REFUND' | 'UNSPECIFIED'
+
+export interface CondCancelStep {
+  stepId: string
+  daysFrom: number | null
+  daysTo: number | null
+  result: CondCancelResult   // was: CondCancelStepResult + separate refundable
+  partialRefund?: CondCancelPartialRefundSpec | null   // shows when result === 'PARTIAL_REFUND'
+  penalty?: CondCancelPenaltyInlineSpec | null          // shows when result === 'PENALTY'
+  remark: string
+}
+
+// Type 2: Payment-stage-based cancellation
+// NOTE: CondCancelPaymentResult kept for backward compat
+export type CondCancelPaymentResult =
+  'FULL_REFUND' | 'FORFEIT_THIS_STAGE' | 'FORFEIT_ALL_PAID' |
+  'PARTIAL_REFUND' | 'NOT_ALLOWED' | 'UNSPECIFIED'
+
+export interface CondCancelPaymentEntry {
+  entryId: string
+  stageId: string   // 'BEFORE_PAYMENT' or CondStage.stageId
+  result: CondCancelResult   // was: CondCancelPaymentResult
+  partialRefund?: CondCancelPartialRefundSpec | null
+  penalty?: CondCancelPenaltyInlineSpec | null
+  remark: string
+}
+
+// Type 3: Fixed-penalty cancellation
+export type CondCancelPenaltyBasis    = 'PER_SEAT' | 'PER_PNR' | 'PER_SERIES'
+export type CondCancelPenaltyCalcType = 'FIXED' | 'PERCENT'
+export type CondCancelPenaltyBase     = 'RSVN_FEE' | 'DEPOSIT' | 'AMOUNT_PAID' | 'SERIES_TOTAL' | 'PRICE_PER_SEAT'
+export type CondCancelPenaltyRefund   = 'NON_REFUNDABLE' | 'REFUND_REMAINDER' | 'FULL_REFUND' | 'UNSPECIFIED'
+
+export interface CondCancelPenaltySpec {
+  basis: CondCancelPenaltyBasis | null
+  calcType: CondCancelPenaltyCalcType | null
+  fixedAmount: number | null
+  percent: number | null
+  percentBase: CondCancelPenaltyBase | null
+  refund: CondCancelPenaltyRefund | null
+  detail: string
+}
 
 export interface CondCancelGroupTerms {
   enabled: boolean
@@ -225,6 +317,11 @@ export interface CondCancelGroupTerms {
   penaltyCalcBase: CondStepCalcBase
   refundable: CondCancelGroupRefundable
   remark: string
+  // 3-type system (optional, backward-compat)
+  cancelType?: CondCancelType | null
+  stepCancels?: CondCancelStep[]
+  paymentCancels?: CondCancelPaymentEntry[]
+  cancelPenalty?: CondCancelPenaltySpec | null
 }
 
 export interface CondSeatReductionRule {
@@ -788,6 +885,18 @@ export function defaultCancelGroupTerms(): CondCancelGroupTerms {
   }
 }
 
+export function newCancelStepId(): string {
+  return `cs_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`
+}
+
+export function newCancelPaymentEntryId(): string {
+  return `cpe_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`
+}
+
+export function defaultCancelPenaltySpec(): CondCancelPenaltySpec {
+  return { basis: null, calcType: null, fixedAmount: null, percent: null, percentBase: null, refund: null, detail: '' }
+}
+
 export function defaultChangeSingleTerm(): CondChangeSingleTerm {
   return { policy: 'UNSPECIFIED', feeType: 'NONE', feeAmount: null, feePercent: null, feeCurrency: '', noticeDays: null, maxChanges: null, feeBasis: null }
 }
@@ -841,7 +950,7 @@ export function migrateSeatReductionPolicy(raw: any): CondSeatReductionPolicy {
       VALID_SINGLE.includes(rawSingle as CondSingleOverLimit) ? rawSingle as CondSingleOverLimit : 'NO_FORFEIT'
     // Normalize per-rule fields
     const VALID_RULE: CondRuleOverLimitAction[] = ['UNSPECIFIED', 'NO_FORFEIT', 'FORFEIT', 'PENALTY', 'REQUIRE_APPROVAL']
-    const VALID_FORFEIT: CondForfeitSource[] = ['DEPOSIT', 'RSVN_FEE', 'ALL']
+    const VALID_FORFEIT: CondForfeitSource[] = ['DEPOSIT', 'RSVN_FEE', 'ALL', 'PAID_SO_FAR']
     const rules: CondSeatReductionRule[] = (raw.rules as any[]).map(r => {
       const rFrom = r.fromDays ?? null
       const rTo   = r.toDays   ?? null
@@ -937,8 +1046,8 @@ export function formatSeatReductionSummary(sp: CondSeatReductionPolicy): string 
   if (sp.noticeDays != null) parts.push(`แจ้งลดไม่น้อยกว่า ${sp.noticeDays} วันก่อนเดินทาง`)
   parts.push(`เกินเงื่อนไข: ${overLimitLabel[sp.singleOverLimitAction]}`)
   if (sp.singleOverLimitAction === 'FORFEIT' && sp.singleForfeitSource) {
-    const fl: Record<CondForfeitSource, string> = { DEPOSIT: 'Deposit', RSVN_FEE: 'RSVN Fee', ALL: 'ทั้งหมด' }
-    parts.push(`(ยึด${fl[sp.singleForfeitSource]})`)
+    const fl: Record<CondForfeitSource, string> = { DEPOSIT: 'Deposit', RSVN_FEE: 'RSVN Fee', ALL: 'ทั้งหมด', PAID_SO_FAR: 'ตามยอดที่ชำระแล้ว' }
+    parts.push(sp.singleForfeitSource === 'PAID_SO_FAR' ? 'ยึดเงินตามยอดที่ชำระแล้ว' : `(ยึด${fl[sp.singleForfeitSource]})`)
   }
   if (sp.singleOverLimitAction === 'PENALTY') {
     if (sp.singlePenaltyType === 'PERCENT' && sp.singlePenaltyPercent != null)

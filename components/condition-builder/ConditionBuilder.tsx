@@ -6,7 +6,8 @@
  */
 
 import { useState, useRef, useEffect, type ReactNode } from 'react'
-import { Plus, Trash2, Edit2, GripVertical, X, AlertCircle, ChevronDown, Check, Lock, Copy, ArrowUp, ArrowDown, CreditCard, Clock, Info, Package, Briefcase, StickyNote, Layers, Calculator, Receipt, Eye } from 'lucide-react'
+import { format, parseISO, isValid, subDays } from 'date-fns'
+import { Plus, Trash2, Edit2, GripVertical, X, AlertCircle, ChevronDown, Check, Lock, Copy, ArrowUp, ArrowDown, CreditCard, Clock, Info, Package, Briefcase, StickyNote, Layers, Calculator, Receipt, Eye, Calendar, CheckCircle2 } from 'lucide-react'
 import {
   AppCondition, CondStage, CondTtlRule, CondIssuanceMode, CondBaggagePolicy,
   CondSeatReductionPolicy, CondSeatReductionRule, CondRefundTerms,
@@ -20,6 +21,12 @@ import {
   CondSingleOverLimit, CondRuleOverLimitAction, CondForfeitSource, CondStepPenaltyType, CondStepCalcBase,
   CondCancelGroupPolicy, CondCancelGroupDeadlineBase, CondCancelGroupRefundable, CondCancelGroupTerms,
   defaultCancelGroupTerms,
+  CondCancelType, CondCancelStepResult, CondCancelStepRefundable, CondCancelStep,
+  CondCancelPaymentResult, CondCancelPaymentEntry,
+  CondCancelResult, CondCancelPartialRefundSpec, CondCancelPenaltyInlineSpec,
+  defaultCancelPartialRefundSpec, defaultCancelPenaltyInlineSpec,
+  CondCancelPenaltyBasis, CondCancelPenaltyCalcType, CondCancelPenaltyBase, CondCancelPenaltyRefund, CondCancelPenaltySpec,
+  newCancelStepId, newCancelPaymentEntryId, defaultCancelPenaltySpec,
   CondChangePolicy, CondChangeFeeType, CondChangeFeeBasis, CondChangeSingleTerm, CondChangeTerms,
   defaultChangeTerms, defaultChangeSingleTerm,
   CondPostRefundFeeType, CondPostRefundFeeBase,
@@ -93,7 +100,8 @@ export function validateTab(key: TabKey, v: AppCondition, conditionMode: Conditi
           errs.push(`${no}: กรุณาระบุจำนวนวัน`)
         if (s.dueType === 'CUSTOM_DATE' && !s.dueDate)
           errs.push(`${no}: กรุณาระบุวันที่กำหนดเอง`)
-
+        if (s.refundable === 'UNSPECIFIED')
+          errs.push(`${no}: กรุณาระบุว่าคืนเงินได้หรือไม่`)
       })
       const remainIdxs = v.stages.map((s, i) => s.calcType === 'REMAINING_BALANCE' ? i : -1).filter(i => i >= 0)
       if (remainIdxs.length > 1) errs.push('มีงวด "ชำระยอดคงเหลือ" มากกว่า 1 งวด — ควรมีได้แค่งวดเดียว')
@@ -212,15 +220,54 @@ export function validateTab(key: TabKey, v: AppCondition, conditionMode: Conditi
       const errs: string[] = []
       const cg = v.cancelGroupTerms ?? defaultCancelGroupTerms()
       if (cg.enabled) {
-        if (cg.overLimitAction === 'FORFEIT' && !cg.forfeitSource)
-          errs.push('กรุณาเลือกว่ายึดเงินจากส่วนใด')
-        if (cg.overLimitAction === 'PENALTY') {
-          if (cg.penaltyType === 'NONE')
-            errs.push('กรุณาเลือกประเภทค่าปรับ')
-          if (cg.penaltyType === 'FIXED' && (cg.penaltyAmount == null || cg.penaltyAmount < 0))
-            errs.push('กรุณาระบุจำนวนเงินค่าปรับ')
-          if (cg.penaltyType === 'PERCENT' && (cg.penaltyPercent == null || cg.penaltyPercent <= 0))
-            errs.push('กรุณาระบุเปอร์เซ็นต์ค่าปรับ')
+        if (!cg.cancelType) {
+          errs.push('กรุณาเลือกประเภทเงื่อนไขการยกเลิก')
+        } else if (cg.cancelType === 'STEP') {
+          const steps = cg.stepCancels ?? []
+          if (steps.length === 0) errs.push('กรุณาเพิ่มอย่างน้อย 1 เงื่อนไข Step')
+          steps.forEach((s, i) => {
+            if (s.result === 'UNSPECIFIED') {
+              errs.push(`เงื่อนไข Step ${i + 1}: กรุณาเลือกผลเมื่อยกเลิก`)
+            } else if (s.result === 'PARTIAL_REFUND') {
+              if (!s.partialRefund?.calcType) errs.push(`เงื่อนไข Step ${i + 1}: กรุณาเลือกวิธีคำนวณเงินคืน`)
+              if (s.partialRefund?.calcType === 'FIXED' && (s.partialRefund?.amount == null || s.partialRefund.amount < 0)) errs.push(`เงื่อนไข Step ${i + 1}: กรุณาระบุจำนวนเงินที่คืน`)
+              if (s.partialRefund?.calcType === 'PERCENT' && (!s.partialRefund?.percent || s.partialRefund.percent <= 0)) errs.push(`เงื่อนไข Step ${i + 1}: กรุณาระบุเปอร์เซ็นต์ที่คืน`)
+            } else if (s.result === 'PENALTY') {
+              if (!s.penalty?.basis) errs.push(`เงื่อนไข Step ${i + 1}: กรุณาเลือกคิดค่าปรับต่อ`)
+              if (!s.penalty?.calcType) errs.push(`เงื่อนไข Step ${i + 1}: กรุณาเลือกวิธีคิดค่าปรับ`)
+              if (s.penalty?.calcType === 'FIXED' && (s.penalty?.fixedAmount == null || s.penalty.fixedAmount < 0)) errs.push(`เงื่อนไข Step ${i + 1}: กรุณาระบุจำนวนค่าปรับ`)
+              if (s.penalty?.calcType === 'PERCENT' && (!s.penalty?.percent || s.penalty.percent <= 0)) errs.push(`เงื่อนไข Step ${i + 1}: กรุณาระบุเปอร์เซ็นต์ค่าปรับ`)
+            }
+          })
+        } else if (cg.cancelType === 'PAYMENT_STAGE') {
+          const stages = v.stages.filter(s => !!s.paymentType)
+          if (stages.length === 0) errs.push('กรุณาตั้งค่างวดชำระเงินใน Tab เงื่อนไขงวดชำระเงินก่อน')
+          const entries = cg.paymentCancels ?? []
+          const allIds = ['BEFORE_PAYMENT', ...stages.map(s => s.stageId)]
+          allIds.forEach(id => {
+            const e = entries.find(x => x.stageId === id)
+            const label = id === 'BEFORE_PAYMENT' ? 'ก่อนชำระเงิน' : stages.find(s => s.stageId === id)?.customPaymentName || id
+            if (!e || e.result === 'UNSPECIFIED') {
+              errs.push(`${label}: กรุณาเลือกผลการยกเลิก`)
+            } else if (e.result === 'PARTIAL_REFUND') {
+              if (!e.partialRefund?.calcType) errs.push(`${label}: กรุณาเลือกวิธีคำนวณเงินคืน`)
+              if (e.partialRefund?.calcType === 'FIXED' && (e.partialRefund?.amount == null || e.partialRefund.amount < 0)) errs.push(`${label}: กรุณาระบุจำนวนเงินที่คืน`)
+              if (e.partialRefund?.calcType === 'PERCENT' && (!e.partialRefund?.percent || e.partialRefund.percent <= 0)) errs.push(`${label}: กรุณาระบุเปอร์เซ็นต์ที่คืน`)
+            } else if (e.result === 'PENALTY') {
+              if (!e.penalty?.basis) errs.push(`${label}: กรุณาเลือกคิดค่าปรับต่อ`)
+              if (!e.penalty?.calcType) errs.push(`${label}: กรุณาเลือกวิธีคิดค่าปรับ`)
+            }
+          })
+        } else if (cg.cancelType === 'PENALTY') {
+          const p = cg.cancelPenalty
+          if (!p?.basis) errs.push('กรุณาเลือกคิดค่าปรับต่อ')
+          if (!p?.calcType) errs.push('กรุณาเลือกวิธีคิดค่าปรับ')
+          if (p?.calcType === 'FIXED' && (p.fixedAmount == null || p.fixedAmount < 0)) errs.push('กรุณาระบุจำนวนเงินค่าปรับ')
+          if (p?.calcType === 'PERCENT') {
+            if (!p.percent || p.percent <= 0) errs.push('กรุณาระบุเปอร์เซ็นต์ค่าปรับ')
+            if (!p.percentBase) errs.push('กรุณาเลือกฐานคำนวณ')
+          }
+          if (!p?.refund) errs.push('กรุณาเลือกการคืนเงินส่วนที่เหลือ')
         }
       }
       return errs
@@ -347,7 +394,8 @@ export function getTabStatus(key: TabKey, v: AppCondition, errs: string[] = [], 
         || (isAmountCalc(s.calcType) && s.amount < 0)
         || (isPercentCalc(s.calcType) && (s.percent <= 0 || s.percent > 100))
         || (s.dueType === 'CUSTOM_DATE' && !s.dueDate)
-        || (DAY_BASED_DUE_TYPES.includes(s.dueType) && !s.dueDays)
+        || (DAY_BASED_DUE_TYPES.includes(s.dueType) && !s.dueDays && s.paymentType !== 'TICKET_ISSUE_DATE')
+        || s.refundable === 'UNSPECIFIED'
       )
       const ttlIncomplete = (v.ttlRule.calcType === 'TRAVEL_MINUS_DAYS' && !v.ttlRule.daysBefore)
         || (v.ttlRule.calcType === 'MANUAL_DATE' && !v.ttlRule.fixedDate)
@@ -401,13 +449,41 @@ export function getTabStatus(key: TabKey, v: AppCondition, errs: string[] = [], 
     case 'cancel': {
       const cg = v.cancelGroupTerms ?? defaultCancelGroupTerms()
       if (!cg.enabled) return 'empty'
-      if (cg.overLimitAction === 'FORFEIT' && !cg.forfeitSource) return 'incomplete'
-      if (cg.overLimitAction === 'PENALTY') {
-        if (cg.penaltyType === 'NONE') return 'incomplete'
-        if (cg.penaltyType === 'FIXED'   && (cg.penaltyAmount  == null || cg.penaltyAmount  < 0)) return 'incomplete'
-        if (cg.penaltyType === 'PERCENT' && (cg.penaltyPercent == null || cg.penaltyPercent <= 0)) return 'incomplete'
+      if (!cg.cancelType) return 'incomplete'
+      if (cg.cancelType === 'STEP') {
+        const steps = cg.stepCancels ?? []
+        if (steps.length === 0) return 'incomplete'
+        const stepIncomplete = steps.some(s => {
+          if (s.result === 'UNSPECIFIED') return true
+          if (s.result === 'PARTIAL_REFUND' && !s.partialRefund?.calcType) return true
+          if (s.result === 'PENALTY' && (!s.penalty?.basis || !s.penalty?.calcType)) return true
+          return false
+        })
+        if (stepIncomplete) return 'incomplete'
+        return 'complete'
       }
-      return 'complete'
+      if (cg.cancelType === 'PAYMENT_STAGE') {
+        const stages = v.stages.filter(s => !!s.paymentType)
+        const allIds = ['BEFORE_PAYMENT', ...stages.map(s => s.stageId)]
+        const entries = cg.paymentCancels ?? []
+        const paymentIncomplete = allIds.some(id => {
+          const e = entries.find(x => x.stageId === id)
+          if (!e || e.result === 'UNSPECIFIED') return true
+          if (e.result === 'PARTIAL_REFUND' && !e.partialRefund?.calcType) return true
+          if (e.result === 'PENALTY' && (!e.penalty?.basis || !e.penalty?.calcType)) return true
+          return false
+        })
+        if (paymentIncomplete) return 'incomplete'
+        return 'complete'
+      }
+      if (cg.cancelType === 'PENALTY') {
+        const p = cg.cancelPenalty
+        if (!p?.basis || !p?.calcType || !p?.refund) return 'incomplete'
+        if (p.calcType === 'FIXED' && (p.fixedAmount == null || p.fixedAmount < 0)) return 'incomplete'
+        if (p.calcType === 'PERCENT' && (!p.percent || !p.percentBase)) return 'incomplete'
+        return 'complete'
+      }
+      return 'incomplete'
     }
     case 'change': {
       const ct = v.changeTerms ?? defaultChangeTerms()
@@ -485,8 +561,25 @@ export function getTabSummary(key: TabKey, v: AppCondition, currency = 'THB', co
     case 'cancel': {
       const cg = v.cancelGroupTerms ?? defaultCancelGroupTerms()
       if (!cg.enabled) return 'ยกเลิกกรุ๊ป (No Sell): ไม่อนุญาต'
-      const noticePart = cg.noticeDays != null ? ` · แจ้ง No Sell ${cg.noticeDays} วัน` : ''
-      return 'ยกเลิกกรุ๊ป (No Sell): อนุญาตตามเงื่อนไข' + noticePart
+      const noticePart = cg.noticeDays != null ? ` · แจ้งล่วงหน้า ${cg.noticeDays} วัน` : ''
+      if (!cg.cancelType) return `ยกเลิกกรุ๊ป (No Sell): อนุญาตตามเงื่อนไข${noticePart}`
+      if (cg.cancelType === 'STEP') {
+        const n = cg.stepCancels?.length ?? 0
+        return `No Sell: ตามช่วงวัน${noticePart} · ${n} เงื่อนไข Step`
+      }
+      if (cg.cancelType === 'PAYMENT_STAGE') {
+        const n = (cg.paymentCancels ?? []).filter(e => e.result !== 'UNSPECIFIED').length
+        return `No Sell: ตามงวดชำระเงิน${noticePart} · อ้างอิง ${n} งวด`
+      }
+      if (cg.cancelType === 'PENALTY') {
+        const p = cg.cancelPenalty
+        const basisTh: Record<string, string> = { PER_SEAT: 'Seat', PER_PNR: 'PNR', PER_SERIES: 'Series' }
+        const b = p?.basis ? basisTh[p.basis] ?? '' : ''
+        if (p?.calcType === 'FIXED' && p.fixedAmount != null) return `No Sell: Penalty ${p.fixedAmount.toLocaleString()} ${currency}${b ? ` ต่อ ${b}` : ''}`
+        if (p?.calcType === 'PERCENT' && p.percent != null) return `No Sell: Penalty ${p.percent}%${b ? ` ต่อ ${b}` : ''}`
+        return `No Sell: Penalty${noticePart}`
+      }
+      return `ยกเลิกกรุ๊ป (No Sell): อนุญาตตามเงื่อนไข${noticePart}`
     }
     case 'change': {
       const ct = v.changeTerms ?? defaultChangeTerms()
@@ -706,6 +799,7 @@ export interface SeriesInfo {
   airlineCode: string
   currency: string
   routes: string[]
+  departureDate?: string
 }
 
 /** Metadata from a Template's header — airline/currency/ticketType are locked here, not inside the condition. */
@@ -800,14 +894,23 @@ export function BasicInfoSection({ value, onChange, readOnly, errors = [], condi
       {/* Row 1: Code (full width) */}
       <div>
         <Label required>รหัส Condition</Label>
-        <FInput
-          value={value.conditionCode}
-          onChange={v => set('conditionCode', v.toUpperCase().replace(/\s/g, ''))}
-          placeholder="C001"
-          disabled={readOnly}
-          className={hasErr(['conditionCode']) ? 'border-red-300 focus:border-red-400' : ''}
-        />
-        <p className="text-[10px] text-slate-400 mt-1">ตัวอักษร+เลข ไม่มีช่องว่าง เช่น C001, GRP-TG-01</p>
+        {isSeries ? (
+          <div className="flex items-center gap-2 h-9 px-3 rounded-xl border border-slate-200 bg-slate-50">
+            <Lock size={12} className="text-slate-400 shrink-0" />
+            <span className="font-mono text-sm text-slate-700 select-all">{value.conditionCode || '—'}</span>
+          </div>
+        ) : (
+          <FInput
+            value={value.conditionCode}
+            onChange={v => set('conditionCode', v.toUpperCase().replace(/\s/g, ''))}
+            placeholder="C001"
+            disabled={readOnly}
+            className={hasErr(['conditionCode']) ? 'border-red-300 focus:border-red-400' : ''}
+          />
+        )}
+        <p className="text-[10px] text-slate-400 mt-1">
+          {isSeries ? 'รหัสสร้างอัตโนมัติจาก Series — ไม่สามารถแก้ไขได้' : 'ตัวอักษร+เลข ไม่มีช่องว่าง เช่น C001, GRP-TG-01'}
+        </p>
       </div>
 
       {/* Row 2: Name (full width) */}
@@ -959,6 +1062,13 @@ function StageCard({ stage, idx, total, currency, readOnly, open, onToggle, onCh
   const dueNeedsDays     = DAY_BASED_DUE_TYPES.includes(stage.dueType) && !isTicketIssueDate
   const dueNeedsDate     = stage.dueType === 'CUSTOM_DATE' && !isTicketIssueDate
   const isMissing        = !stage.paymentType
+  const stageErrs: string[] = []
+  if (!stage.calcType)                                           stageErrs.push('วิธีคิดเงิน')
+  if (isAmount && stage.amount < 0)                             stageErrs.push('จำนวนเงิน')
+  if (isPercent && (stage.percent <= 0 || stage.percent > 100)) stageErrs.push('เปอร์เซ็นต์')
+  if (dueNeedsDays && !stage.dueDays)                           stageErrs.push('จำนวนวัน')
+  if (dueNeedsDate && !stage.dueDate)                           stageErrs.push('วันที่กำหนดเอง')
+  if (stage.refundable === 'UNSPECIFIED')                       stageErrs.push('คืนเงินได้หรือไม่')
   const preview          = buildPreview(stage, currency)
   const needsAmount      = isAmount && !stage.amount
   const needsPercent     = isPercent && !stage.percent
@@ -1007,6 +1117,17 @@ function StageCard({ stage, idx, total, currency, readOnly, open, onToggle, onCh
             {!isMissing && stage.creditTowardFare && (
               <span className="text-[9px] bg-emerald-50 text-emerald-600 px-1.5 py-px rounded shrink-0">Credit</span>
             )}
+            {!isMissing && (
+              stageErrs.length > 0 ? (
+                <span className="text-[9px] bg-amber-100 text-amber-700 px-1.5 py-px rounded font-semibold shrink-0">
+                  ขาด {stageErrs.length} รายการ
+                </span>
+              ) : (
+                <span className="text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-px rounded font-semibold shrink-0">
+                  ครบแล้ว
+                </span>
+              )
+            )}
           </div>
           {!open && !isMissing && (
             <p className="text-[10px] text-slate-400 mt-0.5 truncate">
@@ -1042,6 +1163,16 @@ function StageCard({ stage, idx, total, currency, readOnly, open, onToggle, onCh
       {/* ── Card body ── */}
       {open && (
         <div className="border-t border-slate-100 px-3 pb-3 pt-3 space-y-2.5">
+
+          {/* Missing fields banner */}
+          {!isMissing && stageErrs.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 items-center px-2.5 py-2 rounded-lg bg-amber-50 border border-amber-200">
+              <span className="text-[10px] font-medium text-amber-700 shrink-0">ข้อมูลที่ยังไม่ครบ:</span>
+              {stageErrs.map(e => (
+                <span key={e} className="text-[9px] bg-white border border-amber-200 text-amber-700 px-2 py-0.5 rounded-full">{e}</span>
+              ))}
+            </div>
+          )}
 
           {/* ── Row 1: 5-column fixed grid — ไม่เพิ่ม/ลด column ตามเงื่อนไข ── */}
           <div
@@ -1317,14 +1448,22 @@ function StageCard({ stage, idx, total, currency, readOnly, open, onToggle, onCh
             </label>
 
             {/* Mini-card 2: Refundable */}
-            <div className="flex flex-col gap-1.5 p-2.5 rounded-xl border border-slate-200 bg-white h-full">
-              <span className="text-[11px] font-medium text-slate-600">คืนเงินได้หรือไม่</span>
+            <div className={cn(
+              'flex flex-col gap-1.5 p-2.5 rounded-xl border h-full',
+              stage.refundable === 'UNSPECIFIED' ? 'border-amber-300 bg-amber-50/40' : 'border-slate-200 bg-white',
+            )}>
+              <span className="text-[11px] font-medium text-slate-600">
+                คืนเงินได้หรือไม่ <span className="text-amber-500">*</span>
+              </span>
               <FSelect<CondRefundableType>
                 value={stage.refundable}
                 onChange={v => set('refundable', v as CondRefundableType)}
                 options={(['UNSPECIFIED', 'REFUNDABLE', 'NON_REFUNDABLE'] as CondRefundableType[]).map(v => ({ value: v, label: COND_REFUNDABLE_LABELS[v] }))}
                 disabled={readOnly}
               />
+              {stage.refundable === 'UNSPECIFIED' && (
+                <p className="text-[10px] text-amber-600">กรุณาเลือก</p>
+              )}
             </div>
           </div>
 
@@ -1975,9 +2114,8 @@ const SR_RULE_OVER_LIMIT_OPTIONS: { value: CondRuleOverLimitAction; label: strin
 ]
 
 const SR_FORFEIT_SOURCE_OPTIONS: { value: CondForfeitSource; label: string; desc: string }[] = [
-  { value: 'DEPOSIT',  label: 'Deposit',    desc: 'ยึดเงินมัดจำที่ชำระแล้ว' },
-  { value: 'RSVN_FEE', label: 'RSVN Fee',  desc: 'ยึดค่าจองที่นั่ง' },
-  { value: 'ALL',      label: 'ทั้งหมด',   desc: 'ยึดเงินที่ชำระทั้งหมด' },
+  { value: 'PAID_SO_FAR', label: 'ยึดตามการจ่าย', desc: 'ยึดเฉพาะยอดที่ชำระแล้ว ณ วันที่ดำเนินการ ไม่รวมยอดที่ยังไม่ได้ชำระ' },
+  { value: 'ALL',          label: 'ยึดทั้งหมด',   desc: 'ยึดเงินเต็มจำนวนตามเงื่อนไข ไม่ขึ้นกับยอดที่ชำระแล้ว' },
 ]
 
 const SR_PENALTY_OPTIONS: { value: CondStepPenaltyType; label: string }[] = [
@@ -2312,12 +2450,21 @@ function SrRuleCard({
   )
 }
 
-export function SeatReductionSection({ value, onChange, readOnly, currency, errors = [] }: {
-  value: AppCondition; onChange: (v: AppCondition) => void; readOnly: boolean; currency: string; errors?: string[]
+export function SeatReductionSection({ value, onChange, readOnly, currency, errors = [], departureDate }: {
+  value: AppCondition; onChange: (v: AppCondition) => void; readOnly: boolean; currency: string; errors?: string[]; departureDate?: string
 }) {
   const sp = migrateSeatReductionPolicy(value.seatReductionPolicy)
   const setSp = (patch: Partial<CondSeatReductionPolicy>) =>
-    onChange({ ...value, seatReductionPolicy: { ...sp, ...patch } })
+    onChange({ ...value, seatReductionPolicy: { ...sp, noticeDaysBase: 'DEPARTURE_DATE', ...patch } })
+
+  const computedReduceDeadline: string | null = (() => {
+    if (sp.noticeDays == null || !departureDate) return null
+    try {
+      const dep = parseISO(departureDate)
+      if (!isValid(dep)) return null
+      return format(subDays(dep, sp.noticeDays), 'dd MMM yy')
+    } catch { return null }
+  })()
 
   const setRule = (idx: number, patch: Partial<CondSeatReductionRule>) =>
     setSp({ rules: sp.rules.map((r, i) => i === idx ? { ...r, ...patch } : r) })
@@ -2450,73 +2597,86 @@ export function SeatReductionSection({ value, onChange, readOnly, currency, erro
                   {sp.mode === 'SINGLE' && (
                     <>
                       {/* ── Deadline การแจ้งลดที่นั่ง ─────────────────────────────── */}
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <Label>แจ้งลดไม่น้อยกว่า</Label>
-                          <div className="flex items-center gap-2">
-                            <FInput
-                              type="number" min={0}
-                              value={sp.noticeDays ?? ''}
-                              onChange={v => setSp({ noticeDays: v === '' ? null : Number(v) })}
-                              placeholder="ไม่จำกัด"
-                              disabled={readOnly}
-                            />
-                            <span className="text-xs text-slate-500 shrink-0">วัน</span>
-                          </div>
-                        </div>
-                        <div>
-                          <Label>คำนวณจาก (วัน Deadline)</Label>
-                          <FSelect<CondSeatNoticeDaysBase>
-                            value={sp.noticeDaysBase}
-                            onChange={v => v && setSp({ noticeDaysBase: v as CondSeatNoticeDaysBase })}
-                            options={SR_NOTICE_BASE_OPTIONS}
+                      <div>
+                        <Label>แจ้งลดไม่น้อยกว่า</Label>
+                        <div className="flex items-center gap-2">
+                          <FInput
+                            type="number" min={0}
+                            value={sp.noticeDays ?? ''}
+                            onChange={v => setSp({ noticeDays: v === '' ? null : Number(v) })}
+                            placeholder="ไม่จำกัด"
                             disabled={readOnly}
                           />
+                          <span className="text-xs text-slate-500 shrink-0">วัน</span>
+                        </div>
+                        <p className="text-[10px] text-slate-400 mt-1">ระบบคำนวณย้อนหลังจากวันเดินทาง Sector แรกโดยอัตโนมัติ</p>
+                      </div>
+
+                      {/* คำนวณจาก (read-only) + deadline preview */}
+                      <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-[11px]">
+                        <Info size={11} className="text-slate-400 shrink-0" />
+                        <span className="text-slate-500 shrink-0">คำนวณวัน Deadline จาก:</span>
+                        <span className="font-medium text-slate-700 shrink-0">วันเดินทางแรก</span>
+                        {sp.noticeDays != null && (
+                          <>
+                            <span className="text-slate-300 shrink-0">·</span>
+                            <span className="text-slate-500 shrink-0">Deadline:</span>
+                            {computedReduceDeadline ? (
+                              <>
+                                <span className="font-semibold text-[#05a94f]">{computedReduceDeadline}</span>
+                                <span className="text-slate-400 ml-0.5">(วันเดินทาง − {sp.noticeDays} วัน)</span>
+                              </>
+                            ) : (
+                              <span className="text-slate-400 italic">จะคำนวณเมื่อมีการกำหนดวันเดินทาง</span>
+                            )}
+                          </>
+                        )}
+                      </div>
+
+                      {/* หากเกินเงื่อนไข — 3 radio-style buttons */}
+                      <div>
+                        <Label>หากเกินเงื่อนไข</Label>
+                        <div className="flex gap-2 mt-1">
+                          {([
+                            { value: 'NO_FORFEIT', label: 'ไม่ยึดเงิน',  activeColor: 'border-emerald-400 bg-emerald-50', textColor: 'text-emerald-700', desc: 'เกินเงื่อนไขแล้วไม่เสียค่าใช้จ่ายเพิ่ม' },
+                            { value: 'FORFEIT',    label: 'ยึดเงิน',      activeColor: 'border-orange-400 bg-orange-50',  textColor: 'text-orange-700',  desc: 'ยึดเงินตามรูปแบบที่กำหนด' },
+                            { value: 'PENALTY',    label: 'คิดค่าปรับ',   activeColor: 'border-red-400 bg-red-50',        textColor: 'text-red-700',     desc: 'คำนวณค่าปรับตามเงื่อนไข' },
+                          ] as { value: CondSingleOverLimit; label: string; activeColor: string; textColor: string; desc: string }[]).map(opt => {
+                            const isActive = sp.singleOverLimitAction === opt.value
+                            return (
+                              <button key={opt.value} type="button" disabled={readOnly}
+                                onClick={() => {
+                                  const patch: Partial<CondSeatReductionPolicy> = { singleOverLimitAction: opt.value }
+                                  if (opt.value !== 'FORFEIT') patch.singleForfeitSource = null
+                                  if (opt.value !== 'PENALTY') {
+                                    patch.singlePenaltyType     = 'NONE'
+                                    patch.singlePenaltyPercent  = null
+                                    patch.singlePenaltyAmount   = null
+                                    patch.singlePenaltyCurrency = ''
+                                  }
+                                  setSp(patch)
+                                }}
+                                className={cn(
+                                  'flex flex-col gap-0.5 px-3 py-2.5 rounded-xl border-2 text-left flex-1 transition',
+                                  readOnly && 'pointer-events-none',
+                                  isActive ? opt.activeColor : 'border-slate-200 bg-white hover:border-slate-300',
+                                )}>
+                                <span className={cn('text-xs font-semibold', isActive ? opt.textColor : 'text-slate-700')}>{opt.label}</span>
+                                <span className="text-[10px] text-slate-400 leading-snug">{opt.desc}</span>
+                              </button>
+                            )
+                          })}
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <Label>หากเกินเงื่อนไข</Label>
-                          <FSelect<CondSingleOverLimit>
-                            value={sp.singleOverLimitAction}
-                            onChange={v => {
-                              if (!v) return
-                              const patch: Partial<CondSeatReductionPolicy> = { singleOverLimitAction: v as CondSingleOverLimit }
-                              if (v !== 'FORFEIT') patch.singleForfeitSource = null
-                              if (v !== 'PENALTY') {
-                                patch.singlePenaltyType    = 'NONE'
-                                patch.singlePenaltyPercent = null
-                                patch.singlePenaltyAmount  = null
-                                patch.singlePenaltyCurrency = ''
-                              }
-                              setSp(patch)
-                            }}
-                            options={SR_SINGLE_OVER_LIMIT_OPTIONS}
-                            disabled={readOnly}
-                          />
-                        </div>
-                      </div>
-
-                      {/* Description for non-input actions */}
-                      {sp.singleOverLimitAction === 'UNSPECIFIED' && (
-                        <p className="text-[10px] text-slate-400 italic">ยังไม่ได้กำหนดผลลัพธ์เมื่อเกินเงื่อนไข</p>
-                      )}
-                      {sp.singleOverLimitAction === 'NO_FORFEIT' && (
-                        <p className="text-[10px] text-slate-400 italic">เกินเงื่อนไขแล้วไม่เสียค่าใช้จ่ายเพิ่ม</p>
-                      )}
-                      {sp.singleOverLimitAction === 'REQUIRE_APPROVAL' && (
-                        <p className="text-[10px] text-purple-500 italic">ต้องส่งให้ผู้มีอำนาจอนุมัติก่อนดำเนินการ</p>
-                      )}
-
-                      {/* Forfeit source — shown when FORFEIT */}
+                      {/* Forfeit mode — shown when FORFEIT */}
                       {sp.singleOverLimitAction === 'FORFEIT' && (
                         <div>
-                          <Label required>ยึดเงินจาก</Label>
-                          <div className="grid grid-cols-3 gap-2">
+                          <Label required>รูปแบบการยึดเงิน</Label>
+                          <div className="grid grid-cols-2 gap-2">
                             {SR_FORFEIT_SOURCE_OPTIONS.map(opt => (
                               <label key={opt.value} className={cn(
-                                'flex flex-col gap-1 p-2.5 rounded-xl border cursor-pointer select-none transition',
+                                'flex flex-col gap-1 p-2.5 rounded-xl border-2 cursor-pointer select-none transition',
                                 sp.singleForfeitSource === opt.value
                                   ? 'border-orange-400 bg-orange-50'
                                   : 'border-slate-200 bg-white hover:border-orange-200 hover:bg-orange-50/30',
@@ -2626,7 +2786,6 @@ export function SeatReductionSection({ value, onChange, readOnly, currency, erro
               }
               let overLimitSuffix = ''
               let overLimitMissing = false
-              const FORFEIT_LABEL: Record<string, string> = { DEPOSIT: 'Deposit', RSVN_FEE: 'RSVN Fee', ALL: 'ทั้งหมด' }
               if (sp.singleOverLimitAction === 'UNSPECIFIED') {
                 overLimitSuffix = 'ยังไม่ได้กำหนดผลลัพธ์'
                 overLimitMissing = true
@@ -2634,8 +2793,10 @@ export function SeatReductionSection({ value, onChange, readOnly, currency, erro
                 overLimitSuffix = 'ไม่เสียค่าใช้จ่ายเพิ่ม'
               } else if (sp.singleOverLimitAction === 'FORFEIT') {
                 overLimitSuffix = sp.singleForfeitSource
-                  ? `จะถูกยึด${FORFEIT_LABEL[sp.singleForfeitSource]}`
-                  : 'จะถูกยึดเงิน (ยังไม่ได้เลือกประเภท)'
+                  ? sp.singleForfeitSource === 'PAID_SO_FAR'
+                    ? 'ยึดเงินตามยอดที่ชำระแล้ว'
+                    : 'ยึดเงินทั้งหมด'
+                  : 'ยึดเงิน (ยังไม่ได้เลือกรูปแบบ)'
                 overLimitMissing = !sp.singleForfeitSource
               } else if (sp.singleOverLimitAction === 'REQUIRE_APPROVAL') {
                 overLimitSuffix = 'ต้องขออนุมัติจากผู้มีอำนาจ'
@@ -3180,13 +3341,6 @@ export function ChangeSection({ value, onChange, readOnly, currency, errors = []
 
 // ── CancelGroupSection ────────────────────────────────────────────────────────
 
-const CG_DEADLINE_BASE_OPTIONS: { value: CondCancelGroupDeadlineBase; label: string }[] = [
-  { value: 'DEPARTURE_DATE', label: 'วันเดินทางแรก' },
-  { value: 'TICKET_ISSUE',   label: 'วันออกตั๋ว' },
-  { value: 'SEAT_CONFIRMED', label: 'วันที่ Confirm ที่นั่ง' },
-  { value: 'CUSTOM_DATE',    label: 'วันที่กำหนดเอง' },
-]
-
 const CG_REFUNDABLE_OPTIONS: { value: CondCancelGroupRefundable; label: string }[] = [
   { value: 'UNSPECIFIED',    label: 'ยังไม่ระบุ' },
   { value: 'NON_REFUNDABLE', label: 'คืนไม่ได้' },
@@ -3194,12 +3348,582 @@ const CG_REFUNDABLE_OPTIONS: { value: CondCancelGroupRefundable; label: string }
   { value: 'FULL_REFUND',    label: 'คืนได้ทั้งหมด' },
 ]
 
-export function CancelGroupSection({ value, onChange, readOnly, currency, errors = [] }: {
-  value: AppCondition; onChange: (v: AppCondition) => void; readOnly: boolean; currency: string; errors?: string[]
+const CANCEL_RESULT_OPTIONS: { value: CondCancelResult; label: string }[] = [
+  { value: 'NO_FEE',            label: 'ยกเลิกได้โดยไม่เสียค่าใช้จ่าย' },
+  { value: 'FORFEIT_RSVN',      label: 'ยึด RSVN Fee' },
+  { value: 'FORFEIT_DEPOSIT',   label: 'ยึด Deposit' },
+  { value: 'FORFEIT_ALL_PAID',  label: 'ยึดเงินที่ชำระแล้วทั้งหมด' },
+  { value: 'PARTIAL_REFUND',    label: 'คืนเงินบางส่วน' },
+  { value: 'PENALTY',           label: 'คิดค่าปรับ' },
+  { value: 'NOT_ALLOWED',       label: 'ไม่อนุญาตให้ยกเลิก' },
+  { value: 'UNSPECIFIED',       label: 'เอกสารไม่ได้ระบุ' },
+]
+
+const CANCEL_PENALTY_BASIS_OPTIONS: { value: CondCancelPenaltyBasis; label: string }[] = [
+  { value: 'PER_SEAT',   label: 'ต่อ Seat' },
+  { value: 'PER_PNR',    label: 'ต่อ PNR' },
+  { value: 'PER_SERIES', label: 'ต่อ Series' },
+]
+
+const CANCEL_PENALTY_BASE_OPTIONS: { value: CondCancelPenaltyBase; label: string }[] = [
+  { value: 'RSVN_FEE',       label: 'RSVN Fee' },
+  { value: 'DEPOSIT',        label: 'Deposit' },
+  { value: 'AMOUNT_PAID',    label: 'ยอดที่ชำระแล้ว' },
+  { value: 'SERIES_TOTAL',   label: 'ยอดรวมของ Series' },
+  { value: 'PRICE_PER_SEAT', label: 'ราคาต่อ Seat' },
+]
+
+const CANCEL_PENALTY_REFUND_OPTIONS: { value: CondCancelPenaltyRefund; label: string }[] = [
+  { value: 'NON_REFUNDABLE',   label: 'คืนไม่ได้' },
+  { value: 'REFUND_REMAINDER', label: 'คืนยอดคงเหลือหลังหักค่าปรับ' },
+  { value: 'FULL_REFUND',      label: 'คืนได้ทั้งหมด' },
+  { value: 'UNSPECIFIED',      label: 'เอกสารไม่ได้ระบุ' },
+]
+
+const CANCEL_TYPE_DEFS: { value: CondCancelType; label: string; desc: string }[] = [
+  { value: 'STEP',          label: 'ยกเลิกตามช่วงวัน (เงื่อนไข Step)', desc: 'ผลการยกเลิกแตกต่างกันตามจำนวนวันก่อนวันเดินทาง' },
+  { value: 'PAYMENT_STAGE', label: 'ยกเลิกตามงวดชำระเงิน',             desc: 'ผลการยกเลิกขึ้นอยู่กับงวดล่าสุดที่ชำระแล้ว' },
+  { value: 'PENALTY',       label: 'ยกเลิกตามค่าปรับ (Penalty ตามข้อตกลง)', desc: 'ค่าปรับคงที่ตามข้อตกลง ไม่ขึ้นกับช่วงวันหรืองวดชำระ' },
+]
+
+// ── StepRow sub-component (holds its own local showRemark state) ──────────────
+function StepRow({ step, idx, setCg, cg, readOnly }: {
+  step: CondCancelStep
+  idx: number
+  cg: CondCancelGroupTerms
+  setCg: (patch: Partial<CondCancelGroupTerms>) => void
+  readOnly: boolean
+}) {
+  const [showRemark, setShowRemark] = useState(!!step.remark)
+
+  const setStep = (patch: Partial<CondCancelStep>) => {
+    const next = [...(cg.stepCancels ?? [])]
+    next[idx] = { ...step, ...patch }
+    setCg({ stepCancels: next })
+  }
+
+  const removeStep = () => {
+    setCg({ stepCancels: (cg.stepCancels ?? []).filter((_, i) => i !== idx) })
+  }
+
+  const setPR = (patch: Partial<CondCancelPartialRefundSpec>) =>
+    setStep({ partialRefund: { ...(step.partialRefund ?? defaultCancelPartialRefundSpec()), ...patch } })
+
+  const setPenalty = (patch: Partial<CondCancelPenaltyInlineSpec>) =>
+    setStep({ penalty: { ...(step.penalty ?? defaultCancelPenaltyInlineSpec()), ...patch } })
+
+  const result = step.result
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2.5">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold text-slate-700">เงื่อนไข Step {idx + 1}</span>
+        {!readOnly && (
+          <button type="button" onClick={removeStep}
+            className="p-1 rounded text-slate-300 hover:text-red-500 hover:bg-red-50 transition">
+            <Trash2 size={11} />
+          </button>
+        )}
+      </div>
+
+      {/* Days range */}
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <Label>ตั้งแต่ (วันก่อนเดินทาง)</Label>
+          <div className="flex items-center gap-1.5">
+            <FInput type="number" min={0} value={step.daysFrom ?? ''}
+              onChange={v => setStep({ daysFrom: v === '' ? null : Number(v) })}
+              placeholder="เช่น 45" disabled={readOnly} />
+            <span className="text-[10px] text-slate-400 shrink-0">วัน</span>
+          </div>
+        </div>
+        <div>
+          <Label>ถึง (วันก่อนเดินทาง)</Label>
+          <div className="flex items-center gap-1.5">
+            <FInput type="number" min={0} value={step.daysTo ?? ''}
+              onChange={v => setStep({ daysTo: v === '' ? null : Number(v) })}
+              placeholder="เช่น 0" disabled={readOnly} />
+            <span className="text-[10px] text-slate-400 shrink-0">วัน</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Unified result selector */}
+      <div>
+        <Label required>ผลเมื่อยกเลิก</Label>
+        <FSelect<CondCancelResult>
+          value={result}
+          onChange={v => v && setStep({
+            result: v as CondCancelResult,
+            partialRefund: v === 'PARTIAL_REFUND' ? (step.partialRefund ?? defaultCancelPartialRefundSpec()) : null,
+            penalty: v === 'PENALTY' ? (step.penalty ?? defaultCancelPenaltyInlineSpec()) : null,
+          })}
+          options={CANCEL_RESULT_OPTIONS}
+          disabled={readOnly}
+        />
+      </div>
+
+      {/* Implied result info (auto-derived, no user input needed) */}
+      {result === 'NO_FEE' && (
+        <div className="flex items-center gap-1.5 text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5">
+          <CheckCircle2 size={10} className="shrink-0" />
+          คืนเงินที่ชำระแล้วทั้งหมด
+        </div>
+      )}
+      {result === 'FORFEIT_RSVN' && (
+        <div className="flex items-center gap-1.5 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+          <Info size={10} className="shrink-0" />
+          ยึดเฉพาะ RSVN Fee — เงินงวดอื่นที่ชำระแล้วสามารถคืนได้
+        </div>
+      )}
+      {result === 'FORFEIT_DEPOSIT' && (
+        <div className="flex items-center gap-1.5 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+          <Info size={10} className="shrink-0" />
+          ยึดเฉพาะ Deposit — เงินที่ชำระเกินจาก Deposit สามารถคืนได้
+        </div>
+      )}
+      {result === 'FORFEIT_ALL_PAID' && (
+        <div className="flex items-center gap-1.5 text-[10px] text-red-700 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1.5">
+          <X size={10} className="shrink-0" />
+          ยึดเงินที่ชำระแล้วทั้งหมด — ไม่มีเงินคืน
+        </div>
+      )}
+      {result === 'NOT_ALLOWED' && (
+        <div className="flex items-center gap-1.5 text-[10px] text-red-700 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1.5">
+          <X size={10} className="shrink-0" />
+          ไม่อนุญาตให้ยกเลิกกรุ๊ปในช่วงนี้
+        </div>
+      )}
+      {result === 'UNSPECIFIED' && (
+        <div className="flex items-center gap-1.5 text-[10px] text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5">
+          <Info size={10} className="shrink-0" />
+          เอกสารไม่ได้ระบุผลทางการเงินเมื่อยกเลิก
+        </div>
+      )}
+
+      {/* PARTIAL_REFUND sub-fields */}
+      {result === 'PARTIAL_REFUND' && (
+        <div className="space-y-2 rounded-lg border border-blue-200 bg-blue-50/60 p-2.5">
+          <p className="text-[10px] font-semibold text-blue-700">รายละเอียดการคืนเงินบางส่วน</p>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <Label required>วิธีคำนวณเงินคืน</Label>
+              <FSelect
+                value={step.partialRefund?.calcType ?? ''}
+                onChange={v => setPR({ calcType: (v as 'FIXED' | 'PERCENT') || null })}
+                options={[
+                  { value: '', label: '— เลือก —' },
+                  { value: 'FIXED', label: 'จำนวนเงินคงที่' },
+                  { value: 'PERCENT', label: 'เปอร์เซ็นต์' },
+                ]}
+                disabled={readOnly}
+              />
+            </div>
+            <div>
+              {step.partialRefund?.calcType === 'FIXED' && (
+                <>
+                  <Label required>จำนวนเงินที่คืน</Label>
+                  <FInput type="number" min={0} value={step.partialRefund?.amount ?? ''}
+                    onChange={v => setPR({ amount: v === '' ? null : Number(v) })}
+                    placeholder="0" disabled={readOnly} />
+                </>
+              )}
+              {step.partialRefund?.calcType === 'PERCENT' && (
+                <>
+                  <Label required>เปอร์เซ็นต์ที่คืน</Label>
+                  <div className="flex items-center gap-1.5">
+                    <FInput type="number" min={0} max={100} value={step.partialRefund?.percent ?? ''}
+                      onChange={v => setPR({ percent: v === '' ? null : Number(v) })}
+                      placeholder="0" disabled={readOnly} />
+                    <span className="text-[10px] text-slate-400 shrink-0">%</span>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+          <div>
+            <Label>รายละเอียดการคืนเงิน</Label>
+            <FTextarea value={step.partialRefund?.detail ?? ''}
+              onChange={v => setPR({ detail: v })}
+              placeholder="รายละเอียด..." rows={2} disabled={readOnly} />
+          </div>
+        </div>
+      )}
+
+      {/* PENALTY sub-fields */}
+      {result === 'PENALTY' && (
+        <div className="space-y-2 rounded-lg border border-orange-200 bg-orange-50/60 p-2.5">
+          <p className="text-[10px] font-semibold text-orange-700">รายละเอียดค่าปรับ</p>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <Label required>คิดค่าปรับต่อ</Label>
+              <FSelect
+                value={step.penalty?.basis ?? ''}
+                onChange={v => setPenalty({ basis: (v as CondCancelPenaltyBasis) || null })}
+                options={[
+                  { value: '', label: '— เลือก —' },
+                  { value: 'PER_SEAT', label: 'ต่อ Seat' },
+                  { value: 'PER_PNR', label: 'ต่อ PNR' },
+                  { value: 'PER_SERIES', label: 'ต่อ Series' },
+                ]}
+                disabled={readOnly}
+              />
+            </div>
+            <div>
+              <Label required>วิธีคิดค่าปรับ</Label>
+              <FSelect
+                value={step.penalty?.calcType ?? ''}
+                onChange={v => setPenalty({ calcType: (v as CondCancelPenaltyCalcType) || null, fixedAmount: null, percent: null })}
+                options={[
+                  { value: '', label: '— เลือก —' },
+                  { value: 'FIXED', label: 'จำนวนเงิน' },
+                  { value: 'PERCENT', label: 'เปอร์เซ็นต์' },
+                ]}
+                disabled={readOnly}
+              />
+            </div>
+          </div>
+          {step.penalty?.calcType === 'FIXED' && (
+            <div>
+              <Label required>จำนวนค่าปรับ</Label>
+              <FInput type="number" min={0} value={step.penalty?.fixedAmount ?? ''}
+                onChange={v => setPenalty({ fixedAmount: v === '' ? null : Number(v) })}
+                placeholder="0" disabled={readOnly} />
+            </div>
+          )}
+          {step.penalty?.calcType === 'PERCENT' && (
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label required>เปอร์เซ็นต์ค่าปรับ</Label>
+                <div className="flex items-center gap-1.5">
+                  <FInput type="number" min={0} max={100} value={step.penalty?.percent ?? ''}
+                    onChange={v => setPenalty({ percent: v === '' ? null : Number(v) })}
+                    placeholder="0" disabled={readOnly} />
+                  <span className="text-[10px] text-slate-400 shrink-0">%</span>
+                </div>
+              </div>
+              <div>
+                <Label required>คำนวณจาก</Label>
+                <FSelect
+                  value={step.penalty?.percentBase ?? ''}
+                  onChange={v => setPenalty({ percentBase: (v as CondCancelPenaltyBase) || null })}
+                  options={[
+                    { value: '', label: '— เลือก —' },
+                    { value: 'RSVN_FEE', label: 'RSVN Fee' },
+                    { value: 'DEPOSIT', label: 'Deposit' },
+                    { value: 'AMOUNT_PAID', label: 'ยอดที่ชำระแล้ว' },
+                    { value: 'SERIES_TOTAL', label: 'ยอดรวมของ Series' },
+                    { value: 'PRICE_PER_SEAT', label: 'ราคาต่อ Seat' },
+                  ]}
+                  disabled={readOnly}
+                />
+              </div>
+            </div>
+          )}
+          <div>
+            <Label required>การจัดการยอดคงเหลือ</Label>
+            <FSelect
+              value={step.penalty?.remaining ?? 'UNSPECIFIED'}
+              onChange={v => setPenalty({ remaining: v as 'REFUND_REMAINDER' | 'NO_REFUND' | 'UNSPECIFIED' })}
+              options={[
+                { value: 'REFUND_REMAINDER', label: 'คืนยอดคงเหลือหลังหักค่าปรับ' },
+                { value: 'NO_REFUND', label: 'ไม่คืนยอดคงเหลือ' },
+                { value: 'UNSPECIFIED', label: 'เอกสารไม่ได้ระบุ' },
+              ]}
+              disabled={readOnly}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Remark */}
+      {!showRemark && !step.remark && !readOnly && (
+        <button type="button" onClick={() => setShowRemark(true)}
+          className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-[#05a94f] transition">
+          <Plus size={10} />รายละเอียดเพิ่มเติม
+        </button>
+      )}
+      {(showRemark || !!step.remark) && (
+        <div>
+          <Label>รายละเอียดเพิ่มเติม</Label>
+          <FTextarea value={step.remark} onChange={v => setStep({ remark: v })}
+            placeholder="รายละเอียด..." rows={2} disabled={readOnly} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── PaymentEntryRow sub-component (holds its own local showRemark state) ──────
+function PaymentEntryRow({ stageId, label, entry, readOnly, onSet }: {
+  stageId: string
+  label: string
+  entry: CondCancelPaymentEntry | undefined
+  readOnly: boolean
+  onSet: (patch: Partial<Omit<CondCancelPaymentEntry, 'entryId' | 'stageId'>>) => void
+}) {
+  const [showRemark, setShowRemark] = useState(!!(entry?.remark))
+
+  const result: CondCancelResult = entry?.result ?? 'UNSPECIFIED'
+
+  const setPR = (patch: Partial<CondCancelPartialRefundSpec>) =>
+    onSet({ partialRefund: { ...(entry?.partialRefund ?? defaultCancelPartialRefundSpec()), ...patch } })
+
+  const setPenalty = (patch: Partial<CondCancelPenaltyInlineSpec>) =>
+    onSet({ penalty: { ...(entry?.penalty ?? defaultCancelPenaltyInlineSpec()), ...patch } })
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-3 space-y-2">
+      <p className="text-[11px] font-semibold text-slate-700">{label}</p>
+
+      {/* Unified result selector */}
+      <div>
+        <Label required>ผลเมื่อยกเลิก</Label>
+        <FSelect<CondCancelResult>
+          value={result}
+          onChange={v => v && onSet({
+            result: v as CondCancelResult,
+            partialRefund: v === 'PARTIAL_REFUND' ? (entry?.partialRefund ?? defaultCancelPartialRefundSpec()) : null,
+            penalty: v === 'PENALTY' ? (entry?.penalty ?? defaultCancelPenaltyInlineSpec()) : null,
+          })}
+          options={CANCEL_RESULT_OPTIONS}
+          disabled={readOnly}
+        />
+      </div>
+
+      {/* Implied result info */}
+      {result === 'NO_FEE' && (
+        <div className="flex items-center gap-1.5 text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5">
+          <CheckCircle2 size={10} className="shrink-0" />คืนเงินที่ชำระแล้วทั้งหมด
+        </div>
+      )}
+      {result === 'FORFEIT_RSVN' && (
+        <div className="flex items-center gap-1.5 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+          <Info size={10} className="shrink-0" />ยึดเฉพาะ RSVN Fee — เงินงวดอื่นที่ชำระแล้วสามารถคืนได้
+        </div>
+      )}
+      {result === 'FORFEIT_DEPOSIT' && (
+        <div className="flex items-center gap-1.5 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+          <Info size={10} className="shrink-0" />ยึดเฉพาะ Deposit — เงินที่ชำระเกินจาก Deposit สามารถคืนได้
+        </div>
+      )}
+      {result === 'FORFEIT_ALL_PAID' && (
+        <div className="flex items-center gap-1.5 text-[10px] text-red-700 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1.5">
+          <X size={10} className="shrink-0" />ยึดเงินที่ชำระแล้วทั้งหมด — ไม่มีเงินคืน
+        </div>
+      )}
+      {result === 'NOT_ALLOWED' && (
+        <div className="flex items-center gap-1.5 text-[10px] text-red-700 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1.5">
+          <X size={10} className="shrink-0" />ไม่อนุญาตให้ยกเลิกกรุ๊ปในงวดนี้
+        </div>
+      )}
+      {result === 'UNSPECIFIED' && (
+        <div className="flex items-center gap-1.5 text-[10px] text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5">
+          <Info size={10} className="shrink-0" />เอกสารไม่ได้ระบุผลทางการเงินเมื่อยกเลิก
+        </div>
+      )}
+
+      {/* PARTIAL_REFUND sub-fields */}
+      {result === 'PARTIAL_REFUND' && (
+        <div className="space-y-2 rounded-lg border border-blue-200 bg-blue-50/60 p-2.5">
+          <p className="text-[10px] font-semibold text-blue-700">รายละเอียดการคืนเงินบางส่วน</p>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <Label required>วิธีคำนวณเงินคืน</Label>
+              <FSelect
+                value={entry?.partialRefund?.calcType ?? ''}
+                onChange={v => setPR({ calcType: (v as 'FIXED' | 'PERCENT') || null })}
+                options={[
+                  { value: '', label: '— เลือก —' },
+                  { value: 'FIXED', label: 'จำนวนเงินคงที่' },
+                  { value: 'PERCENT', label: 'เปอร์เซ็นต์' },
+                ]}
+                disabled={readOnly}
+              />
+            </div>
+            <div>
+              {entry?.partialRefund?.calcType === 'FIXED' && (
+                <>
+                  <Label required>จำนวนเงินที่คืน</Label>
+                  <FInput type="number" min={0} value={entry?.partialRefund?.amount ?? ''}
+                    onChange={v => setPR({ amount: v === '' ? null : Number(v) })} placeholder="0" disabled={readOnly} />
+                </>
+              )}
+              {entry?.partialRefund?.calcType === 'PERCENT' && (
+                <>
+                  <Label required>เปอร์เซ็นต์ที่คืน</Label>
+                  <div className="flex items-center gap-1.5">
+                    <FInput type="number" min={0} max={100} value={entry?.partialRefund?.percent ?? ''}
+                      onChange={v => setPR({ percent: v === '' ? null : Number(v) })} placeholder="0" disabled={readOnly} />
+                    <span className="text-[10px] text-slate-400 shrink-0">%</span>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+          <div>
+            <Label>รายละเอียดการคืนเงิน</Label>
+            <FTextarea value={entry?.partialRefund?.detail ?? ''}
+              onChange={v => setPR({ detail: v })}
+              placeholder="รายละเอียด..." rows={2} disabled={readOnly} />
+          </div>
+        </div>
+      )}
+
+      {/* PENALTY sub-fields */}
+      {result === 'PENALTY' && (
+        <div className="space-y-2 rounded-lg border border-orange-200 bg-orange-50/60 p-2.5">
+          <p className="text-[10px] font-semibold text-orange-700">รายละเอียดค่าปรับ</p>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <Label required>คิดค่าปรับต่อ</Label>
+              <FSelect
+                value={entry?.penalty?.basis ?? ''}
+                onChange={v => setPenalty({ basis: (v as CondCancelPenaltyBasis) || null })}
+                options={[
+                  { value: '', label: '— เลือก —' },
+                  { value: 'PER_SEAT', label: 'ต่อ Seat' },
+                  { value: 'PER_PNR', label: 'ต่อ PNR' },
+                  { value: 'PER_SERIES', label: 'ต่อ Series' },
+                ]}
+                disabled={readOnly}
+              />
+            </div>
+            <div>
+              <Label required>วิธีคิดค่าปรับ</Label>
+              <FSelect
+                value={entry?.penalty?.calcType ?? ''}
+                onChange={v => setPenalty({ calcType: (v as CondCancelPenaltyCalcType) || null, fixedAmount: null, percent: null })}
+                options={[
+                  { value: '', label: '— เลือก —' },
+                  { value: 'FIXED', label: 'จำนวนเงิน' },
+                  { value: 'PERCENT', label: 'เปอร์เซ็นต์' },
+                ]}
+                disabled={readOnly}
+              />
+            </div>
+          </div>
+          {entry?.penalty?.calcType === 'FIXED' && (
+            <div>
+              <Label required>จำนวนค่าปรับ</Label>
+              <FInput type="number" min={0} value={entry?.penalty?.fixedAmount ?? ''}
+                onChange={v => setPenalty({ fixedAmount: v === '' ? null : Number(v) })} placeholder="0" disabled={readOnly} />
+            </div>
+          )}
+          {entry?.penalty?.calcType === 'PERCENT' && (
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label required>เปอร์เซ็นต์ค่าปรับ</Label>
+                <div className="flex items-center gap-1.5">
+                  <FInput type="number" min={0} max={100} value={entry?.penalty?.percent ?? ''}
+                    onChange={v => setPenalty({ percent: v === '' ? null : Number(v) })} placeholder="0" disabled={readOnly} />
+                  <span className="text-[10px] text-slate-400 shrink-0">%</span>
+                </div>
+              </div>
+              <div>
+                <Label required>คำนวณจาก</Label>
+                <FSelect
+                  value={entry?.penalty?.percentBase ?? ''}
+                  onChange={v => setPenalty({ percentBase: (v as CondCancelPenaltyBase) || null })}
+                  options={[
+                    { value: '', label: '— เลือก —' },
+                    { value: 'RSVN_FEE', label: 'RSVN Fee' },
+                    { value: 'DEPOSIT', label: 'Deposit' },
+                    { value: 'AMOUNT_PAID', label: 'ยอดที่ชำระแล้ว' },
+                    { value: 'SERIES_TOTAL', label: 'ยอดรวมของ Series' },
+                    { value: 'PRICE_PER_SEAT', label: 'ราคาต่อ Seat' },
+                  ]}
+                  disabled={readOnly}
+                />
+              </div>
+            </div>
+          )}
+          <div>
+            <Label required>การจัดการยอดคงเหลือ</Label>
+            <FSelect
+              value={entry?.penalty?.remaining ?? 'UNSPECIFIED'}
+              onChange={v => setPenalty({ remaining: v as 'REFUND_REMAINDER' | 'NO_REFUND' | 'UNSPECIFIED' })}
+              options={[
+                { value: 'REFUND_REMAINDER', label: 'คืนยอดคงเหลือหลังหักค่าปรับ' },
+                { value: 'NO_REFUND', label: 'ไม่คืนยอดคงเหลือ' },
+                { value: 'UNSPECIFIED', label: 'เอกสารไม่ได้ระบุ' },
+              ]}
+              disabled={readOnly}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Remark */}
+      {!showRemark && !(entry?.remark) && !readOnly && (
+        <button type="button" onClick={() => setShowRemark(true)}
+          className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-[#05a94f] transition">
+          <Plus size={10} />รายละเอียดเพิ่มเติม
+        </button>
+      )}
+      {(showRemark || !!(entry?.remark)) && (
+        <div>
+          <Label>รายละเอียดเพิ่มเติม</Label>
+          <FTextarea value={entry?.remark ?? ''}
+            onChange={v => onSet({ remark: v })}
+            placeholder="รายละเอียด..." rows={2} disabled={readOnly} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+export function CancelGroupSection({ value, onChange, readOnly, currency, errors = [], departureDate }: {
+  value: AppCondition; onChange: (v: AppCondition) => void; readOnly: boolean; currency: string; errors?: string[]; departureDate?: string
 }) {
   const cg: CondCancelGroupTerms = value.cancelGroupTerms ?? defaultCancelGroupTerms()
   const setCg = (patch: Partial<CondCancelGroupTerms>) =>
-    onChange({ ...value, cancelGroupTerms: { ...cg, ...patch } })
+    onChange({ ...value, cancelGroupTerms: { ...cg, deadlineBase: 'DEPARTURE_DATE', ...patch } })
+
+  const [pendingType, setPendingType] = useState<CondCancelType | null>(null)
+  const [showRemark, setShowRemark] = useState(!!cg.remark)
+
+  const computedDeadline: string | null = (() => {
+    if (cg.noticeDays == null || !departureDate) return null
+    try {
+      const dep = parseISO(departureDate)
+      if (!isValid(dep)) return null
+      return format(subDays(dep, cg.noticeDays), 'dd MMM yy')
+    } catch { return null }
+  })()
+
+  const typeHasData = (t: CondCancelType): boolean => {
+    if (t === 'STEP')          return (cg.stepCancels?.length ?? 0) > 0
+    if (t === 'PAYMENT_STAGE') return (cg.paymentCancels?.length ?? 0) > 0
+    if (t === 'PENALTY')       return !!(cg.cancelPenalty?.basis || cg.cancelPenalty?.calcType)
+    return false
+  }
+
+  const handleTypeChange = (t: CondCancelType) => {
+    if (cg.cancelType && cg.cancelType !== t && typeHasData(cg.cancelType)) {
+      setPendingType(t)
+    } else {
+      setCg({ cancelType: t })
+    }
+  }
+
+  const getPaymentEntry = (stageId: string): CondCancelPaymentEntry | undefined =>
+    (cg.paymentCancels ?? []).find(e => e.stageId === stageId)
+
+  const setPaymentEntry = (stageId: string, patch: Partial<Omit<CondCancelPaymentEntry, 'entryId' | 'stageId'>>) => {
+    const existing = cg.paymentCancels ?? []
+    const idx = existing.findIndex(e => e.stageId === stageId)
+    if (idx >= 0) {
+      const next = [...existing]
+      next[idx] = { ...existing[idx], ...patch }
+      setCg({ paymentCancels: next })
+    } else {
+      setCg({ paymentCancels: [...existing, { entryId: newCancelPaymentEntryId(), stageId, result: 'UNSPECIFIED', remark: '', ...patch }] })
+    }
+  }
+
+  const activeStages = value.stages.filter(s => !!s.paymentType)
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
@@ -3224,191 +3948,309 @@ export function CancelGroupSection({ value, onChange, readOnly, currency, errors
 
         {cg.enabled && (
           <>
-                {/* Notice days + Deadline base */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <Label>แจ้ง No Sell ไม่น้อยกว่า</Label>
-                    <div className="flex items-center gap-2">
-                      <FInput
-                        type="number" min={0}
-                        value={cg.noticeDays ?? ''}
-                        onChange={v => setCg({ noticeDays: v === '' ? null : Number(v) })}
-                        placeholder="ไม่จำกัด"
-                        disabled={readOnly}
-                      />
-                      <span className="text-xs text-slate-500 shrink-0">วัน</span>
-                    </div>
-                  </div>
-                  <div>
-                    <Label>คำนวณจาก</Label>
-                    <FSelect<CondCancelGroupDeadlineBase>
-                      value={cg.deadlineBase}
-                      onChange={v => v && setCg({ deadlineBase: v as CondCancelGroupDeadlineBase, ...(v !== 'CUSTOM_DATE' ? { deadlineCustomDate: '' } : {}) })}
-                      options={CG_DEADLINE_BASE_OPTIONS}
+            {/* Notice days */}
+            <div>
+              <Label>แจ้ง No Sell ไม่น้อยกว่า</Label>
+              <div className="flex items-center gap-2">
+                <FInput
+                  type="number" min={0}
+                  value={cg.noticeDays ?? ''}
+                  onChange={v => setCg({ noticeDays: v === '' ? null : Number(v) })}
+                  placeholder="ไม่จำกัด"
+                  disabled={readOnly}
+                />
+                <span className="text-xs text-slate-500 shrink-0">วัน</span>
+              </div>
+              <p className="text-[10px] text-slate-400 mt-1">ระบบคำนวณย้อนหลังจากวันเดินทางวันแรกโดยอัตโนมัติ</p>
+            </div>
+
+            {/* Deadline preview */}
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-[11px]">
+              <Info size={11} className="text-slate-400 shrink-0" />
+              <span className="text-slate-500 shrink-0">No Sell Deadline:</span>
+              {computedDeadline ? (
+                <>
+                  <span className="font-semibold text-[#05a94f]">{computedDeadline}</span>
+                  <span className="text-slate-400 ml-0.5">(วันเดินทางวันแรก − {cg.noticeDays ?? 0} วัน)</span>
+                </>
+              ) : (
+                <span className="text-slate-400 italic">
+                  {cg.noticeDays != null ? 'จะคำนวณ Deadline เมื่อมีการกำหนดวันเดินทาง' : 'กรุณาระบุจำนวนวันแจ้ง No Sell'}
+                </span>
+              )}
+            </div>
+
+            {/* Cancel type selector */}
+            <div>
+              <p className="text-xs font-semibold text-slate-700 mb-2">
+                ประเภทเงื่อนไขการยกเลิก <span className="text-red-500">*</span>
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                {CANCEL_TYPE_DEFS.map(def => {
+                  const isSelected = cg.cancelType === def.value
+                  return (
+                    <button
+                      key={def.value}
+                      type="button"
                       disabled={readOnly}
-                    />
+                      onClick={() => handleTypeChange(def.value)}
+                      className={cn(
+                        'text-left px-3 py-3 rounded-xl border-2 transition',
+                        readOnly && 'pointer-events-none',
+                        isSelected
+                          ? 'border-[#05a94f] bg-emerald-50'
+                          : 'border-slate-200 bg-white hover:border-slate-300',
+                      )}
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={cn(
+                          'w-3.5 h-3.5 rounded-full border-2 shrink-0',
+                          isSelected ? 'border-[#05a94f] bg-[#05a94f]' : 'border-slate-300 bg-white',
+                        )} />
+                        <span className={cn('text-xs font-semibold leading-snug', isSelected ? 'text-[#05a94f]' : 'text-slate-700')}>
+                          {def.label}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-slate-400 pl-5 leading-snug">{def.desc}</p>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Type 1: STEP form */}
+            {cg.cancelType === 'STEP' && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-slate-700">เงื่อนไข Step การยกเลิกกรุ๊ป (No Sell)</p>
+                  {!readOnly && (
+                    <button
+                      type="button"
+                      onClick={() => setCg({
+                        stepCancels: [...(cg.stepCancels ?? []), {
+                          stepId: newCancelStepId(),
+                          daysFrom: null, daysTo: null,
+                          result: 'UNSPECIFIED' as CondCancelResult, remark: '',
+                        }],
+                      })}
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-medium text-[#05a94f] hover:bg-emerald-50 border border-emerald-200 transition"
+                    >
+                      <Plus size={10} />
+                      เพิ่ม Step
+                    </button>
+                  )}
+                </div>
+
+                {(cg.stepCancels ?? []).length === 0 && (
+                  <div className="text-[11px] text-slate-400 italic px-3 py-2 rounded-lg border border-dashed border-slate-200 bg-slate-50 text-center">
+                    ยังไม่มีเงื่อนไข Step — กดปุ่ม &quot;เพิ่ม Step&quot; เพื่อเริ่มต้น
+                  </div>
+                )}
+
+                {(cg.stepCancels ?? []).map((step, idx) => (
+                  <StepRow key={step.stepId} step={step} idx={idx} cg={cg} setCg={setCg} readOnly={readOnly} />
+                ))}
+              </div>
+            )}
+
+            {/* Type 2: PAYMENT_STAGE form */}
+            {cg.cancelType === 'PAYMENT_STAGE' && (
+              <div className="space-y-3">
+                <p className="text-xs font-semibold text-slate-700">ผลการยกเลิกตามงวดชำระเงิน</p>
+
+                {activeStages.length === 0 && (
+                  <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-amber-200 bg-amber-50 text-[11px] text-amber-700">
+                    <AlertCircle size={12} className="shrink-0" />
+                    ยังไม่มีงวดชำระเงิน — กรุณาตั้งค่างวดใน Tab เงื่อนไขงวดชำระเงินก่อน
+                  </div>
+                )}
+
+                {[
+                  { stageId: 'BEFORE_PAYMENT', label: 'ก่อนชำระเงิน' },
+                  ...activeStages.map(s => ({
+                    stageId: s.stageId,
+                    label: `หลังชำระ${autoStageName(s.paymentType, s.customPaymentName, s.stageNo)}`,
+                  })),
+                ].map(row => (
+                  <PaymentEntryRow
+                    key={row.stageId}
+                    stageId={row.stageId}
+                    label={row.label}
+                    entry={getPaymentEntry(row.stageId)}
+                    readOnly={readOnly}
+                    onSet={patch => setPaymentEntry(row.stageId, patch)}
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* Type 3: PENALTY form */}
+            {cg.cancelType === 'PENALTY' && (
+              <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                {/* Basis */}
+                <div>
+                  <Label required>คิดค่าปรับต่อ</Label>
+                  <div className="flex flex-wrap gap-2 mt-1">
+                    {CANCEL_PENALTY_BASIS_OPTIONS.map(opt => {
+                      const p = cg.cancelPenalty ?? defaultCancelPenaltySpec()
+                      const active = p.basis === opt.value
+                      return (
+                        <button key={opt.value} type="button" disabled={readOnly}
+                          onClick={() => setCg({ cancelPenalty: { ...(cg.cancelPenalty ?? defaultCancelPenaltySpec()), basis: opt.value } })}
+                          className={cn(
+                            'px-3 py-1.5 rounded-lg text-xs font-medium border transition',
+                            active ? 'border-[#05a94f] bg-emerald-50 text-[#05a94f]' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300',
+                            readOnly && 'pointer-events-none',
+                          )}>
+                          {opt.label}
+                        </button>
+                      )
+                    })}
                   </div>
                 </div>
 
-                {cg.deadlineBase === 'CUSTOM_DATE' && (
-                  <div className="grid grid-cols-2 gap-3">
+                {/* Calc type */}
+                <div>
+                  <Label required>วิธีคิดค่าปรับ</Label>
+                  <div className="flex gap-2 mt-1">
+                    {[{ value: 'FIXED', label: 'จำนวนเงิน' }, { value: 'PERCENT', label: 'เปอร์เซ็นต์' }].map(opt => {
+                      const p = cg.cancelPenalty ?? defaultCancelPenaltySpec()
+                      const active = p.calcType === opt.value
+                      return (
+                        <button key={opt.value} type="button" disabled={readOnly}
+                          onClick={() => setCg({ cancelPenalty: { ...(cg.cancelPenalty ?? defaultCancelPenaltySpec()), calcType: opt.value as CondCancelPenaltyCalcType, fixedAmount: null, percent: null, percentBase: null } })}
+                          className={cn(
+                            'px-3 py-1.5 rounded-lg text-xs font-medium border transition',
+                            active ? 'border-[#05a94f] bg-emerald-50 text-[#05a94f]' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300',
+                            readOnly && 'pointer-events-none',
+                          )}>
+                          {opt.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* Fixed amount */}
+                {(cg.cancelPenalty?.calcType === 'FIXED') && (
+                  <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <Label required>วันที่กำหนดเอง</Label>
-                      <FInput
-                        type="date"
-                        value={cg.deadlineCustomDate}
-                        onChange={v => setCg({ deadlineCustomDate: v })}
+                      <Label required>จำนวนค่าปรับ</Label>
+                      <FInput type="number" min={0}
+                        value={cg.cancelPenalty?.fixedAmount ?? ''}
+                        onChange={v => setCg({ cancelPenalty: { ...(cg.cancelPenalty ?? defaultCancelPenaltySpec()), fixedAmount: v === '' ? null : Number(v) } })}
+                        disabled={readOnly} placeholder="0" />
+                    </div>
+                    <div>
+                      <Label>สกุลเงิน</Label>
+                      <div className="h-9 flex items-center px-3 rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-600 select-none">
+                        <Lock size={10} className="text-slate-400 mr-2 shrink-0" />
+                        {currency}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Percent */}
+                {(cg.cancelPenalty?.calcType === 'PERCENT') && (
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <Label required>เปอร์เซ็นต์ค่าปรับ</Label>
+                      <div className="flex items-center gap-1.5">
+                        <FInput type="number" min={0} max={100}
+                          value={cg.cancelPenalty?.percent ?? ''}
+                          onChange={v => setCg({ cancelPenalty: { ...(cg.cancelPenalty ?? defaultCancelPenaltySpec()), percent: v === '' ? null : Number(v) } })}
+                          disabled={readOnly} placeholder="0" />
+                        <span className="text-xs text-slate-500 shrink-0">%</span>
+                      </div>
+                    </div>
+                    <div>
+                      <Label required>คำนวณเปอร์เซ็นต์จาก</Label>
+                      <FSelect<CondCancelPenaltyBase>
+                        value={cg.cancelPenalty?.percentBase ?? '' as CondCancelPenaltyBase}
+                        onChange={v => v && setCg({ cancelPenalty: { ...(cg.cancelPenalty ?? defaultCancelPenaltySpec()), percentBase: v as CondCancelPenaltyBase } })}
+                        options={[{ value: '' as CondCancelPenaltyBase, label: '— เลือก —' }, ...CANCEL_PENALTY_BASE_OPTIONS]}
                         disabled={readOnly}
                       />
                     </div>
                   </div>
                 )}
 
-                {/* Over limit action */}
+                {/* Refund */}
                 <div>
-                  <Label>หากเกินเงื่อนไข</Label>
-                  <FSelect<CondSingleOverLimit>
-                    value={cg.overLimitAction}
-                    onChange={v => {
-                      if (!v) return
-                      const patch: Partial<CondCancelGroupTerms> = { overLimitAction: v as CondSingleOverLimit }
-                      if (v !== 'FORFEIT') patch.forfeitSource = null
-                      if (v !== 'PENALTY') { patch.penaltyType = 'NONE'; patch.penaltyAmount = null; patch.penaltyPercent = null; patch.penaltyCurrency = '' }
-                      setCg(patch)
-                    }}
-                    options={SR_SINGLE_OVER_LIMIT_OPTIONS}
+                  <Label required>การคืนเงินส่วนที่เหลือ</Label>
+                  <FSelect<CondCancelPenaltyRefund>
+                    value={cg.cancelPenalty?.refund ?? '' as CondCancelPenaltyRefund}
+                    onChange={v => v && setCg({ cancelPenalty: { ...(cg.cancelPenalty ?? defaultCancelPenaltySpec()), refund: v as CondCancelPenaltyRefund } })}
+                    options={[{ value: '' as CondCancelPenaltyRefund, label: '— เลือก —' }, ...CANCEL_PENALTY_REFUND_OPTIONS]}
                     disabled={readOnly}
                   />
                 </div>
 
-                {cg.overLimitAction === 'UNSPECIFIED' && (
-                  <p className="text-[10px] text-slate-400 italic">ยังไม่ได้กำหนดผลลัพธ์เมื่อเกินเงื่อนไข</p>
-                )}
-                {cg.overLimitAction === 'NO_FORFEIT' && (
-                  <p className="text-[10px] text-slate-400 italic">เกินเงื่อนไขแล้วไม่เสียค่าใช้จ่ายเพิ่ม</p>
-                )}
-                {cg.overLimitAction === 'REQUIRE_APPROVAL' && (
-                  <p className="text-[10px] text-purple-500 italic">ต้องส่งให้ผู้มีอำนาจอนุมัติก่อนดำเนินการ</p>
-                )}
-
-                {/* Forfeit source */}
-                {cg.overLimitAction === 'FORFEIT' && (
-                  <div>
-                    <Label required>ยึดเงินจาก</Label>
-                    <div className="grid grid-cols-3 gap-2">
-                      {SR_FORFEIT_SOURCE_OPTIONS.map(opt => (
-                        <label key={opt.value} className={cn(
-                          'flex flex-col gap-1 p-2.5 rounded-xl border cursor-pointer select-none transition',
-                          cg.forfeitSource === opt.value
-                            ? 'border-orange-400 bg-orange-50'
-                            : 'border-slate-200 bg-white hover:border-orange-200 hover:bg-orange-50/30',
-                          readOnly && 'pointer-events-none opacity-60',
-                        )}>
-                          <input type="radio" className="sr-only" checked={cg.forfeitSource === opt.value}
-                            onChange={() => setCg({ forfeitSource: opt.value })} disabled={readOnly} />
-                          <span className="text-xs font-semibold text-slate-700">{opt.label}</span>
-                          <span className="text-[10px] text-slate-400 leading-snug">{opt.desc}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Penalty fields */}
-                {cg.overLimitAction === 'PENALTY' && (
-                  <>
-                    <div>
-                      <Label>ประเภทค่าปรับ</Label>
-                      <StatusPills<CondStepPenaltyType>
-                        value={cg.penaltyType}
-                        onChange={v => {
-                          const patch: Partial<CondCancelGroupTerms> = { penaltyType: v }
-                          if (v !== 'FIXED')   patch.penaltyAmount  = null
-                          if (v !== 'PERCENT') patch.penaltyPercent = null
-                          setCg(patch)
-                        }}
-                        options={SR_PENALTY_OPTIONS}
-                        disabled={readOnly}
-                      />
-                    </div>
-                    {cg.penaltyType === 'FIXED' && (
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <Label required>จำนวนเงินค่าปรับ</Label>
-                          <FInput
-                            type="number" min={0}
-                            value={cg.penaltyAmount ?? ''}
-                            onChange={v => setCg({ penaltyAmount: v === '' ? null : Number(v) })}
-                            placeholder="0"
-                            disabled={readOnly}
-                          />
-                        </div>
-                        <div>
-                          <Label>สกุลเงิน</Label>
-                          <FSelect<string>
-                            value={cg.penaltyCurrency || currency}
-                            onChange={v => v && setCg({ penaltyCurrency: v })}
-                            options={getCurrencyOptions().map(c => ({ value: c.currencyCode, label: c.currencyCode }))}
-                            disabled={readOnly}
-                          />
-                        </div>
-                      </div>
-                    )}
-                    {cg.penaltyType === 'PERCENT' && (
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <Label required>เปอร์เซ็นต์ค่าปรับ</Label>
-                          <div className="flex items-center gap-2">
-                            <FInput
-                              type="number" min={0} max={100}
-                              value={cg.penaltyPercent ?? ''}
-                              onChange={v => setCg({ penaltyPercent: v === '' ? null : Number(v) })}
-                              placeholder="0"
-                              disabled={readOnly}
-                            />
-                            <span className="text-xs text-slate-500 shrink-0">%</span>
-                          </div>
-                        </div>
-                        <div>
-                          <Label>ฐานคำนวณ</Label>
-                          <FSelect<CondStepCalcBase>
-                            value={cg.penaltyCalcBase}
-                            onChange={v => v && setCg({ penaltyCalcBase: v as CondStepCalcBase })}
-                            options={(Object.entries(SR_CALC_BASE_LABELS) as [CondStepCalcBase, string][]).map(([val, lbl]) => ({ value: val, label: lbl }))}
-                            disabled={readOnly}
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </>
-                )}
-
-                {/* Refundable */}
+                {/* Detail */}
                 <div>
-                  <Label>คืนเงินได้หรือไม่</Label>
-                  <FSelect<CondCancelGroupRefundable>
-                    value={cg.refundable}
-                    onChange={v => v && setCg({ refundable: v as CondCancelGroupRefundable })}
-                    options={CG_REFUNDABLE_OPTIONS}
-                    disabled={readOnly}
-                  />
+                  <Label>รายละเอียดข้อตกลง</Label>
+                  <FTextarea value={cg.cancelPenalty?.detail ?? ''}
+                    onChange={v => setCg({ cancelPenalty: { ...(cg.cancelPenalty ?? defaultCancelPenaltySpec()), detail: v } })}
+                    placeholder="รายละเอียด Penalty ตามเอกสารสายการบิน..." rows={3} disabled={readOnly} />
                 </div>
+              </div>
+            )}
 
-                {/* Remark */}
-                <div>
+            {/* Remark */}
+            {!showRemark && !cg.remark && !readOnly && (
+              <button type="button" onClick={() => setShowRemark(true)}
+                className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-[#05a94f] transition">
+                <Plus size={10} />
+                เพิ่มรายละเอียดเงื่อนไขการยกเลิกกรุ๊ป (No Sell)
+              </button>
+            )}
+            {(showRemark || !!cg.remark) && (
+              <div>
+                <div className="flex items-center justify-between mb-1">
                   <Label>รายละเอียดเงื่อนไขการยกเลิกกรุ๊ป (No Sell)</Label>
-                  <textarea
-                    className="w-full text-sm rounded-xl border border-slate-200 px-3 py-2.5 bg-white resize-none outline-none focus:ring-2 focus:ring-[#05a94f]/20 focus:border-[#05a94f] transition placeholder:text-slate-300 disabled:opacity-50"
-                    rows={3}
-                    value={cg.remark}
-                    onChange={e => setCg({ remark: e.target.value })}
-                    placeholder="เช่น ยกเลิกกรุ๊ปได้แต่ต้องแจ้งล่วงหน้าไม่น้อยกว่า 30 วัน และเสียค่าธรรมเนียม 5%"
-                    disabled={readOnly}
-                  />
+                  {!readOnly && !cg.remark && (
+                    <button type="button" onClick={() => setShowRemark(false)}
+                      className="text-[10px] text-slate-400 hover:text-slate-600 transition">ซ่อน</button>
+                  )}
                 </div>
+                <FTextarea value={cg.remark} onChange={v => setCg({ remark: v })}
+                  placeholder="รายละเอียดเพิ่มเติม..." rows={3} disabled={readOnly} />
+              </div>
+            )}
           </>
         )}
       </div>
+
+      {/* Change type modal */}
+      {pendingType && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/30 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
+                <AlertCircle size={16} className="text-amber-600" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-slate-800 text-sm">เปลี่ยนประเภทเงื่อนไขการยกเลิก?</h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  ข้อมูลของประเภทเดิมจะไม่ถูกนำมาใช้ในการคำนวณ
+                  แต่ระบบจะยังเก็บข้อมูลไว้จนกว่าคุณจะล้างข้อมูล
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button type="button" onClick={() => setPendingType(null)}
+                className="px-4 py-2 rounded-xl text-xs font-medium border border-slate-300 text-slate-600 hover:bg-slate-50 transition">
+                ยกเลิก
+              </button>
+              <button type="button" onClick={() => { setCg({ cancelType: pendingType }); setPendingType(null) }}
+                className="px-4 py-2 rounded-xl text-xs font-medium bg-amber-500 text-white hover:bg-amber-600 transition">
+                เปลี่ยนประเภท
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -4238,8 +5080,8 @@ export default function ConditionBuilder({
       case 'basic':   return showBasicInfo ? <BasicInfoSection value={value} onChange={onChange} readOnly={readOnly} errors={errors.basic} conditionMode={conditionMode} seriesInfo={seriesInfo} templateInfo={templateInfo} /> : null
       case 'payment': return <PaymentSection value={value} onChange={onChange} readOnly={readOnly} currency={currency} errors={errors.payment} conditionMode={conditionMode} seriesInfo={seriesInfo} />
       case 'baggage': return <BaggageSection value={value} onChange={onChange} readOnly={readOnly} errors={errors.baggage} />
-      case 'reduce':  return <SeatReductionSection value={value} onChange={onChange} readOnly={readOnly} currency={currency} errors={errors.reduce} />
-      case 'cancel':  return <CancelGroupSection value={value} onChange={onChange} readOnly={readOnly} currency={currency} errors={errors.cancel} />
+      case 'reduce':  return <SeatReductionSection value={value} onChange={onChange} readOnly={readOnly} currency={currency} errors={errors.reduce} departureDate={seriesInfo?.departureDate} />
+      case 'cancel':  return <CancelGroupSection value={value} onChange={onChange} readOnly={readOnly} currency={currency} errors={errors.cancel} departureDate={seriesInfo?.departureDate} />
       case 'change':  return <ChangeSection value={value} onChange={onChange} readOnly={readOnly} currency={currency} errors={errors.change} />
       case 'refund':  return <CombinedRefundSection value={value} onChange={onChange} readOnly={readOnly} currency={currency} errors={errors.refund} />
       case 'extra':   return <AdditionalSection value={value} onChange={onChange} readOnly={readOnly} errors={errors.extra} />

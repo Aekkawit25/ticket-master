@@ -38,6 +38,33 @@ import type { AppConditionTemplate } from '@/lib/condition-schema'
 
 const newLogId = () => `LOG-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
 
+// ─── Condition name generator for Series ──────────────────────────────────────
+// Rule: 1st = seriesName, 2nd = "seriesName แบบ 2", 3rd = "seriesName แบบ 3"…
+// Always uses maxExistingIndex+1 so deleting a middle item never re-uses numbers.
+
+function generateConditionNameForSeries(
+  seriesName: string,
+  existingConditions: AppStockCondition[],
+): string {
+  if (!seriesName.trim()) return ''
+  const escaped = seriesName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const suffixRe = new RegExp(`^${escaped} แบบ (\\d+)$`)
+
+  let maxIdx = 0
+  for (const sc of existingConditions) {
+    const name = sc.condition.conditionName
+    if (name === seriesName) {
+      maxIdx = Math.max(maxIdx, 1)
+    } else {
+      const m = name.match(suffixRe)
+      if (m) maxIdx = Math.max(maxIdx, parseInt(m[1], 10))
+    }
+  }
+
+  const nextIdx = maxIdx + 1
+  return nextIdx === 1 ? seriesName : `${seriesName} แบบ ${nextIdx}`
+}
+
 // ─── Source badge ─────────────────────────────────────────────────────────────
 
 function SourceBadge({ sc }: { sc: AppStockCondition }) {
@@ -313,9 +340,11 @@ export function ConditionsTab({
   const handleAddNew = useCallback(() => {
     if (!liveStock) return
     const existingCodes = liveStock.conditions.map(c => c.condition.conditionCode)
+    const conditionCode = generateConditionCode(existingCodes)
+    const conditionName = generateConditionNameForSeries(liveStock.groupName, liveStock.conditions)
     // Pre-merge series airline/currency so modal's init onChange produces identical JSON
     const cond = {
-      ...defaultCondition({ conditionCode: generateConditionCode(existingCodes) }),
+      ...defaultCondition({ conditionCode, conditionName }),
       airline: liveStock.airlineCode,
       currency: liveStock.currency,
     }
@@ -654,10 +683,11 @@ export function ConditionsTab({
         currency={currency}
         conditionMode="series"
         seriesInfo={liveStock ? {
-          seriesCode:  liveStock.stockCode,
-          seriesName:  liveStock.groupName,
-          airlineCode: liveStock.airlineCode,
-          currency:    liveStock.currency,
+          seriesCode:    liveStock.stockCode,
+          seriesName:    liveStock.groupName,
+          airlineCode:   liveStock.airlineCode,
+          currency:      liveStock.currency,
+          departureDate: liveStock.summary.periodStart ?? '',
           routes: liveStock.sectors
             .filter(s => s.depAirportCode && s.arrAirportCode)
             .map(s => `${s.depAirportCode}-${s.arrAirportCode}`)

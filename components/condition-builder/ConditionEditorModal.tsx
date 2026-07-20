@@ -16,14 +16,14 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import {
   X, ChevronLeft, ChevronRight, Save, FileText,
-  AlertCircle, CheckCircle2, RotateCcw, Info,
+  AlertCircle, CheckCircle2, RotateCcw, Info, Sparkles,
 } from 'lucide-react'
 import ConditionBuilder, {
   TABS, TabKey, TabStatus,
-  getTabStatus, getTabSummary, validateCondition, clearTab,
+  getTabStatus, getTabSummary, validateCondition, validateTab, clearTab,
   type ConditionMode, type SeriesInfo, type TemplateInfo,
 } from './ConditionBuilder'
-import type { AppCondition } from '@/lib/condition-schema'
+import { defaultCancelGroupTerms, type AppCondition, type CondCancelGroupTerms } from '@/lib/condition-schema'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -105,10 +105,13 @@ function EditorTabBar({
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 px-4 py-3 border-b border-slate-200 bg-slate-50 shrink-0">
       {visibleTabs.map(tab => {
-        const isActive = activeTab === tab.key
-        const status   = getTabStatus(tab.key, value, errors[tab.key] ?? [], conditionMode, seriesInfo, templateInfo)
-        const cfg      = STATUS_CONFIG[status]
-        const summary  = getTabSummary(tab.key, value, currency, conditionMode, seriesInfo, templateInfo)
+        const isActive    = activeTab === tab.key
+        const status      = getTabStatus(tab.key, value, errors[tab.key] ?? [], conditionMode, seriesInfo, templateInfo)
+        const cfg         = STATUS_CONFIG[status]
+        const summary     = getTabSummary(tab.key, value, currency, conditionMode, seriesInfo, templateInfo)
+        const liveErrs    = validateTab(tab.key, value, conditionMode, templateInfo)
+        const errCount    = liveErrs.length
+        const statusLabel = status === 'incomplete' && errCount > 0 ? `ยังไม่ครบ ${errCount} รายการ` : cfg.label
 
         const cardCls = cn(
           'w-full min-h-[80px] rounded-xl border-2 px-4 py-3 flex flex-col justify-center gap-1.5 text-left transition-colors cursor-pointer',
@@ -155,7 +158,7 @@ function EditorTabBar({
             key={tab.key}
             type="button"
             onClick={() => onSelect(tab.key)}
-            title={`${cfg.label}: ${summary}`}
+            title={errCount > 0 ? liveErrs.join('\n') : `${cfg.label}: ${summary}`}
             className={cardCls}
           >
             {/* Row 1: step circle + label */}
@@ -168,7 +171,7 @@ function EditorTabBar({
               {cfg.dot && (
                 <span className={cn('w-1.5 h-1.5 rounded-full shrink-0', cfg.dot)} />
               )}
-              <span className={statusCls}>{cfg.label}</span>
+              <span className={statusCls}>{statusLabel}</span>
             </div>
           </button>
         )
@@ -180,7 +183,7 @@ function EditorTabBar({
 // ─── Tab Content Header (inside scroll area) ─────────────────────────────────
 
 function TabContentHeader({
-  tabKey, value, currency, errors, readOnly, onClear, conditionMode, seriesInfo, templateInfo,
+  tabKey, value, currency, errors, readOnly, onClear, onFillExample, conditionMode, seriesInfo, templateInfo,
 }: {
   tabKey: TabKey
   value: AppCondition
@@ -188,6 +191,7 @@ function TabContentHeader({
   errors: string[]
   readOnly: boolean
   onClear: () => void
+  onFillExample?: () => void
   conditionMode: ConditionMode
   seriesInfo?: SeriesInfo
   templateInfo?: TemplateInfo
@@ -224,17 +228,30 @@ function TabContentHeader({
             <p className="text-xs text-slate-500">{summary}</p>
           </div>
         </div>
-        {/* Clear button */}
-        {!readOnly && status !== 'empty' && (
-          <button
-            type="button"
-            onClick={onClear}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-medium text-slate-500 hover:text-red-600 hover:bg-red-50 border border-slate-200 hover:border-red-200 transition shrink-0"
-          >
-            <RotateCcw size={10} />
-            ล้างข้อมูล Tab นี้
-          </button>
-        )}
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Fill example button — cancel tab only */}
+          {onFillExample && tabKey === 'cancel' && !readOnly && (
+            <button
+              type="button"
+              onClick={onFillExample}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-medium text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 border border-emerald-200 hover:border-emerald-300 transition"
+            >
+              <Sparkles size={10} />
+              สร้างตัวอย่าง
+            </button>
+          )}
+          {/* Clear button */}
+          {!readOnly && status !== 'empty' && (
+            <button
+              type="button"
+              onClick={onClear}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-medium text-slate-500 hover:text-red-600 hover:bg-red-50 border border-slate-200 hover:border-red-200 transition"
+            >
+              <RotateCcw size={10} />
+              ล้างข้อมูล Tab นี้
+            </button>
+          )}
+        </div>
       </div>
     </div>
   )
@@ -267,6 +284,42 @@ function FooterBtn({ onClick, disabled, variant = 'default', children }: {
       {children}
     </button>
   )
+}
+
+// ─── Cancel Tab Example Data ─────────────────────────────────────────────────
+
+const CANCEL_EXAMPLE: CondCancelGroupTerms = {
+  enabled: true,
+  policy: 'UNSPECIFIED',
+  noticeDays: 45,
+  deadlineBase: 'DEPARTURE_DATE',
+  deadlineCustomDate: '',
+  overLimitAction: 'UNSPECIFIED',
+  forfeitSource: null,
+  penaltyType: 'NONE',
+  penaltyAmount: null,
+  penaltyPercent: null,
+  penaltyCurrency: '',
+  penaltyCalcBase: 'GROUP_PRICE',
+  refundable: 'UNSPECIFIED',
+  remark: 'การยกเลิกกรุ๊ป (No Sell) ต้องแจ้งไม่น้อยกว่า 45 วัน\nก่อนวันเดินทางวันแรก โดยเอกสารไม่ได้ระบุผลกรณีแจ้งเกินกำหนด\nหรือเงื่อนไขการคืนเงิน',
+  cancelType: 'STEP',
+  stepCancels: [
+    {
+      stepId: 'cs_example_1',
+      daysFrom: 45,
+      daysTo: null,
+      result: 'UNSPECIFIED' as const,
+      remark: 'ตั้งแต่ 45 วันขึ้นไปก่อนเดินทาง — ยกเลิกได้ตามเงื่อนไข',
+    },
+    {
+      stepId: 'cs_example_2',
+      daysFrom: 0,
+      daysTo: 44,
+      result: 'NOT_ALLOWED' as const,
+      remark: '0–44 วันก่อนเดินทาง — ไม่ผ่านเงื่อนไขการยกเลิก',
+    },
+  ],
 }
 
 // ─── Confirm Clear Dialog ─────────────────────────────────────────────────────
@@ -303,6 +356,41 @@ function ConfirmClearDialog({ tabLabel, onConfirm, onCancel }: {
   )
 }
 
+// ─── Confirm Fill Example Dialog ─────────────────────────────────────────────
+
+function ConfirmFillExampleDialog({ onConfirm, onCancel }: {
+  onConfirm: () => void; onCancel: () => void
+}) {
+  return (
+    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/30 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+        <div className="flex items-start gap-3">
+          <div className="w-9 h-9 rounded-full bg-emerald-100 flex items-center justify-center shrink-0">
+            <Sparkles size={16} className="text-emerald-600" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-slate-800 text-sm">แทนที่ข้อมูลปัจจุบันด้วยตัวอย่าง?</h3>
+            <p className="text-xs text-slate-500 mt-1">
+              ข้อมูลใน Tab เงื่อนไขการยกเลิกกรุ๊ป (No Sell) จะถูกแทนที่ด้วยข้อมูลตัวอย่าง แต่จะยังไม่ถูกบันทึก
+            </p>
+          </div>
+        </div>
+        <div className="flex gap-2 justify-end">
+          <button type="button" onClick={onCancel}
+            className="px-4 py-2 rounded-xl text-xs font-medium border border-slate-300 text-slate-600 hover:bg-slate-50 transition">
+            ยกเลิก
+          </button>
+          <button type="button" onClick={onConfirm}
+            className="px-4 py-2 rounded-xl text-xs font-medium bg-emerald-500 text-white hover:bg-emerald-600 transition flex items-center gap-1.5">
+            <Sparkles size={11} />
+            สร้างตัวอย่าง
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function ConditionEditorModal({
@@ -324,13 +412,16 @@ export default function ConditionEditorModal({
 }: ConditionEditorModalProps) {
   const visibleTabs = showBasicInfo ? TABS : TABS.filter(t => t.key !== 'basic')
 
-  const [draft,           setDraft]           = useState<AppCondition | null>(value)
-  const [activeTab,       setActiveTab]       = useState<TabKey>(showBasicInfo ? 'basic' : 'payment')
-  const [errors,          setErrors]          = useState<Partial<Record<TabKey, string[]>>>({})
-  const [clearTarget,     setClearTarget]     = useState<TabKey | null>(null)
-  const [saveAsTemplate,  setSaveAsTemplate]  = useState(false)
+  const [draft,                    setDraft]                   = useState<AppCondition | null>(value)
+  const [activeTab,                setActiveTab]               = useState<TabKey>(showBasicInfo ? 'basic' : 'payment')
+  const [errors,                   setErrors]                  = useState<Partial<Record<TabKey, string[]>>>({})
+  const [clearTarget,              setClearTarget]             = useState<TabKey | null>(null)
+  const [saveAsTemplate,           setSaveAsTemplate]          = useState(false)
+  const [showFillExampleConfirm,   setShowFillExampleConfirm] = useState(false)
+  const [fillExampleToastVisible,  setFillExampleToastVisible] = useState(false)
 
-  const contentRef = useRef<HTMLDivElement>(null)
+  const contentRef   = useRef<HTMLDivElement>(null)
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Reset scroll position inside content area on every tab switch
   useEffect(() => {
@@ -407,6 +498,28 @@ export default function ConditionEditorModal({
     })
     setClearTarget(null)
   }
+
+  const executeFillExample = useCallback(() => {
+    if (!draft) return
+    const next: AppCondition = { ...draft, cancelGroupTerms: { ...CANCEL_EXAMPLE } }
+    setDraft(next)
+    onChange?.(next)
+    setErrors(prev => { const n = { ...prev }; delete n.cancel; return n })
+    setShowFillExampleConfirm(false)
+    setFillExampleToastVisible(true)
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+    toastTimerRef.current = setTimeout(() => setFillExampleToastVisible(false), 3500)
+  }, [draft, onChange])
+
+  const handleFillExampleRequest = useCallback(() => {
+    if (!draft) return
+    const cgStatus = getTabStatus('cancel', draft, [], conditionMode, seriesInfo, templateInfo)
+    if (cgStatus !== 'empty') {
+      setShowFillExampleConfirm(true)
+    } else {
+      executeFillExample()
+    }
+  }, [draft, conditionMode, seriesInfo, templateInfo, executeFillExample])
 
   const currentIdx = visibleTabs.findIndex(t => t.key === activeTab)
   const canGoPrev  = currentIdx > 0
@@ -505,6 +618,7 @@ export default function ConditionEditorModal({
             errors={errors[activeTab] ?? []}
             readOnly={readOnly}
             onClear={() => setClearTarget(activeTab)}
+            onFillExample={!readOnly ? handleFillExampleRequest : undefined}
             conditionMode={conditionMode}
             seriesInfo={seriesInfo}
             templateInfo={templateInfo}
@@ -588,6 +702,22 @@ export default function ConditionEditorModal({
     />
   )
 
+  // ── Fill example dialog + toast ─────────────────────────────────────────
+
+  const fillExampleDialog = showFillExampleConfirm && (
+    <ConfirmFillExampleDialog
+      onConfirm={executeFillExample}
+      onCancel={() => setShowFillExampleConfirm(false)}
+    />
+  )
+
+  const fillExampleToast = fillExampleToastVisible && (
+    <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[120] flex items-center gap-2 px-4 py-2.5 rounded-full bg-emerald-600 text-white text-xs font-medium shadow-lg pointer-events-none select-none">
+      <CheckCircle2 size={13} />
+      สร้างข้อมูลตัวอย่างแล้ว กรุณาตรวจสอบก่อนบันทึก
+    </div>
+  )
+
   // ── modal mode ───────────────────────────────────────────────────────────
 
   if (mode === 'modal') {
@@ -607,6 +737,8 @@ export default function ConditionEditorModal({
           </div>
         </div>
         {clearDialog}
+        {fillExampleDialog}
+        {fillExampleToast}
       </>
     )
   }
@@ -619,6 +751,8 @@ export default function ConditionEditorModal({
         {inner}
       </div>
       {clearDialog}
+      {fillExampleDialog}
+      {fillExampleToast}
     </>
   )
 }
