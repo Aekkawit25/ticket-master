@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import AppLayout from '@/components/layout/AppLayout'
 import { Card, CardContent } from '@/components/ui/card'
@@ -20,6 +20,7 @@ export default function AddConditionTemplatePage() {
   const [isMounted, setIsMounted] = useState(false)
   const [template, setTemplate] = useState<AppConditionTemplate>(() => defaultTemplate({ ticketType: 'Group' }))
   const [airlineError, setAirlineError] = useState('')
+  const airlineRef = useRef<HTMLDivElement>(null)
 
   // Initial mount
   useEffect(() => { setIsMounted(true) }, [])
@@ -87,7 +88,7 @@ export default function AddConditionTemplatePage() {
               </span>
             </div>
             <div className="grid grid-cols-3 gap-3">
-              <div>
+              <div ref={airlineRef}>
                 <AirlineCombobox
                   label="สายการบิน"
                   required
@@ -136,6 +137,10 @@ export default function AddConditionTemplatePage() {
           onCancel={() => router.push('/tickets/condition-templates')}
           onSaveDraft={handleSaveDraft}
           onSave={handleSave}
+          onRequestAirlineValidation={() => {
+            setAirlineError('กรุณาเลือกสายการบิน')
+            airlineRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          }}
         />
       </div>
     </AppLayout>

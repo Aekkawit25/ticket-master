@@ -44,6 +44,8 @@ export interface ConditionEditorModalProps {
   onSaveDraft?: (v: AppCondition) => void
   onSave: (v: AppCondition) => void
   onSaveAsTemplate?: (v: AppCondition) => void
+  /** Called when user presses "ถัดไป" from basic tab while airline is not yet selected */
+  onRequestAirlineValidation?: () => void
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -52,10 +54,27 @@ function cn(...cls: (string | false | null | undefined)[]) { return cls.filter(B
 
 // ─── Summary Bar (top of modal) ───────────────────────────────────────────────
 
-function SummaryBar({ value, currency }: { value: AppCondition; currency: string }) {
+function SummaryBar({ value, currency, conditionMode, seriesInfo, templateInfo }: {
+  value: AppCondition; currency: string
+  conditionMode?: ConditionMode; seriesInfo?: SeriesInfo; templateInfo?: TemplateInfo
+}) {
+  const inTemplateMode = conditionMode === 'template' && !!templateInfo
+  const inSeriesMode   = conditionMode === 'series'   && !!seriesInfo
+
+  if (inTemplateMode || inSeriesMode) {
+    const summary = getTabSummary('basic', value, currency, conditionMode ?? 'template', seriesInfo, templateInfo)
+    const hasAirlineWarning = inTemplateMode && !templateInfo!.airlineCode
+    return (
+      <div className="flex items-center gap-2 px-5 py-2 bg-slate-50 border-b border-slate-200 flex-wrap shrink-0">
+        <span className={cn('text-xs', hasAirlineWarning ? 'text-amber-600' : 'text-slate-500')}>
+          {summary}
+        </span>
+      </div>
+    )
+  }
+
   const hasCode = value.conditionCode.trim()
   const hasName = value.conditionName.trim()
-
   return (
     <div className="flex items-center gap-2 px-5 py-2 bg-slate-50 border-b border-slate-200 flex-wrap shrink-0">
       <span className={cn('font-mono text-xs font-bold', hasCode ? 'text-slate-700' : 'text-slate-300')}>
@@ -111,17 +130,19 @@ function EditorTabBar({
         const summary     = getTabSummary(tab.key, value, currency, conditionMode, seriesInfo, templateInfo)
         const liveErrs    = validateTab(tab.key, value, conditionMode, templateInfo)
         const errCount    = liveErrs.length
-        const statusLabel = status === 'incomplete' && errCount > 0 ? `ยังไม่ครบ ${errCount} รายการ` : cfg.label
+        const statusLabel = status === 'incomplete' && errCount > 0
+          ? errCount === 1 ? `ยังไม่ครบ · ${liveErrs[0]}` : `ยังไม่ครบ (${errCount} รายการ)`
+          : cfg.label
 
         const cardCls = cn(
           'w-full min-h-[80px] rounded-xl border-2 px-4 py-3 flex flex-col justify-center gap-1.5 text-left transition-colors cursor-pointer',
-          isActive
-            ? 'bg-emerald-50 border-[#05a94f] shadow-sm'
-            : status === 'error'
-              ? 'bg-red-50 border-red-300 hover:border-red-400'
-              : status === 'incomplete'
-                ? 'bg-amber-50 border-amber-300 hover:border-amber-400'
-                : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50',
+          status === 'error'
+            ? (isActive ? 'bg-red-50 border-red-500 shadow-sm' : 'bg-red-50 border-red-300 hover:border-red-400')
+            : status === 'incomplete'
+              ? (isActive ? 'bg-amber-50 border-amber-400 shadow-sm' : 'bg-amber-50 border-amber-300 hover:border-amber-400')
+              : status === 'complete'
+                ? (isActive ? 'bg-emerald-50 border-[#05a94f] shadow-sm' : 'bg-emerald-50/60 border-emerald-200 hover:border-emerald-300')
+                : (isActive ? 'bg-white border-[#05a94f] shadow-sm' : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50'),
         )
 
         const stepCls = cn(
@@ -139,9 +160,10 @@ function EditorTabBar({
 
         const labelCls = cn(
           'text-xs font-semibold leading-snug line-clamp-2',
-          isActive                ? 'text-[#05a94f]'  :
           status === 'error'      ? 'text-red-700'    :
           status === 'incomplete' ? 'text-amber-700'  :
+          isActive                ? 'text-[#05a94f]'  :
+          status === 'complete'   ? 'text-emerald-700' :
           'text-slate-700',
         )
 
@@ -158,7 +180,7 @@ function EditorTabBar({
             key={tab.key}
             type="button"
             onClick={() => onSelect(tab.key)}
-            title={errCount > 0 ? liveErrs.join('\n') : `${cfg.label}: ${summary}`}
+            title={errCount > 0 ? `ข้อมูลที่ยังขาด:\n${liveErrs.map(e => `• ${e}`).join('\n')}` : `${cfg.label}: ${summary}`}
             className={cardCls}
           >
             {/* Row 1: step circle + label */}
@@ -409,6 +431,7 @@ export default function ConditionEditorModal({
   onSaveDraft,
   onSave,
   onSaveAsTemplate,
+  onRequestAirlineValidation,
 }: ConditionEditorModalProps) {
   const visibleTabs = showBasicInfo ? TABS : TABS.filter(t => t.key !== 'basic')
 
@@ -525,6 +548,16 @@ export default function ConditionEditorModal({
   const canGoPrev  = currentIdx > 0
   const canGoNext  = currentIdx < visibleTabs.length - 1
 
+  const handleNext = () => {
+    if (!canGoNext) return
+    // Before leaving the basic tab: if airline is required but missing, alert the parent
+    if (activeTab === 'basic' && conditionMode === 'template' && templateInfo && !templateInfo.airlineCode) {
+      onRequestAirlineValidation?.()
+      return
+    }
+    setActiveTab(visibleTabs[currentIdx + 1].key)
+  }
+
   const handleSave = () => {
     if (!draft) return
     const toSave: AppCondition = conditionMode === 'series' && seriesInfo
@@ -569,7 +602,7 @@ export default function ConditionEditorModal({
       </div>
 
       {/* ── Summary Bar ── */}
-      <SummaryBar value={draft} currency={currency} />
+      <SummaryBar value={draft} currency={currency} conditionMode={conditionMode} seriesInfo={seriesInfo} templateInfo={templateInfo} />
 
       {/* ── Global error notice ── */}
       {hasErrors && (
@@ -677,7 +710,7 @@ export default function ConditionEditorModal({
           ก่อนหน้า
         </FooterBtn>
         <FooterBtn
-          onClick={() => canGoNext && setActiveTab(visibleTabs[currentIdx + 1].key)}
+          onClick={handleNext}
           disabled={!canGoNext} variant="default">
           ถัดไป
           <ChevronRight size={12} />

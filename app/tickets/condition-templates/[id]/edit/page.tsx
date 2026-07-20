@@ -2,7 +2,7 @@
 
 import { use, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { AlertTriangle } from 'lucide-react'
+import { AlertTriangle, Users } from 'lucide-react'
 import AppLayout from '@/components/layout/AppLayout'
 import { Card, CardContent } from '@/components/ui/card'
 import ConditionEditorModal from '@/components/condition-builder/ConditionEditorModal'
@@ -12,8 +12,9 @@ import {
   type AppConditionTemplate,
   type AppCondition,
 } from '@/lib/condition-schema'
-
-import { getConditionTemplateById, saveConditionTemplate } from '@/lib/condition-storage'
+import { getConditionTemplateById, saveConditionTemplate, snapshotTemplateToCondition } from '@/lib/condition-storage'
+import { computeUsageStats } from '@/lib/condition-usage'
+import { getDemoStocks, saveDemoStock } from '@/lib/demo-storage'
 
 type MetaConfirm = { field: 'airlineCode' | 'currency'; value: string | null }
 
@@ -22,6 +23,8 @@ export default function EditConditionTemplatePage({ params }: { params: Promise<
   const router = useRouter()
   const [template, setTemplate] = useState<AppConditionTemplate | null>(null)
   const [metaConfirm, setMetaConfirm] = useState<MetaConfirm | null>(null)
+  const [pendingCond, setPendingCond] = useState<AppCondition | null>(null)
+  const [impactSeries, setImpactSeries] = useState(0)
 
   useEffect(() => {
     const t = getConditionTemplateById(id)
@@ -44,7 +47,8 @@ export default function EditConditionTemplatePage({ params }: { params: Promise<
     setMetaConfirm(null)
   }
 
-  const handleSave = (cond: AppCondition) => {
+  const doSave = (cond: AppCondition, bumpVersion: boolean, updateSynced: boolean) => {
+    const newVersion = bumpVersion ? template.version + 1 : template.version
     const updated: AppConditionTemplate = {
       ...template,
       currency: template.currency,
@@ -53,11 +57,39 @@ export default function EditConditionTemplatePage({ params }: { params: Promise<
         airline:  template.airlineCode ?? cond.airline,
         currency: template.currency,
       },
-      version:   template.version + 1,
+      version:   newVersion,
       updatedAt: new Date().toISOString(),
     }
     saveConditionTemplate(updated)
+
+    if (updateSynced && bumpVersion) {
+      const snapshot = snapshotTemplateToCondition(updated, 'ระบบ')
+      for (const stock of getDemoStocks()) {
+        const idx = stock.conditions.findIndex(c =>
+          c.sourceTemplateId === id &&
+          !(c.overrideFields && c.overrideFields.length > 0) &&
+          !c.locallyModified
+        )
+        if (idx < 0) continue
+        const newConditions = stock.conditions.map((c, i) =>
+          i === idx ? { ...snapshot, condition: { ...snapshot.condition, conditionId: c.condition.conditionId } } : c
+        )
+        saveDemoStock({ ...stock, conditions: newConditions, updatedAt: new Date().toISOString() })
+      }
+    }
+
     router.push(`/tickets/condition-templates/${id}`)
+  }
+
+  const handleSave = (cond: AppCondition) => {
+    const stats = computeUsageStats(id)
+    const seriesCount = stats.series.length
+    if (seriesCount > 0) {
+      setPendingCond(cond)
+      setImpactSeries(seriesCount)
+      return
+    }
+    doSave(cond, true, false)
   }
 
   const handleSaveDraft = (cond: AppCondition) => {
@@ -124,6 +156,61 @@ export default function EditConditionTemplatePage({ params }: { params: Promise<
           onSave={handleSave}
         />
       </div>
+
+      {/* ── Impact modal: template used by Series ── */}
+      {pendingCond && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
+            <div className="flex items-start gap-3 p-5 border-b border-slate-100">
+              <div className="w-9 h-9 rounded-full bg-blue-100 flex items-center justify-center shrink-0 mt-0.5">
+                <Users size={16} className="text-blue-600" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-slate-800">Template นี้ถูกใช้งานอยู่</p>
+                <p className="text-xs text-slate-500 mt-1">
+                  มี <strong>{impactSeries} Series</strong> ที่ใช้ Template นี้
+                  กรุณาเลือกวิธีบันทึก
+                </p>
+              </div>
+            </div>
+            <div className="p-4 space-y-2">
+              <button
+                type="button"
+                onClick={() => { doSave(pendingCond, true, false); setPendingCond(null) }}
+                className="w-full text-left px-4 py-3 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 transition"
+              >
+                <p className="text-sm font-semibold text-blue-700">สร้าง Version ใหม่</p>
+                <p className="text-xs text-blue-500 mt-0.5">ไม่กระทบ Series เดิม — Series จะเห็นป้าย "มี Version ใหม่" และอัปเดตได้เอง</p>
+              </button>
+              <button
+                type="button"
+                onClick={() => { doSave(pendingCond, true, true); setPendingCond(null) }}
+                className="w-full text-left px-4 py-3 rounded-xl border border-amber-200 bg-amber-50 hover:bg-amber-100 transition"
+              >
+                <p className="text-sm font-semibold text-amber-700">อัปเดต Series ที่ยังไม่ปรับ</p>
+                <p className="text-xs text-amber-500 mt-0.5">อัปเดต Series ที่ยัง Sync กับ Template อัตโนมัติ (Series ที่มีการปรับเองจะไม่ถูกแตะ)</p>
+              </button>
+              <button
+                type="button"
+                onClick={() => { doSave(pendingCond, false, false); setPendingCond(null) }}
+                className="w-full text-left px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 transition"
+              >
+                <p className="text-sm font-semibold text-slate-700">บันทึกโดยไม่เพิ่ม Version</p>
+                <p className="text-xs text-slate-400 mt-0.5">สำหรับแก้ไขตัวอักษรหรือข้อมูลเล็กน้อย Series จะไม่เห็นการเปลี่ยนแปลง</p>
+              </button>
+            </div>
+            <div className="flex justify-end px-4 pb-4">
+              <button
+                type="button"
+                onClick={() => setPendingCond(null)}
+                className="px-4 py-2 text-sm rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors"
+              >
+                ยกเลิก
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Confirmation dialog: changing airline or currency affects the condition ── */}
       {metaConfirm && (

@@ -162,6 +162,16 @@ export function duplicateConditionTemplate(id: string): AppConditionTemplate | n
   return dup
 }
 
+/**
+ * Archive or unarchive a template.
+ * Archived templates cannot be assigned to new Series but existing snapshots remain readable.
+ */
+export function setConditionTemplateArchived(id: string, archived: boolean): void {
+  const t = getConditionTemplateById(id)
+  if (!t) return
+  saveConditionTemplate({ ...t, isArchived: archived, updatedAt: new Date().toISOString() })
+}
+
 export function toggleConditionTemplateStatus(id: string): void {
   const t = getConditionTemplateById(id)
   if (!t) return
@@ -178,14 +188,16 @@ export function toggleConditionTemplateStatus(id: string): void {
 
 // ─── Template → Stock Condition snapshot ─────────────────────────────────────
 
-export function snapshotTemplateToCondition(template: AppConditionTemplate) {
+export function snapshotTemplateToCondition(template: AppConditionTemplate, appliedBy = 'System') {
   return {
     source: 'template' as const,
     sourceTemplateId:       template.templateId,
     sourceTemplateName:     template.condition.conditionName,
     sourceTemplateVersion:  template.version,
     appliedAt:              new Date().toISOString(),
+    appliedBy,
     locallyModified:        false,
+    overrideFields:         [] as string[],
     condition: {
       ...template.condition,
       // New conditionId for the stock copy (template ID stays in sourceTemplateId)

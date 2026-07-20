@@ -10,7 +10,7 @@ import { Modal } from '@/components/ui/modal'
 import {
   PlusCircle, Search,
   Eye, Pencil, Copy, PowerOff, Trash2, Clock,
-  Banknote, CalendarDays,
+  Banknote, CalendarDays, CheckCircle2, AlertTriangle,
 } from 'lucide-react'
 import {
   type AppConditionTemplate,
@@ -32,6 +32,7 @@ import {
   computeUsageStats,
   type UsageStats,
 } from '@/lib/condition-usage'
+import { computeTemplateReadiness } from '@/lib/condition-relationship'
 import { formatDate } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 
@@ -362,6 +363,7 @@ export default function ConditionTemplatesPage() {
             const hasFreeText  = !!(c.freeTextCondition?.trim() || c.freeTextHtml?.trim())
             const refundChip   = getRefundChip(c)
             const seatChip     = getSeatChip(c)
+            const readiness    = c.status === 'Active' ? computeTemplateReadiness(t) : null
 
             return (
               <Card key={t.templateId} className="overflow-hidden">
@@ -400,6 +402,20 @@ export default function ConditionTemplatesPage() {
                         <Badge variant={c.status === 'Active' ? 'green' : c.status === 'Draft' ? 'yellow' : 'gray'}>
                           {c.status}
                         </Badge>
+                        {/* Readiness badge — computed from validation, not user-set */}
+                        {readiness?.status === 'ready' && (
+                          <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            <CheckCircle2 size={10} /> พร้อมใช้งาน
+                          </span>
+                        )}
+                        {readiness?.status === 'incomplete' && (
+                          <span
+                            className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 cursor-help"
+                            title={`ข้อมูลที่ยังขาด:\n${readiness.missingFields.map(f => `• ${f}`).join('\n')}`}
+                          >
+                            <AlertTriangle size={10} /> ข้อมูลไม่ครบ
+                          </span>
+                        )}
                         <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100">
                           {c.stages.length > 0 ? `${c.stages.length} รอบ` : 'ยังไม่ระบุรอบ'}
                         </span>

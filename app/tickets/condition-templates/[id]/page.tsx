@@ -10,7 +10,7 @@ import { Modal } from '@/components/ui/modal'
 import { cn } from '@/lib/utils'
 import {
   Pencil, Copy, PowerOff, Trash2, ArrowLeft,
-  CreditCard, Clock, Package, TrendingDown, X, RefreshCcw, FileText, Edit2,
+  CreditCard, Clock, Package, TrendingDown, X, RefreshCcw, FileText, Edit2, Archive,
 } from 'lucide-react'
 import ConditionUsageTab from '@/components/condition-builder/ConditionUsageTab'
 import {
@@ -27,7 +27,9 @@ import {
   deleteConditionTemplate,
   duplicateConditionTemplate,
   toggleConditionTemplateStatus,
+  setConditionTemplateArchived,
 } from '@/lib/condition-storage'
+import { computeUsageStats } from '@/lib/condition-usage'
 import { formatDate } from '@/lib/utils'
 
 // ─── Label maps ───────────────────────────────────────────────────────────────
@@ -223,6 +225,7 @@ export default function ConditionTemplateDetailPage({ params }: { params: Promis
   const searchParams = useSearchParams()
   const [template, setTemplate]         = useState<AppConditionTemplate | null>(null)
   const [deleteModal, setDeleteModal]   = useState(false)
+  const [deleteBlocked, setDeleteBlocked] = useState(false)
   const [activeTab, setActiveTab]       = useState<'detail' | 'usage'>(() =>
     searchParams.get('tab') === 'usage' ? 'usage' : 'detail'
   )
@@ -266,7 +269,17 @@ export default function ConditionTemplateDetailPage({ params }: { params: Promis
     } : prev)
   }
 
+  const handleArchive = (archived: boolean) => {
+    setConditionTemplateArchived(id, archived)
+    setTemplate(prev => prev ? { ...prev, isArchived: archived } : prev)
+  }
+
   const handleDelete = () => {
+    const stats = computeUsageStats(id)
+    if (stats.series.length > 0 || stats.directPnrs.length > 0) {
+      setDeleteBlocked(true)
+      return
+    }
     deleteConditionTemplate(id)
     router.replace('/tickets/condition-templates')
   }
@@ -282,14 +295,31 @@ export default function ConditionTemplateDetailPage({ params }: { params: Promis
             <ArrowLeft size={14} /> กลับ
           </button>
           <div className="flex items-center gap-2 flex-wrap justify-end">
+            {template.isArchived ? (
+              <span className="text-xs px-3 py-1.5 rounded-lg bg-slate-100 text-slate-500 border border-slate-200 font-medium flex items-center gap-1.5">
+                <Archive size={12} /> Archived
+              </span>
+            ) : null}
             <Button size="sm" variant="outline" icon={<Copy size={12} />} onClick={handleDuplicate}>คัดลอก</Button>
-            <Button size="sm" variant="outline" icon={<PowerOff size={12} />} onClick={handleToggleStatus}>
-              {c.status === 'Active' ? 'ปิดใช้งาน' : 'เปิดใช้งาน'}
+            {!template.isArchived && (
+              <Button size="sm" variant="outline" icon={<PowerOff size={12} />} onClick={handleToggleStatus}>
+                {c.status === 'Active' ? 'ปิดใช้งาน' : 'เปิดใช้งาน'}
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant="outline"
+              icon={<Archive size={12} />}
+              onClick={() => handleArchive(!template.isArchived)}
+            >
+              {template.isArchived ? 'ยกเลิก Archive' : 'Archive'}
             </Button>
-            <Button size="sm" variant="outline" icon={<Pencil size={12} />}
-              onClick={() => router.push(`/tickets/condition-templates/${id}/edit`)}>
-              แก้ไข
-            </Button>
+            {!template.isArchived && (
+              <Button size="sm" variant="outline" icon={<Pencil size={12} />}
+                onClick={() => router.push(`/tickets/condition-templates/${id}/edit`)}>
+                แก้ไข
+              </Button>
+            )}
             <Button size="sm" variant="danger" icon={<Trash2 size={12} />} onClick={() => setDeleteModal(true)}>ลบ</Button>
           </div>
         </div>
@@ -941,16 +971,37 @@ export default function ConditionTemplateDetailPage({ params }: { params: Promis
         {/* ── Delete modal ──────────────────────────────────────────────────── */}
         <Modal
           open={deleteModal}
-          onClose={() => setDeleteModal(false)}
-          title="ลบ Template"
+          onClose={() => { setDeleteModal(false); setDeleteBlocked(false) }}
+          title={deleteBlocked ? 'ไม่สามารถลบได้' : 'ลบ Template'}
           footer={
-            <>
-              <Button variant="ghost" onClick={() => setDeleteModal(false)}>ยกเลิก</Button>
-              <Button variant="danger" onClick={handleDelete}>ลบ Template</Button>
-            </>
+            deleteBlocked ? (
+              <>
+                <Button variant="ghost" onClick={() => { setDeleteModal(false); setDeleteBlocked(false) }}>ปิด</Button>
+                <Button variant="outline" icon={<Archive size={12} />} onClick={() => { handleArchive(true); setDeleteModal(false); setDeleteBlocked(false) }}>
+                  Archive แทน
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button variant="ghost" onClick={() => setDeleteModal(false)}>ยกเลิก</Button>
+                <Button variant="danger" onClick={handleDelete}>ลบ Template</Button>
+              </>
+            )
           }
         >
-          <p className="text-sm text-slate-600">ลบ <strong>{c.conditionName}</strong> หรือไม่?</p>
+          {deleteBlocked ? (
+            <div className="space-y-2">
+              <p className="text-sm text-slate-600">
+                ไม่สามารถลบ <strong>{c.conditionName}</strong> ได้ เนื่องจากมี Series ที่ใช้ Template นี้อยู่
+              </p>
+              <p className="text-xs text-slate-500">
+                คุณสามารถ Archive Template นี้แทน เพื่อป้องกันไม่ให้ถูกเลือกใช้กับ Series ใหม่
+                ในขณะที่ Series เดิมยังคงอ่านข้อมูลได้
+              </p>
+            </div>
+          ) : (
+            <p className="text-sm text-slate-600">ลบ <strong>{c.conditionName}</strong> หรือไม่?</p>
+          )}
         </Modal>
       </div>
     </AppLayout>

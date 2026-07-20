@@ -7,6 +7,7 @@ import { Modal } from '@/components/ui/modal'
 import {
   CheckCircle2, AlertTriangle, X, FileText, Search, Check,
   ChevronDown, ChevronRight, Pencil, Copy, RefreshCw, Plus, Clock,
+  GitCompare, ArrowUpCircle, Info,
 } from 'lucide-react'
 import { saveDemoStock } from '@/lib/demo-storage'
 import type { DemoStock, DemoLog } from '@/lib/demo-storage'
@@ -31,6 +32,16 @@ import {
   getConditionTemplates,
   snapshotTemplateToCondition,
 } from '@/lib/condition-storage'
+import {
+  getSeriesConditionRelationship,
+  computeConditionDiff,
+  computeOverrideFields,
+  validateTemplateForSeries,
+  computeTemplateReadiness,
+  SERIES_CONDITION_STATUS_LABEL,
+  SERIES_CONDITION_STATUS_COLOR,
+  type ConditionDiffSection,
+} from '@/lib/condition-relationship'
 import ConditionEditorModal from '@/components/condition-builder/ConditionEditorModal'
 import type { AppConditionTemplate } from '@/lib/condition-schema'
 
@@ -65,38 +76,93 @@ function generateConditionNameForSeries(
   return nextIdx === 1 ? seriesName : `${seriesName} แบบ ${nextIdx}`
 }
 
-// ─── Source badge ─────────────────────────────────────────────────────────────
+// ─── Relationship status badge ────────────────────────────────────────────────
 
-function SourceBadge({ sc }: { sc: AppStockCondition }) {
-  if (sc.source === 'template') {
-    if (sc.locallyModified) {
-      return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-700 border border-amber-200">
-          Modified จาก Template
-        </span>
-      )
-    }
+function RelationshipBadge({
+  sc, allTemplates,
+}: { sc: AppStockCondition; allTemplates: AppConditionTemplate[] }) {
+  const rel = getSeriesConditionRelationship(sc, allTemplates)
+  const colorCls = SERIES_CONDITION_STATUS_COLOR[rel.status]
+  const label    = SERIES_CONDITION_STATUS_LABEL[rel.status]
+
+  if (rel.status === 'NONE') {
     return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 text-blue-700 border border-blue-200">
-        <FileText size={9} /> Template: {sc.sourceTemplateName ?? '—'}
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+        Custom
       </span>
     )
   }
+
   return (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
-      Custom
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${colorCls}`}>
+      {rel.status === 'NEW_VERSION' && <ArrowUpCircle size={9} className="shrink-0" />}
+      {rel.status === 'CUSTOM' && <Info size={9} className="shrink-0" />}
+      {label}
+      {rel.overrideCount > 0 && <span className="opacity-70">· {rel.overrideCount} หัวข้อ</span>}
     </span>
+  )
+}
+
+// ─── Inline diff view ─────────────────────────────────────────────────────────
+
+function ConditionDiffView({ sections }: { sections: ConditionDiffSection[] }) {
+  const diffSections = sections.filter(s => s.isDiff)
+  const sameSections = sections.filter(s => !s.isDiff)
+
+  if (sections.length === 0) {
+    return <p className="text-xs text-slate-400 italic">ไม่สามารถโหลดข้อมูลเปรียบเทียบได้</p>
+  }
+
+  return (
+    <div className="space-y-2">
+      {diffSections.length === 0 ? (
+        <div className="flex items-center gap-2 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2">
+          <CheckCircle2 size={13} className="shrink-0" />
+          ทุกหัวข้อตรงกับ Template — ไม่พบความแตกต่าง
+        </div>
+      ) : (
+        <>
+          <p className="text-[10px] font-semibold text-amber-600 uppercase tracking-wide">
+            หัวข้อที่แตกต่าง ({diffSections.length})
+          </p>
+          {diffSections.map(s => (
+            <div key={s.section} className="rounded-xl border border-amber-200 bg-amber-50 overflow-hidden text-xs">
+              <div className="px-3 py-1.5 bg-amber-100 border-b border-amber-200 font-semibold text-amber-800 text-[11px]">
+                {s.label}
+              </div>
+              <div className="grid grid-cols-2 divide-x divide-amber-200">
+                <div className="px-3 py-2">
+                  <p className="text-[9px] font-bold text-slate-500 uppercase mb-0.5">Series (ปัจจุบัน)</p>
+                  <p className="text-slate-700 leading-relaxed">{s.snapshotSummary}</p>
+                </div>
+                <div className="px-3 py-2">
+                  <p className="text-[9px] font-bold text-blue-500 uppercase mb-0.5">Template (ล่าสุด)</p>
+                  <p className="text-slate-700 leading-relaxed">{s.templateSummary}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+          {sameSections.length > 0 && (
+            <p className="text-[10px] text-slate-400">
+              หัวข้อที่เหมือนกัน: {sameSections.map(s => s.label).join(', ')}
+            </p>
+          )}
+        </>
+      )}
+    </div>
   )
 }
 
 // ─── Template picker modal ────────────────────────────────────────────────────
 
 function TemplatePickerModal({
-  open, onClose, onPick,
+  open, onClose, onUse, onCopy, stock,
 }: {
   open: boolean
   onClose: () => void
-  onPick: (t: AppConditionTemplate) => void
+  onUse: (t: AppConditionTemplate) => void   // direct save — only for ready templates
+  onCopy: (t: AppConditionTemplate) => void  // open editor — for any template
+  stock?: DemoStock | null
 }) {
   const [templates, setTemplates] = useState<AppConditionTemplate[]>([])
   const [search, setSearch] = useState('')
@@ -104,8 +170,13 @@ function TemplatePickerModal({
 
   useEffect(() => {
     if (!open) { setSearch(''); setSelected(null); return }
-    setTemplates(getConditionTemplates().filter(t => t.condition.status === 'Active'))
-  }, [open])
+    const all = getConditionTemplates().filter(t =>
+      !t.isArchived &&
+      t.condition.status === 'Active' &&
+      (!t.airlineCode || !stock?.airlineCode || t.airlineCode === stock.airlineCode)
+    )
+    setTemplates(all)
+  }, [open, stock])
 
   const filtered = useMemo(() => {
     if (!search.trim()) return templates
@@ -118,7 +189,10 @@ function TemplatePickerModal({
     )
   }, [templates, search])
 
-  const selectedItem = templates.find(t => t.templateId === selected) ?? null
+  const selectedItem    = templates.find(t => t.templateId === selected) ?? null
+  const selectedReady   = selectedItem ? computeTemplateReadiness(selectedItem) : null
+  const selectedValid   = selectedItem && stock ? validateTemplateForSeries(selectedItem, stock) : null
+  const canUseDirectly  = !!selectedItem && selectedReady?.status === 'ready' && (selectedValid == null || selectedValid.valid)
 
   return (
     <Modal
@@ -126,15 +200,41 @@ function TemplatePickerModal({
       onClose={onClose}
       title="เลือก Template Condition"
       footer={
-        <>
-          <Button variant="ghost" onClick={onClose}>ยกเลิก</Button>
-          <Button disabled={!selectedItem} onClick={() => selectedItem && onPick(selectedItem)}>
-            ใช้ Template นี้
-          </Button>
-        </>
+        <div className="flex items-center justify-between w-full gap-2">
+          {/* Confirmation hint when a ready template is selected */}
+          {canUseDirectly && selectedItem && (
+            <p className="text-[10px] text-emerald-600 flex-1 leading-snug">
+              Condition จะใช้ข้อมูลตาม Template <strong>{selectedItem.condition.conditionCode}</strong> v{selectedItem.version} ทันที
+            </p>
+          )}
+          {!canUseDirectly && <span className="flex-1" />}
+          <div className="flex gap-2 shrink-0">
+            <Button variant="ghost" onClick={onClose}>ยกเลิก</Button>
+            <Button
+              variant="outline"
+              disabled={!selectedItem}
+              onClick={() => selectedItem && onCopy(selectedItem)}
+            >
+              คัดลอกมาแก้ไข
+            </Button>
+            <Button
+              disabled={!canUseDirectly}
+              title={!selectedItem ? 'กรุณาเลือก Template' : selectedReady?.status !== 'ready' ? 'ไม่สามารถใช้ตาม Template ได้ เนื่องจากข้อมูลยังไม่ครบ' : ''}
+              onClick={() => selectedItem && onUse(selectedItem)}
+            >
+              ใช้ตาม Template
+            </Button>
+          </div>
+        </div>
       }
     >
       <div className="space-y-3">
+        {stock && (
+          <div className="flex items-center gap-1.5 text-[10px] text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5">
+            <Info size={11} className="shrink-0 text-slate-400" />
+            แสดงเฉพาะ Template ที่ตรงกับสายการบิน <strong className="text-slate-700">{stock.airlineCode}</strong>
+          </div>
+        )}
         <div className="relative">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
@@ -144,42 +244,104 @@ function TemplatePickerModal({
             className="w-full pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#05a94f]/30 focus:border-[#05a94f]"
           />
         </div>
-        <div className="max-h-72 overflow-y-auto space-y-1.5 pr-1">
+
+        {/* Currency / validation warnings for selected item */}
+        {selectedValid?.warnings.map((w, i) => (
+          <div key={i} className="flex items-center gap-2 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+            <AlertTriangle size={11} className="shrink-0" />
+            {w}
+          </div>
+        ))}
+
+        {/* Missing-fields panel for selected incomplete template */}
+        {selectedItem && selectedReady?.status === 'incomplete' && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 space-y-1">
+            <p className="text-[10px] font-semibold text-amber-700 flex items-center gap-1.5">
+              <AlertTriangle size={11} className="shrink-0" />
+              ข้อมูลที่ยังขาด — สามารถ "คัดลอกมาแก้ไข" เพื่อกรอกให้ครบ
+            </p>
+            <ul className="space-y-0.5">
+              {selectedReady.missingFields.map((f, i) => (
+                <li key={i} className="text-[10px] text-amber-600 flex items-start gap-1.5">
+                  <span className="mt-0.5 shrink-0">•</span>{f}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <div className="max-h-64 overflow-y-auto space-y-1.5 pr-1">
           {filtered.length === 0 ? (
             <p className="text-center text-sm text-slate-400 py-6">
-              {search ? 'ไม่พบ Template ที่ตรงกัน' : 'ยังไม่มี Template Condition ที่ Active'}
+              {search
+                ? 'ไม่พบ Template ที่ตรงกัน'
+                : stock
+                  ? `ยังไม่มี Template Condition Active สำหรับสายการบิน ${stock.airlineCode}`
+                  : 'ยังไม่มี Template Condition ที่ Active'}
             </p>
           ) : (
-            filtered.map(t => (
-              <button
-                key={t.templateId}
-                type="button"
-                onClick={() => setSelected(prev => prev === t.templateId ? null : t.templateId)}
-                className={`w-full text-left px-3 py-2.5 rounded-xl border transition-all ${
-                  selected === t.templateId
-                    ? 'border-[#05a94f] bg-emerald-50'
-                    : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
-                }`}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className={`inline-flex items-center px-1.5 py-px rounded text-[9px] font-bold ${COND_TEMPLATE_TYPE_COLORS[t.templateType as CondTemplateType]}`}>
-                        {COND_TEMPLATE_TYPE_SHORT[t.templateType as CondTemplateType]}
-                      </span>
-                      <span className="font-mono text-[10px] text-slate-400">{t.condition.conditionCode}</span>
-                      <span className="text-sm font-semibold text-slate-800">{t.condition.conditionName}</span>
-                      <span className="text-[10px] text-slate-400">{t.condition.stages.length} งวด</span>
-                      {t.airlineCode && <span className="text-[10px] text-slate-500">{t.airlineCode}</span>}
+            filtered.map(t => {
+              const readiness = computeTemplateReadiness(t)
+              const currencyMismatch = stock && t.currency && t.currency !== stock.currency
+              const isSelected = selected === t.templateId
+              return (
+                <button
+                  key={t.templateId}
+                  type="button"
+                  onClick={() => setSelected(prev => prev === t.templateId ? null : t.templateId)}
+                  className={`w-full text-left px-3 py-2.5 rounded-xl border transition-all ${
+                    isSelected
+                      ? 'border-[#05a94f] bg-emerald-50'
+                      : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-mono text-[10px] text-slate-400">{t.condition.conditionCode}</span>
+                        <span className="text-sm font-semibold text-slate-800">{t.condition.conditionName}</span>
+                        <span className="text-[10px] text-slate-400">v{t.version}</span>
+                        {/* Readiness badge */}
+                        {readiness.status === 'ready' ? (
+                          <span className="text-[9px] px-1.5 py-px rounded-full bg-emerald-100 text-emerald-700 font-semibold border border-emerald-200 flex items-center gap-0.5">
+                            <CheckCircle2 size={9} /> พร้อมใช้งาน
+                          </span>
+                        ) : (
+                          <span
+                            className="text-[9px] px-1.5 py-px rounded-full bg-amber-100 text-amber-700 font-semibold border border-amber-200 cursor-help"
+                            title={`ข้อมูลที่ยังขาด:\n${readiness.missingFields.map(f => `• ${f}`).join('\n')}`}
+                          >
+                            ข้อมูลไม่ครบ
+                          </span>
+                        )}
+                        {currencyMismatch && (
+                          <span className="text-[9px] px-1.5 py-px rounded-full bg-orange-100 text-orange-700 font-semibold">
+                            {t.currency} ≠ {stock?.currency}
+                          </span>
+                        )}
+                      </div>
+                      {t.condition.description && (
+                        <p className="text-[10px] text-slate-400 mt-0.5 truncate">{t.condition.description}</p>
+                      )}
+                      {/* Show missing fields inline when incomplete and selected */}
+                      {isSelected && readiness.status === 'incomplete' && readiness.missingFields.length > 0 && (
+                        <div className="mt-1.5 text-[10px] text-amber-600 space-y-0.5">
+                          {readiness.missingFields.slice(0, 3).map((f, i) => (
+                            <div key={i} className="flex items-start gap-1">
+                              <span className="shrink-0">•</span>{f}
+                            </div>
+                          ))}
+                          {readiness.missingFields.length > 3 && (
+                            <div className="text-amber-400">+{readiness.missingFields.length - 3} รายการ</div>
+                          )}
+                        </div>
+                      )}
                     </div>
-                    {t.condition.description && (
-                      <p className="text-[10px] text-slate-400 mt-0.5 truncate">{t.condition.description}</p>
-                    )}
+                    {isSelected && <Check size={14} className="shrink-0 text-[#05a94f] mt-0.5" />}
                   </div>
-                  {selected === t.templateId && <Check size={14} className="shrink-0 text-[#05a94f] mt-0.5" />}
-                </div>
-              </button>
-            ))
+                </button>
+              )
+            })
           )}
         </div>
       </div>
@@ -212,7 +374,12 @@ export function ConditionsTab({
   const [showTemplatePicker, setShowTemplatePicker] = useState(false)
   const [showResetConfirm, setShowResetConfirm]     = useState<AppStockCondition | null>(null)
   const [expandedIds, setExpandedIds]               = useState<Set<string>>(new Set())
+  const [showDiffId, setShowDiffId]                 = useState<string | null>(null)
   const [toast, setToast]                           = useState('')
+
+  // Template list (loaded once; refreshed after reset)
+  const [allTemplates, setAllTemplates] = useState<AppConditionTemplate[]>(() => getConditionTemplates())
+  const refreshTemplates = useCallback(() => setAllTemplates(getConditionTemplates()), [])
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000) }
 
@@ -283,14 +450,28 @@ export function ConditionsTab({
       persistUpdate([...liveStock.conditions, sc], `สร้าง Condition "${cond.conditionName}"`)
       setExpandedIds(prev => new Set([...prev, cond.conditionId]))
     } else {
+      // Compute overrideFields when editing a template-sourced condition
+      const now = new Date().toISOString()
       persistUpdate(
-        liveStock.conditions.map(sc =>
-          sc.condition.conditionId !== editingId ? sc : {
+        liveStock.conditions.map(sc => {
+          if (sc.condition.conditionId !== editingId) return sc
+          if (sc.source !== 'template') return { ...sc, condition: cond }
+
+          const tmpl = allTemplates.find(t => t.templateId === sc.sourceTemplateId)
+          const overrideFields = tmpl
+            ? computeOverrideFields(cond, tmpl.condition, currency)
+            : (sc.overrideFields ?? [])
+          const hasOverride = overrideFields.length > 0
+
+          return {
             ...sc,
-            locallyModified: sc.source === 'template' ? true : sc.locallyModified,
+            locallyModified: hasOverride,
+            overrideFields,
+            overrideAt: hasOverride ? now : sc.overrideAt,
+            overrideBy: hasOverride ? 'ผู้ใช้งาน' : sc.overrideBy,
             condition: cond,
           }
-        ),
+        }),
         `แก้ไข Condition "${cond.conditionName}"`,
       )
     }
@@ -315,11 +496,35 @@ export function ConditionsTab({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [_doSave, newConditionSc])
 
-  // ── Apply from template — open in editor first, persist only on Save ──────────
-  const handlePickTemplate = useCallback((tmpl: AppConditionTemplate) => {
+  // ── Use template directly — persist snapshot immediately, no editor ──────────
+  const handleUseTemplate = useCallback((tmpl: AppConditionTemplate) => {
     if (!liveStock) return
     setShowTemplatePicker(false)
-    const sc = snapshotTemplateToCondition(tmpl)
+    const sc = snapshotTemplateToCondition(tmpl, 'ผู้ใช้งาน')
+    const existingCodes = liveStock.conditions.map(c => c.condition.conditionCode)
+    if (existingCodes.includes(sc.condition.conditionCode)) {
+      sc.condition.conditionId = newConditionId()
+      sc.condition.conditionCode = generateConditionCode(existingCodes)
+    }
+    // Apply series airline/currency into the snapshot
+    sc.condition.airline = liveStock.airlineCode
+    sc.condition.currency = liveStock.currency
+    sc.condition.status = 'Active'
+    persistUpdate(
+      [...liveStock.conditions, sc],
+      `รับ Condition "${sc.condition.conditionName}" จาก Template ${tmpl.condition.conditionCode} v${tmpl.version}`,
+    )
+    setExpandedIds(prev => new Set([...prev, sc.condition.conditionId]))
+    showToast(`รับ Condition จาก Template ${tmpl.condition.conditionCode} v${tmpl.version} สำเร็จ`)
+    refreshTemplates()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveStock])
+
+  // ── Copy from template — open in editor for the user to fill/modify ──────────
+  const handleCopyTemplate = useCallback((tmpl: AppConditionTemplate) => {
+    if (!liveStock) return
+    setShowTemplatePicker(false)
+    const sc = snapshotTemplateToCondition(tmpl, 'ผู้ใช้งาน')
     const existingCodes = liveStock.conditions.map(c => c.condition.conditionCode)
     if (existingCodes.includes(sc.condition.conditionCode)) {
       sc.condition.conditionId = newConditionId()
@@ -377,23 +582,32 @@ export function ConditionsTab({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [liveStock])
 
-  // ── Reset from template ───────────────────────────────────────────────────────
-  const handleConfirmReset = useCallback(() => {
-    if (!liveStock || !showResetConfirm) return
-    const templateId = showResetConfirm.sourceTemplateId!
-    const origId = showResetConfirm.condition.conditionId
-    const origCode = showResetConfirm.condition.conditionCode
-    const allTemplates = getConditionTemplates()
-    const tmpl = allTemplates.find(t => t.templateId === templateId)
+  // ── Reset from template (or update to latest version) ────────────────────────
+  const handleConfirmReset = useCallback((targetSc?: AppStockCondition) => {
+    const sc = targetSc ?? showResetConfirm
+    if (!liveStock || !sc) return
+    const templateId = sc.sourceTemplateId!
+    const origId = sc.condition.conditionId
+    const origCode = sc.condition.conditionCode
+    const templates = getConditionTemplates()
+    const tmpl = templates.find(t => t.templateId === templateId)
     if (!tmpl) { setShowResetConfirm(null); return }
-    const fresh = snapshotTemplateToCondition(tmpl)
+    // Snapshot with cleared override flags
+    const fresh: AppStockCondition = {
+      ...snapshotTemplateToCondition(tmpl, 'ผู้ใช้งาน'),
+      overrideFields: [],
+      overrideAt: undefined,
+      overrideBy: undefined,
+    }
     fresh.condition.conditionId = origId
     fresh.condition.conditionCode = origCode
-    const newConditions = liveStock.conditions.map(sc =>
-      sc.condition.conditionId === origId ? fresh : sc,
+    const newConditions = liveStock.conditions.map(s =>
+      s.condition.conditionId === origId ? fresh : s,
     )
     persistUpdate(newConditions, `รีเซ็ต Condition "${fresh.condition.conditionName}" จาก Template`)
     setShowResetConfirm(null)
+    setShowDiffId(null)
+    refreshTemplates()
     showToast('รีเซ็ต Condition จาก Template สำเร็จ')
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [liveStock, showResetConfirm])
@@ -486,7 +700,7 @@ export function ConditionsTab({
                       </div>
                       {/* Row 2: badges */}
                       <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                        <SourceBadge sc={sc} />
+                        <RelationshipBadge sc={sc} allTemplates={allTemplates} />
                         <span className={`inline-flex items-center px-1.5 py-px rounded text-[10px] font-semibold ${c.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
                           {c.status}
                         </span>
@@ -501,55 +715,143 @@ export function ConditionsTab({
                     </div>
                   </div>
 
-                  {canEdit && (
-                    <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
-                      {sc.source === 'template' && sc.sourceTemplateId && (
-                        <button type="button" title="รีเซ็ตจาก Template"
-                          onClick={() => setShowResetConfirm(sc)}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition">
-                          <RefreshCw size={13} />
+                  <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
+                    {sc.source === 'template' && sc.sourceTemplateId && (() => {
+                      const rel = getSeriesConditionRelationship(sc, allTemplates)
+                      return (
+                        <>
+                          {/* Compare button */}
+                          <button type="button"
+                            title="เปรียบเทียบกับ Template"
+                            onClick={() => setShowDiffId(prev => prev === c.conditionId ? null : c.conditionId)}
+                            className={`p-1.5 rounded-lg transition ${
+                              showDiffId === c.conditionId
+                                ? 'text-blue-600 bg-blue-50'
+                                : 'text-slate-400 hover:text-blue-600 hover:bg-blue-50'
+                            }`}>
+                            <GitCompare size={13} />
+                          </button>
+                          {/* Reset/update button */}
+                          {canEdit && (
+                            <button type="button"
+                              title={rel.status === 'NEW_VERSION' ? 'อัปเดตเป็น Version ใหม่' : 'รีเซ็ตจาก Template'}
+                              onClick={() => setShowResetConfirm(sc)}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition">
+                              <RefreshCw size={13} />
+                            </button>
+                          )}
+                        </>
+                      )
+                    })()}
+                    {canEdit && (
+                      <>
+                        <button type="button" title="คัดลอก"
+                          onClick={() => handleDuplicate(sc)}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition">
+                          <Copy size={13} />
                         </button>
-                      )}
-                      <button type="button" title="คัดลอก"
-                        onClick={() => handleDuplicate(sc)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition">
-                        <Copy size={13} />
-                      </button>
-                      <button type="button" title="แก้ไข"
-                        onClick={() => openEdit(sc)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-[#05a94f] hover:bg-emerald-50 transition">
-                        <Pencil size={13} />
-                      </button>
-                      <button type="button" title="ลบ"
-                        onClick={() => handleDelete(sc)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition">
-                        <X size={13} />
-                      </button>
-                    </div>
-                  )}
+                        <button type="button" title="แก้ไข"
+                          onClick={() => openEdit(sc)}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-[#05a94f] hover:bg-emerald-50 transition">
+                          <Pencil size={13} />
+                        </button>
+                        <button type="button" title="ลบ"
+                          onClick={() => handleDelete(sc)}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition">
+                          <X size={13} />
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
 
                 {/* Expanded content */}
                 {isExpanded && (
                   <div className="border-t border-slate-100 px-4 pb-4 pt-3 space-y-4">
                     {/* Template source banner */}
-                    {sc.source === 'template' && sc.sourceTemplateId && (
-                      <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-blue-50 border border-blue-100 text-xs text-blue-700">
-                        <FileText size={12} className="shrink-0" />
-                        <div className="flex-1">
-                          <span className="font-medium">Template ต้นฉบับ:</span> {sc.sourceTemplateName ?? '—'}
-                          {sc.appliedAt && (
-                            <span className="text-blue-500 ml-2">
-                              นำมาใช้เมื่อ {new Date(sc.appliedAt).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })}
-                            </span>
+                    {sc.source === 'template' && sc.sourceTemplateId && (() => {
+                      const rel = getSeriesConditionRelationship(sc, allTemplates)
+                      const liveTemplate = allTemplates.find(t => t.templateId === sc.sourceTemplateId)
+                      return (
+                        <div className={`rounded-xl border overflow-hidden text-xs ${
+                          rel.status === 'NEW_VERSION' ? 'bg-blue-50 border-blue-200' :
+                          rel.status === 'CUSTOM'      ? 'bg-amber-50 border-amber-200' :
+                          rel.status === 'UNLINKED'    ? 'bg-slate-50 border-slate-200' :
+                          'bg-blue-50 border-blue-100'
+                        }`}>
+                          {/* Banner header */}
+                          <div className="flex items-center gap-2 px-3 py-2 flex-wrap">
+                            <FileText size={12} className={`shrink-0 ${
+                              rel.status === 'NEW_VERSION' ? 'text-blue-500' :
+                              rel.status === 'CUSTOM'      ? 'text-amber-500' :
+                              rel.status === 'UNLINKED'    ? 'text-slate-400' : 'text-blue-500'
+                            }`} />
+                            <div className="flex-1 min-w-0">
+                              <span className={`font-semibold ${
+                                rel.status === 'CUSTOM'   ? 'text-amber-700' :
+                                rel.status === 'UNLINKED' ? 'text-slate-500' : 'text-blue-700'
+                              }`}>
+                                {rel.templateCode ? `${rel.templateCode} ` : ''}{rel.templateName ?? '—'}
+                              </span>
+                              <span className={`ml-2 ${rel.status === 'CUSTOM' ? 'text-amber-500' : 'text-blue-400'}`}>
+                                v{rel.usedVersion ?? 1}
+                                {rel.status === 'NEW_VERSION' && liveTemplate && (
+                                  <span className="text-blue-600 font-semibold"> → v{rel.currentVersion} พร้อมอัปเดต</span>
+                                )}
+                              </span>
+                              {sc.appliedAt && (
+                                <span className="text-slate-400 ml-2">
+                                  · นำมาใช้ {new Date(sc.appliedAt).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })}
+                                  {sc.appliedBy && sc.appliedBy !== 'System' ? ` โดย ${sc.appliedBy}` : ''}
+                                </span>
+                              )}
+                            </div>
+                            {rel.overrideCount > 0 && sc.overrideAt && (
+                              <span className="text-[10px] text-amber-600">
+                                ปรับ {rel.overrideCount} หัวข้อ {new Date(sc.overrideAt).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* "มี Version ใหม่" action row */}
+                          {rel.status === 'NEW_VERSION' && canEdit && liveTemplate && (
+                            <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-100 border-t border-blue-200">
+                              <ArrowUpCircle size={12} className="text-blue-600 shrink-0" />
+                              <span className="text-blue-700 font-medium flex-1">
+                                รับ: {rel.templateCode} v{rel.currentVersion}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => setShowDiffId(prev => prev === c.conditionId ? null : c.conditionId)}
+                                className="text-[10px] text-blue-600 hover:text-blue-800 underline font-medium"
+                              >
+                                ดูความแตกต่าง
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleConfirmReset(sc)}
+                                className="text-[10px] px-2 py-0.5 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700 transition"
+                              >
+                                อัปเดตเป็น v{rel.currentVersion}
+                              </button>
+                            </div>
                           )}
-                          {sc.sourceTemplateVersion && <span className="text-blue-400 ml-1">(v{sc.sourceTemplateVersion})</span>}
+
+                          {/* Inline diff view */}
+                          {showDiffId === c.conditionId && liveTemplate && (
+                            <div className="px-3 pb-3 pt-2 border-t border-blue-200 bg-white/50">
+                              <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-2 flex items-center gap-1">
+                                <GitCompare size={10} />
+                                เปรียบเทียบ Series vs Template (v{rel.currentVersion})
+                              </p>
+                              <ConditionDiffView
+                                sections={computeConditionDiff(sc.condition, liveTemplate.condition, currency)}
+                              />
+                            </div>
+                          )}
                         </div>
-                        {sc.locallyModified && (
-                          <span className="shrink-0 px-2 py-px rounded bg-amber-100 text-amber-700 font-semibold">แก้ไขแล้ว</span>
-                        )}
-                      </div>
-                    )}
+                      )
+                    })()}
 
                     {/* Payment stages */}
                     <div>
@@ -670,7 +972,9 @@ export function ConditionsTab({
       <TemplatePickerModal
         open={showTemplatePicker}
         onClose={() => setShowTemplatePicker(false)}
-        onPick={handlePickTemplate}
+        onUse={handleUseTemplate}
+        onCopy={handleCopyTemplate}
+        stock={liveStock}
       />
 
       {/* Edit condition modal */}
@@ -708,7 +1012,7 @@ export function ConditionsTab({
         footer={
           <>
             <Button variant="ghost" onClick={() => setShowResetConfirm(null)}>ยกเลิก</Button>
-            <Button variant="danger" onClick={handleConfirmReset}>ยืนยัน — รีเซ็ต</Button>
+            <Button variant="danger" onClick={() => handleConfirmReset()}>ยืนยัน — รีเซ็ต</Button>
           </>
         }
       >

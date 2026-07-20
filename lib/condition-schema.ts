@@ -685,6 +685,8 @@ export interface AppConditionTemplate {
   ticketType: CondTemplateTicketType
   currency: string
   condition: AppCondition
+  /** When true: template is archived — cannot be assigned to new Series, but existing snapshots are readable */
+  isArchived?: boolean
 }
 
 // ─── Stock Condition Wrapper ──────────────────────────────────────────────────
@@ -695,7 +697,12 @@ export interface AppStockCondition {
   sourceTemplateName?: string
   sourceTemplateVersion?: number
   appliedAt?: string
+  appliedBy?: string
   locallyModified?: boolean
+  /** Section keys that have been modified from the original template snapshot */
+  overrideFields?: string[]
+  overrideAt?: string
+  overrideBy?: string
   condition: AppCondition
 }
 

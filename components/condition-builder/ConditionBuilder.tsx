@@ -74,14 +74,13 @@ export function validateTab(key: TabKey, v: AppCondition, conditionMode: Conditi
   switch (key) {
     case 'basic': {
       const errs: string[] = []
-      // conditionCode เป็น auto-generate ใน template mode — ไม่ต้องตรวจ required
       if (conditionMode === 'series' && !v.conditionCode.trim()) errs.push('กรุณาระบุรหัส Condition')
       if (!v.conditionName.trim()) errs.push('กรุณาระบุชื่อ Condition')
-      // In series/template mode, airline/currency are locked from parent — skip those checks
-      // templateInfo being present means airline/currency always come from the template header
       if (conditionMode === 'template') {
         if (!templateInfo && !v.currency.trim()) errs.push('กรุณาเลือก Currency')
         if (!templateInfo && !v.airline.trim())  errs.push('กรุณาเลือก Airline')
+        // templateInfo present but airline not yet selected
+        if (templateInfo && !templateInfo.airlineCode) errs.push('กรุณาเลือกสายการบิน')
       }
       return errs
     }
@@ -379,11 +378,16 @@ export function getTabStatus(key: TabKey, v: AppCondition, errs: string[] = [], 
         ? (seriesInfo?.currency ?? v.currency)
         : (templateInfo?.currency || v.currency)
       const inTemplateMode = conditionMode === 'template' && !!templateInfo
-      const hasAny = v.conditionCode || v.conditionName || effAirline || v.description
+      // In template mode, conditionCode is auto-generated (not user-entered),
+      // and airline comes from templateInfo externally — only conditionName is user-fillable
+      const hasAny = inTemplateMode
+        ? (v.conditionName || v.description)
+        : (v.conditionCode || v.conditionName || effAirline || v.description)
       if (!hasAny) return 'empty'
-      // In template mode airline always comes from the template (even when "ทุกสายการบิน")
-      const required = v.conditionCode.trim() && v.conditionName.trim() && effCurrency.trim()
-        && (inTemplateMode || !!effAirline.trim())
+      // Required: name + currency + airline (conditionCode NOT required in template mode)
+      const airlineOk = inTemplateMode ? !!templateInfo!.airlineCode : !!effAirline.trim()
+      const required = v.conditionName.trim() && effCurrency.trim() && airlineOk
+        && (conditionMode === 'series' ? !!v.conditionCode.trim() : true)
       return required ? 'complete' : 'incomplete'
     }
     case 'payment': {
@@ -535,13 +539,14 @@ export function getTabSummary(key: TabKey, v: AppCondition, currency = 'THB', co
       const inTemplateMode = conditionMode === 'template' && !!templateInfo
       if (!v.conditionCode && !v.conditionName && !effAirline && !inTemplateMode) return 'ยังไม่ระบุ'
       const airline = effAirline ? getAirlineName(effAirline)
-        : inTemplateMode ? 'ยังไม่ได้เลือกสายการบิน'
-        : 'ยังไม่เลือก Airline'
+        : inTemplateMode ? 'ยังไม่ได้เลือก'
+        : 'ยังไม่เลือก'
+      const code = inTemplateMode ? (v.conditionCode || 'รอสร้าง') : (v.conditionCode || '—')
       const parts = [
-        v.conditionCode || '—',
-        v.conditionName || 'ยังไม่มีชื่อ',
-        airline,
-        effCurrency || 'THB',
+        `รหัส: ${code}`,
+        `ชื่อ: ${v.conditionName || 'ยังไม่มีชื่อ'}`,
+        `สายการบิน: ${airline}`,
+        `สกุลเงิน: ${effCurrency || 'THB'}`,
       ]
       return parts.join(' · ')
     }
@@ -844,9 +849,16 @@ export function BasicInfoSection({ value, onChange, readOnly, errors = [], condi
           <div className="px-4 py-3 flex flex-wrap items-center gap-x-8 gap-y-2">
             <div>
               <p className="text-[10px] text-emerald-500 font-semibold uppercase tracking-wide mb-0.5">Airline</p>
-              <p className="text-sm font-semibold text-emerald-900">
-                {airlineObj ? `${airlineObj.code} — ${airlineObj.name}` : (templateInfo.airlineCode || 'ยังไม่ได้เลือกสายการบิน')}
-              </p>
+              {templateInfo.airlineCode ? (
+                <p className="text-sm font-semibold text-emerald-900">
+                  {airlineObj ? `${airlineObj.code} — ${airlineObj.name}` : templateInfo.airlineCode}
+                </p>
+              ) : (
+                <div>
+                  <p className="text-sm font-semibold text-amber-600">ยังไม่ได้เลือกสายการบิน</p>
+                  <p className="text-xs text-amber-500 mt-0.5">กรุณากลับไปเลือกสายการบินจากข้อมูล Template ด้านบน</p>
+                </div>
+              )}
             </div>
             <div>
               <p className="text-[10px] text-emerald-500 font-semibold uppercase tracking-wide mb-0.5">Currency</p>
