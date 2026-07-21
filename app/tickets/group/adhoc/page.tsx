@@ -331,22 +331,30 @@ export default function GroupAdHocPage() {
         <table className="w-full border-collapse text-[11px]">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200 h-9">
-              <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[120px]">Ad Hoc Code</th>
-              <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[150px]">Ad Hoc Name / PNR</th>
-              <th className="px-3 py-2 text-center text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap w-[110px]">รูปแบบ</th>
+              {/* 1 */}
+              <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[130px]">Ad Hoc Code / PNR</th>
+              {/* 2 */}
+              <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[140px]">Ad Hoc Name</th>
+              {/* 3 */}
               <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[130px]">Series ที่เชื่อมโยง</th>
+              {/* 4 */}
               <th className="px-3 py-2 text-center text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap w-[60px]">Airline</th>
+              {/* 5 */}
               <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[100px]">Route</th>
-              <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[110px]">Period / วันเดินทาง</th>
-              <th className="px-3 py-2 text-center text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap w-[55px]">PNR</th>
+              {/* 6 */}
+              <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[110px]">Period</th>
+              {/* 7 */}
+              <th className="px-3 py-2 text-center text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap w-[60px]">จำนวน PNR</th>
+              {/* 8 */}
               <th className="px-3 py-2 text-right text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[90px]">Seat คงเหลือ/ทั้งหมด</th>
-              <th className="px-3 py-2 text-center text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap w-[80px]">Actions</th>
+              {/* 9 */}
+              <th className="px-3 py-2 text-center text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap w-[72px]">Actions</th>
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={10} className="px-4 py-12 text-center text-sm text-slate-400">
+                <td colSpan={9} className="px-4 py-12 text-center text-sm text-slate-400">
                   {search ? 'ไม่พบข้อมูลที่ตรงกับการค้นหา' : 'ยังไม่มีข้อมูล Group Ad Hoc'}
                 </td>
               </tr>
@@ -354,32 +362,41 @@ export default function GroupAdHocPage() {
               const border = idx === 0 ? '' : 'border-t border-slate-100'
 
               if (row.kind === 'standalone') {
+                const period = row.periodStart
+                  ? (row.periodStart === row.periodEnd
+                      ? formatDate(row.periodStart)
+                      : `${formatDate(row.periodStart)} – ${formatDate(row.periodEnd)}`)
+                  : '—'
                 return (
                   <tr key={row.stockId} className={`bg-white hover:bg-slate-50/60 transition-colors ${border}`}>
+                    {/* 1 — Ad Hoc Code */}
                     <td className="px-3 py-2">
                       <span className="font-mono text-xs font-bold text-slate-800">{row.stockCode}</span>
                     </td>
+                    {/* 2 — Ad Hoc Name */}
                     <td className="px-3 py-2">
                       <span className="text-xs text-slate-700 font-medium">{row.stockName || '—'}</span>
                     </td>
-                    <td className="px-3 py-2 text-center">
-                      <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-600 border border-amber-200 whitespace-nowrap">
-                        Ad Hoc
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 text-slate-300 text-xs italic">—</td>
+                    {/* 3 — Series (none for standalone) */}
+                    <td className="px-3 py-2 text-slate-300 text-xs">—</td>
+                    {/* 4 — Airline */}
                     <td className="px-3 py-2 text-center">
                       <span className="inline-flex items-center justify-center w-10 h-5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-100">
                         {row.airlineCode}
                       </span>
                     </td>
+                    {/* 5 — Route */}
                     <td className="px-3 py-2 text-xs text-slate-600">{row.routeText || '—'}</td>
-                    <td className="px-3 py-2 text-xs text-slate-600">{row.periodStart ? (row.periodStart === row.periodEnd ? formatDate(row.periodStart) : `${formatDate(row.periodStart)} – ${formatDate(row.periodEnd)}`) : '—'}</td>
+                    {/* 6 — Period */}
+                    <td className="px-3 py-2 text-xs text-slate-600">{period}</td>
+                    {/* 7 — จำนวน PNR */}
                     <td className="px-3 py-2 text-center text-xs font-semibold text-slate-700">{row.pnrCount}</td>
+                    {/* 8 — Seat */}
                     <td className="px-3 py-2 text-right">
                       <span className="text-xs font-bold text-[#05a94f]">{row.seatBalance}</span>
                       <span className="text-xs text-slate-400"> / {row.seatTotal}</span>
                     </td>
+                    {/* 9 — Actions */}
                     <td className="px-3 py-2 text-center">
                       <div className="flex items-center justify-center gap-1">
                         <button
@@ -396,19 +413,20 @@ export default function GroupAdHocPage() {
               }
 
               // PNR in Series row
+              const travelPeriod = row.travelEnd && row.travelEnd !== row.travelStart
+                ? `${formatDate(row.travelStart)} – ${formatDate(row.travelEnd)}`
+                : formatDate(row.travelStart)
               return (
-                <tr key={row.pnrId} className={`bg-amber-50/30 hover:bg-amber-50/60 transition-colors ${border}`}>
+                <tr key={row.pnrId} className={`bg-white hover:bg-slate-50/60 transition-colors ${border}`}>
+                  {/* 1 — PNR code */}
                   <td className="px-3 py-2">
-                    <span className="font-mono text-xs font-bold text-amber-800">{row.pnrDisplay}</span>
+                    <span className="font-mono text-xs font-bold text-slate-800">{row.pnrDisplay}</span>
                   </td>
+                  {/* 2 — Name / description */}
                   <td className="px-3 py-2">
-                    <span className="text-xs text-slate-500 italic">PNR Ad Hoc ใน Series</span>
+                    <span className="text-xs text-slate-500">PNR Ad Hoc ใน Series</span>
                   </td>
-                  <td className="px-3 py-2 text-center">
-                    <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-purple-50 text-purple-600 border border-purple-200 whitespace-nowrap">
-                      Ad Hoc ใน Series
-                    </span>
-                  </td>
+                  {/* 3 — Series ที่เชื่อมโยง */}
                   <td className="px-3 py-2">
                     <button
                       onClick={() => router.push(`/tickets/${row.seriesStockId}?tab=pnr`)}
@@ -419,28 +437,29 @@ export default function GroupAdHocPage() {
                     </button>
                     <div className="text-[10px] text-slate-400 truncate max-w-[120px]">{row.seriesName}</div>
                   </td>
+                  {/* 4 — Airline */}
                   <td className="px-3 py-2 text-center">
                     <span className="inline-flex items-center justify-center w-10 h-5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-100">
                       {row.airlineCode}
                     </span>
                   </td>
+                  {/* 5 — Route */}
                   <td className="px-3 py-2 text-xs text-slate-600">{row.routeText || '—'}</td>
-                  <td className="px-3 py-2">
-                    <div className="text-xs text-slate-700">{formatDate(row.travelStart)}</div>
-                    {row.travelEnd && row.travelEnd !== row.travelStart && (
-                      <div className="text-[10px] text-slate-400">↩ {formatDate(row.travelEnd)}</div>
-                    )}
-                  </td>
-                  <td className="px-3 py-2 text-center text-slate-300 text-xs">—</td>
+                  {/* 6 — Period */}
+                  <td className="px-3 py-2 text-xs text-slate-600">{travelPeriod || '—'}</td>
+                  {/* 7 — จำนวน PNR (always 1 for in-series PNR rows) */}
+                  <td className="px-3 py-2 text-center text-xs font-semibold text-slate-700">1</td>
+                  {/* 8 — Seat */}
                   <td className="px-3 py-2 text-right">
                     <span className="text-xs font-bold text-[#05a94f]">{row.seatBalance}</span>
                     <span className="text-xs text-slate-400"> / {row.seatTotal}</span>
                   </td>
+                  {/* 9 — Actions */}
                   <td className="px-3 py-2 text-center">
                     <button
-                      title="ไปยัง Series"
+                      title="เปิด Series ที่เชื่อมโยง"
                       onClick={() => router.push(`/tickets/${row.seriesStockId}?tab=pnr`)}
-                      className="p-1 rounded hover:bg-amber-100 text-amber-600 hover:text-amber-800"
+                      className="p-1 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-700"
                     >
                       <ExternalLink size={13} />
                     </button>
