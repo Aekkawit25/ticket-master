@@ -467,6 +467,9 @@ export interface SeatReductionTier {
   calculationBase: TierCalcBase | null
   calculationBaseCustomText: string | null
   remark: string | null
+  calcType?: 'UNLIMITED' | 'PERCENT' | 'SEAT_COUNT' | null
+  scope?: 'PER_PNR' | 'PER_SERIES' | null
+  maxReduceSeat?: number | null
 }
 
 export function createEmptySeatReductionTier(order: number): SeatReductionTier {
@@ -487,6 +490,9 @@ export function createEmptySeatReductionTier(order: number): SeatReductionTier {
     calculationBase: null,
     calculationBaseCustomText: null,
     remark: null,
+    calcType: 'PERCENT',
+    scope: 'PER_PNR',
+    maxReduceSeat: null,
   }
 }
 
@@ -504,6 +510,10 @@ export interface SeatReductionCondition {
   // Step / Tier model — only meaningful when policy === 'ALLOWED'
   seatReductionMode?: SeatReductionMode      // default 'single' (undefined = single for back-compat)
   seatReductionTiers?: SeatReductionTier[]   // used when seatReductionMode === 'tier'
+  // New fields: how reduction limit is specified
+  calcType?: 'UNLIMITED' | 'PERCENT' | 'SEAT_COUNT' | null
+  scope?: 'PER_PNR' | 'PER_SERIES' | null
+  maxReduceSeat?: number | null
 }
 
 /** Derive reductionPercentType from maxPercent for backward compat */
@@ -596,8 +606,21 @@ export function formatSeatReductionSummary(s: SeatReductionCondition | null | un
   }
   // ALLOWED — single (default)
   const baseLabel = s.calcBase ? SEAT_BASE_LABELS[s.calcBase as SeatCalcBase] ?? '' : ''
-  let text = `ลดที่นั่งได้ไม่เกิน ${s.maxPercent || 0}%`
-  if (baseLabel) text += ` ของ${baseLabel}`
+  const calcType = s.calcType
+  const scope = s.scope
+  const scopePart = scope === 'PER_PNR' ? ' ต่อ PNR' : scope === 'PER_SERIES' ? ' รวมต่อ Series' : ''
+  let text: string
+  if (calcType === 'UNLIMITED') {
+    text = 'ลดที่นั่งได้ไม่จำกัด'
+  } else if (calcType === 'SEAT_COUNT') {
+    text = `ลดได้สูงสุด ${s.maxReduceSeat != null ? s.maxReduceSeat : 0} Seat${scopePart}`
+  } else {
+    // PERCENT or undefined (backward compat)
+    text = `ลดที่นั่งได้ไม่เกิน ${s.maxPercent || 0}%`
+    if (baseLabel) text += ` ของ${baseLabel}`
+    if (scopePart) text += scopePart
+    else if (!calcType) text += ' (ยังไม่ระบุขอบเขต)'
+  }
   const noticeType = s.noticeType ?? 'DAYS_BEFORE'
   if (noticeType === 'FIXED_DATE' && s.noticeFixedDate) {
     text += `\nต้องแจ้งภายในวันที่ ${_fmtDMY(s.noticeFixedDate)}`

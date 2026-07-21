@@ -2557,48 +2557,142 @@ export default function ConditionTemplateForm({ mode, template, initialCode = ''
               {(seatReduction.seatReductionMode ?? 'single') !== 'tier' && (
               <>
 
-              {/* Main 4-col grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-4">
-
-                {/* 1. ลดได้ไม่เกิน (%) — 2/12 cols */}
-                <div className="lg:col-span-2">
-                  <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
-                    ลดได้ไม่เกิน (%)
-                  </label>
-                  <select
-                    className={cn(iCls, 'appearance-none text-sm')}
-                    value={String(deriveReductionPercentType(seatReduction))}
-                    onChange={e => {
-                      const val = e.target.value
-                      if (val === 'custom') {
-                        setSeatReduction(prev => ({ ...prev, reductionPercentType: 'custom' }))
-                      } else {
-                        const n = Number(val) as ReductionPercentType
-                        setSeatReduction(prev => ({ ...prev, reductionPercentType: n, maxPercent: n as number }))
-                      }
-                    }}>
-                    {REDUCTION_PERCENT_PRESETS.map(v => (
-                      <option key={v} value={String(v)}>{v}%</option>
-                    ))}
-                    <option value="custom">ระบุเอง</option>
-                  </select>
-                  {deriveReductionPercentType(seatReduction) === 'custom' && (
-                    <div className="relative mt-2">
-                      <input type="number" min={0.1} max={100} step={0.1}
-                        className={cn(iCls, 'pr-7 text-sm',
-                          seatReduction.maxPercent <= 0 || seatReduction.maxPercent > 100
-                            ? 'border-amber-300' : '')}
-                        placeholder="เช่น 15"
-                        value={seatReduction.maxPercent || ''}
-                        onChange={e => setSeatReduction(prev => ({
-                          ...prev,
-                          maxPercent: Math.min(100, Math.max(0, Number(e.target.value))),
-                        }))}
-                      />
-                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 text-xs">%</span>
+              {/* calcType selector (Row 1) */}
+              {(() => {
+                const calcType = seatReduction.calcType
+                return (
+                  <div className="space-y-3">
+                    {/* Row 1: calcType buttons */}
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
+                        วิธีระบุจำนวนที่ลดได้
+                      </label>
+                      <div className="flex gap-2">
+                        {([
+                          { val: 'UNLIMITED'  as const, label: 'ไม่จำกัด' },
+                          { val: 'PERCENT'    as const, label: 'เปอร์เซ็นต์ (%)' },
+                          { val: 'SEAT_COUNT' as const, label: 'จำนวน Seat' },
+                        ]).map(opt => (
+                          <button key={opt.val} type="button"
+                            onClick={() => {
+                              if (opt.val === 'UNLIMITED') {
+                                setSeatReduction(prev => ({ ...prev, calcType: 'UNLIMITED', maxReduceSeat: null }))
+                              } else if (opt.val === 'PERCENT') {
+                                setSeatReduction(prev => ({ ...prev, calcType: 'PERCENT', maxReduceSeat: null }))
+                              } else {
+                                setSeatReduction(prev => ({ ...prev, calcType: 'SEAT_COUNT', scope: prev.scope ?? 'PER_PNR' }))
+                              }
+                            }}
+                            className={cn(
+                              'flex-1 px-3 py-2 rounded-xl border text-xs font-semibold transition',
+                              calcType === opt.val
+                                ? 'border-[#05a94f] bg-[#05a94f]/5 text-[#05a94f]'
+                                : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50',
+                            )}>
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                  )}
-                </div>
+
+                    {/* Row 2: conditional fields */}
+                    {calcType !== 'UNLIMITED' && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {/* Amount field */}
+                        {calcType === 'PERCENT' || calcType == null ? (
+                          <div>
+                            <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
+                              ลดได้ไม่เกิน (%)
+                            </label>
+                            <select
+                              className={cn(iCls, 'appearance-none text-sm')}
+                              value={String(deriveReductionPercentType(seatReduction))}
+                              onChange={e => {
+                                const val = e.target.value
+                                if (val === 'custom') {
+                                  setSeatReduction(prev => ({ ...prev, reductionPercentType: 'custom' }))
+                                } else {
+                                  const n = Number(val) as ReductionPercentType
+                                  setSeatReduction(prev => ({ ...prev, reductionPercentType: n, maxPercent: n as number }))
+                                }
+                              }}>
+                              {REDUCTION_PERCENT_PRESETS.map(v => (
+                                <option key={v} value={String(v)}>{v}%</option>
+                              ))}
+                              <option value="custom">ระบุเอง</option>
+                            </select>
+                            {deriveReductionPercentType(seatReduction) === 'custom' && (
+                              <div className="relative mt-2">
+                                <input type="number" min={0.1} max={100} step={0.1}
+                                  className={cn(iCls, 'pr-7 text-sm',
+                                    seatReduction.maxPercent <= 0 || seatReduction.maxPercent > 100
+                                      ? 'border-amber-300' : '')}
+                                  placeholder="เช่น 15"
+                                  value={seatReduction.maxPercent || ''}
+                                  onChange={e => setSeatReduction(prev => ({
+                                    ...prev,
+                                    maxPercent: Math.min(100, Math.max(0, Number(e.target.value))),
+                                  }))}
+                                />
+                                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 text-xs">%</span>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div>
+                            <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
+                              ลดได้ไม่เกิน (Seat)
+                            </label>
+                            <div className="relative">
+                              <input type="number" min={0} step={1}
+                                className={cn(iCls, 'pr-14 text-sm')}
+                                placeholder="เช่น 5"
+                                value={seatReduction.maxReduceSeat != null ? seatReduction.maxReduceSeat : ''}
+                                onChange={e => setSeatReduction(prev => ({
+                                  ...prev,
+                                  maxReduceSeat: e.target.value === '' ? null : Math.round(Number(e.target.value)),
+                                }))}
+                              />
+                              <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs">Seat</span>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Scope selector */}
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
+                            ขอบเขต
+                          </label>
+                          {seatReduction.scope === null && (
+                            <p className="text-[10px] text-amber-600 mb-1">ยังไม่ระบุขอบเขต — โปรดเลือก</p>
+                          )}
+                          <div className="flex gap-2">
+                            {([
+                              { val: 'PER_PNR'    as const, label: 'ต่อ PNR',   desc: 'คิดแยกต่อ PNR' },
+                              { val: 'PER_SERIES'  as const, label: 'ต่อ Series', desc: 'คิดรวมทุก PNR ใน Series' },
+                            ]).map(opt => (
+                              <button key={opt.val} type="button"
+                                onClick={() => setSeatReduction(prev => ({ ...prev, scope: opt.val }))}
+                                className={cn(
+                                  'flex flex-col gap-0.5 flex-1 px-2 py-2 rounded-xl border text-left transition text-xs font-semibold',
+                                  seatReduction.scope === opt.val
+                                    ? 'border-[#05a94f] bg-[#05a94f]/5 text-[#05a94f]'
+                                    : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50',
+                                )}>
+                                <span>{opt.label}</span>
+                                <span className={cn('text-[10px] font-normal', seatReduction.scope === opt.val ? 'text-[#05a94f]/70' : 'text-slate-400')}>{opt.desc}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
+
+              {/* Main date/calc grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-4">
 
                 {/* 2. Deadline Type — 4/12 cols */}
                 <div className="lg:col-span-4">
