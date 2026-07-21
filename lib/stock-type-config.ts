@@ -125,9 +125,9 @@ export const STOCK_TYPE_CONFIG: Record<StockType, StockTypeConfig> = {
   TICKET_ONLY: {
     key: 'TICKET_ONLY',
     displayName: 'Ticket (Land)',
-    description: 'ตั๋วเครื่องบินอย่างเดียว',
+    description: 'ซื้อตั๋วผ่านผู้ให้บริการอื่น',
     pageTitle: 'Ticket (Land)',
-    subtitle: 'Stock ตั๋วเครื่องบินอย่างเดียว',
+    subtitle: 'Stock ตั๋วที่ซื้อผ่านผู้ให้บริการอื่น',
     addTitle: 'Add Stock — Ticket (Land)',
     editTitle: 'Edit Stock — Ticket (Land)',
     codeLabel: 'Stock Code',
