@@ -400,6 +400,7 @@ export interface DemoPNR {
   stageSnapshots?: Record<string, PNRStageSnapshot> // keyed by stageId
   conditionTemplateId?: string | null               // directly-assigned condition template ID
   conditionOverride?: boolean                       // true = this PNR overrides its Series' condition
+  sourceType?: 'SERIES' | 'AD_HOC'                 // origin: regular Series PNR vs Ad Hoc PNR added into Series
 }
 
 export interface DemoSummary {
@@ -626,6 +627,8 @@ export function getDemoStocks(): DemoStock[] {
           })),
           initialSeatCount: p.initialSeatCount ?? p.seatTotal,
           stageSnapshots: p.stageSnapshots ?? {},
+          // Migrate: default sourceType based on parent stock's groupType
+          sourceType: p.sourceType ?? (s.groupType === 'ADHOC' ? 'AD_HOC' as const : 'SERIES' as const),
         })),
       }
     })
@@ -1260,6 +1263,7 @@ export function wizardStateToDemoStock(state: WizardState): DemoStock {
       remark: p.remark ?? '',
       initialSeatCount: p.seat_total,
       stageSnapshots: {},
+      sourceType: stockInfo.group_type === 'ADHOC' ? 'AD_HOC' as const : 'SERIES' as const,
     }
   })
 

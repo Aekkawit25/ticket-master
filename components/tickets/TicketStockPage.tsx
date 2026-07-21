@@ -58,7 +58,7 @@ function getConfig(t: TicketType | null, g?: GroupType | null): PageConfig {
   if (t === 'Group') return {
     title: 'All Group Stocks',
     breadcrumb: ['Ticket Stock', 'All Group'],
-    subtitle: 'Stock ตั๋วแบบ Group ทั้งหมด — Series และ Ad Hoc',
+    subtitle: 'Stock ตั๋วแบบ Group ทั้งหมด — Series และ Group Ad Hoc',
     addLabel: 'Add Group Stock',
     addPath: null,
     clearLabel: 'ล้างข้อมูล Group',
@@ -94,7 +94,7 @@ function SelectGroupTypeModal({ open, onClose }: { open: boolean; onClose: () =>
       href: '/tickets/add?stockType=SERIES',
     },
     {
-      label: 'Ad Hoc',
+      label: 'Group Ad Hoc',
       description: 'จัดกรุ๊ปพิเศษตามสถานการณ์',
       detail: 'เหมาะสำหรับกรุ๊ปที่จัดขึ้นเป็นกรณีพิเศษ ไม่ได้อยู่ใน Series ปกติ',
       icon: <Users size={22} />,
@@ -322,7 +322,7 @@ export default function TicketStockPage({ fixedTicketType, fixedGroupType }: Tic
       {isAll && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
           <StatCard title="Series"      value={counts.series} icon={<List   size={18} />} color="#05a94f" />
-          <StatCard title="Ad Hoc"      value={counts.adhoc}  icon={<Users  size={18} />} color="#f59e0b" />
+          <StatCard title="Group Ad Hoc" value={counts.adhoc}  icon={<Users  size={18} />} color="#f59e0b" />
           <StatCard title="FIT"         value={counts.fit}    icon={<Ticket size={18} />} color="#3b82f6" />
           <StatCard title="Ticket Only" value={counts.land}   icon={<Globe  size={18} />} color="#8b5cf6" />
         </div>
@@ -330,7 +330,7 @@ export default function TicketStockPage({ fixedTicketType, fixedGroupType }: Tic
       {isAllGroup && (
         <div className="grid grid-cols-2 gap-3 mb-4">
           <StatCard title="Group Series" value={counts.series} icon={<List  size={18} />} color="#05a94f" />
-          <StatCard title="Group Ad Hoc" value={counts.adhoc}  icon={<Users size={18} />} color="#f59e0b" />
+          <StatCard title="Group Ad Hoc"  value={counts.adhoc}  icon={<Users size={18} />} color="#f59e0b" />
         </div>
       )}
 

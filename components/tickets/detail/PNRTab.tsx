@@ -68,6 +68,10 @@ function formatCondLabel(code: string, name: string | null | undefined): string 
   return `${code} — ${name}`
 }
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type PnrSourceFilter = 'ALL' | 'SERIES' | 'AD_HOC'
+
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface Props {
@@ -153,8 +157,13 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
   const [bulkCancelReason, setBulkCancelReason] = useState('')
   const [bulkCancelReasonError, setBulkCancelReasonError] = useState('')
   const [allTemplates] = useState<AppConditionTemplate[]>(() => getConditionTemplates())
+  const [sourceFilter, setSourceFilter] = useState<PnrSourceFilter>('ALL')
+  const [showAddAdhocModal, setShowAddAdhocModal] = useState(false)
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000) }
+
+  // Determine if this is a Series stock (can receive Ad Hoc PNRs)
+  const isSeries = liveStock?.groupType === 'SERIES'
 
   const openAdd = () => {
     setEditingPnr(null)
@@ -238,12 +247,20 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
     showToast(isEdit ? 'แก้ไข PNR สำเร็จ' : 'เพิ่ม PNR สำเร็จ')
   }
 
-  const handleSinglePnrConfirm = async (vals: PnrFormValues) => {
+  const handleSinglePnrConfirm = async (vals: PnrFormValues, forceSourceType?: 'SERIES' | 'AD_HOC') => {
     if (!liveStock) throw new Error('ไม่พบ Stock')
     const flightSet = liveFlightSets.find(fs => fs.flightSetId === vals.flightSetId) ?? liveFlightSets[0]
     if (!flightSet) throw new Error('ไม่พบ Flight Set')
     const newPnr = buildDemoPnrFromForm(vals, liveStock, flightSet, editingPnr ?? undefined)
-    executeSavePNR(newPnr, editingPnr ?? undefined)
+    // Preserve sourceType from existing PNR when editing; apply forced type when adding Ad Hoc
+    const pnrWithSource: DemoPNR = editingPnr
+      ? { ...newPnr, sourceType: editingPnr.sourceType ?? 'SERIES' }
+      : { ...newPnr, sourceType: forceSourceType ?? (liveStock.groupType === 'ADHOC' ? 'AD_HOC' : 'SERIES') }
+    executeSavePNR(pnrWithSource, editingPnr ?? undefined)
+  }
+
+  const handleAddAdhocPnr = async (vals: PnrFormValues) => {
+    return handleSinglePnrConfirm(vals, 'AD_HOC')
   }
 
   const handleDeletePNR = () => {
@@ -428,7 +445,7 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
     return liveStock?.routeText || null
   }
 
-  const pnrRows: PNRRow[] = liveStock
+  const allPnrRows: PNRRow[] = liveStock
     ? liveStock.pnrs.map(p => ({
         id: p.pnrId,
         pnr_code: p.pnrCode || null,
@@ -458,6 +475,17 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
         status: p.status,
       }))
     : mockPNRs
+
+  // Filter by sourceType
+  const pnrRows = sourceFilter === 'ALL'
+    ? allPnrRows
+    : allPnrRows.filter(r => {
+        const demoPnr = liveStock?.pnrs.find(p => p.pnrId === r.id)
+        const st = demoPnr?.sourceType ?? 'SERIES'
+        return sourceFilter === 'AD_HOC' ? st === 'AD_HOC' : st === 'SERIES'
+      })
+
+  const adhocPnrCount = liveStock?.pnrs.filter(p => p.sourceType === 'AD_HOC').length ?? 0
 
   const conditions = liveStock?.conditions ?? []
   const pnrStatuses = ['Pending', 'Confirmed']
@@ -574,6 +602,17 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
           <div className="flex items-center gap-2 flex-wrap">
             <Button size="sm" icon={<PlusCircle size={13} />} onClick={openAdd}>เพิ่ม PNR</Button>
             <Button size="sm" variant="outline" icon={<PlusSquare size={13} />} onClick={() => setShowBulkAdd(true)}>เพิ่มหลาย PNR</Button>
+            {isSeries && (
+              <Button
+                size="sm"
+                variant="outline"
+                icon={<PlusCircle size={13} />}
+                className="border-amber-300 text-amber-700 hover:bg-amber-50"
+                onClick={() => { setEditingPnr(null); setShowAddAdhocModal(true); onDirtyChange(true) }}
+              >
+                เพิ่ม Ad Hoc PNR
+              </Button>
+            )}
             <Button size="sm" variant="outline" disabled title="Coming soon">Import PNR</Button>
             {selectedPnrIds.size > 0 && (
               <>
@@ -607,6 +646,43 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
               <AlertTriangle size={12} />
               <span>{noCond.length} PNR ยังไม่ได้ระบุ Condition</span>
             </div>
+          )}
+        </div>
+      )}
+
+      {/* Source filter tabs (only for Series stocks with PNRs) */}
+      {isSeries && allPnrRows.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap">
+          {([
+            { key: 'ALL',     label: 'ทั้งหมด',              count: allPnrRows.length },
+            { key: 'SERIES',  label: 'Series',               count: allPnrRows.length - adhocPnrCount },
+            { key: 'AD_HOC',  label: 'Ad Hoc',               count: adhocPnrCount },
+          ] as { key: PnrSourceFilter; label: string; count: number }[]).map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setSourceFilter(tab.key)}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium border transition-colors ${
+                sourceFilter === tab.key
+                  ? tab.key === 'AD_HOC'
+                    ? 'bg-amber-50 border-amber-300 text-amber-700'
+                    : 'bg-emerald-50 border-emerald-300 text-emerald-700'
+                  : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300 hover:bg-slate-50'
+              }`}
+            >
+              {tab.label}
+              <span className={`inline-flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-bold ${
+                sourceFilter === tab.key
+                  ? tab.key === 'AD_HOC' ? 'bg-amber-200 text-amber-800' : 'bg-emerald-200 text-emerald-800'
+                  : 'bg-slate-100 text-slate-500'
+              }`}>
+                {tab.count}
+              </span>
+            </button>
+          ))}
+          {adhocPnrCount > 0 && (
+            <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1">
+              มี Ad Hoc {adhocPnrCount} PNR อยู่ใน Series นี้
+            </span>
           )}
         </div>
       )}
@@ -695,6 +771,10 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                             {isFirstRow && (
                               <td rowSpan={rowCount} className={`${canEdit ? 'sticky left-8 z-10' : 'sticky left-0 z-10'} bg-inherit min-w-[190px] px-2 py-1.5 align-top border-r border-slate-200 shadow-[2px_0_4px_rgba(0,0,0,0.04)]`}>
                                 <PNRCell code={p.pnr_code} dummy={p.dummy_pnr} type={p.pnr_type} route={p.route} />
+                                {/* Source type badge */}
+                                {isSeries && demoPnr?.sourceType === 'AD_HOC' && (
+                                  <span className="inline-flex mt-1 w-fit px-1.5 py-px rounded text-[9px] font-semibold bg-amber-50 text-amber-600 border border-amber-200 whitespace-nowrap">Ad Hoc</span>
+                                )}
                                 {demoPnr?.sectorSchedules?.some(s => s.isTimeOverride || s.isDateOverride) && (
                                   <span className="inline-flex mt-1 w-fit px-1.5 py-px rounded text-[9px] font-medium bg-amber-50 text-amber-600 border border-amber-200 whitespace-nowrap">ปรับจาก FS</span>
                                 )}
@@ -1033,6 +1113,22 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
         stockTitle={liveStock?.stockCode}
         onConfirm={handleSinglePnrConfirm}
       />
+
+      {/* Add Ad Hoc PNR Modal (Series only) */}
+      {isSeries && (
+        <SinglePnrModal
+          open={showAddAdhocModal}
+          onClose={() => { setShowAddAdhocModal(false); onDirtyChange(false) }}
+          mode="add_to_series"
+          flightSets={liveFlightSets}
+          conditions={singlePnrConditions}
+          currency={currency}
+          defaultConditionCode={singlePnrDefaultCondCode}
+          stock={liveStock ?? undefined}
+          stockTitle={`${liveStock?.stockCode} (Ad Hoc)`}
+          onConfirm={handleAddAdhocPnr}
+        />
+      )}
 
       {/* Delete Confirm Modal */}
       <Modal

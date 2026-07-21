@@ -37,8 +37,8 @@ export interface StockTypeConfig {
   emptyText: string
   /** Add button text */
   addButtonText: string
-  /** Add path (wizard URL) */
-  addPath: string
+  /** Add path (wizard URL), or null to show a picker modal */
+  addPath: string | null
   /** Clear button text */
   clearButtonText: string
   /** Clear confirm note */
@@ -79,24 +79,24 @@ export const STOCK_TYPE_CONFIG: Record<StockType, StockTypeConfig> = {
   },
   AD_HOC: {
     key: 'AD_HOC',
-    displayName: 'Ad Hoc',
-    description: 'ตั๋วกรุ๊ปแบบ Ad Hoc',
-    pageTitle: 'Ad Hoc',
-    subtitle: 'Stock ตั๋วกรุ๊ปแบบ Ad Hoc',
-    addTitle: 'Add Stock — Ad Hoc',
-    editTitle: 'Edit Stock — Ad Hoc',
+    displayName: 'Group Ad Hoc',
+    description: 'ตั๋วกรุ๊ปแบบ Group Ad Hoc',
+    pageTitle: 'Group Ad Hoc',
+    subtitle: 'Stock ตั๋วกรุ๊ปแบบ Group Ad Hoc — แบบอิสระ และ PNR Ad Hoc ใน Series',
+    addTitle: 'Add Stock — Group Ad Hoc',
+    editTitle: 'Edit Stock — Group Ad Hoc',
     codeLabel: 'Ad Hoc Code',
     nameLabel: 'Ad Hoc Name',
     prefix: 'AH',
     exampleCode: 'AH26070001',
     searchPlaceholder: 'ค้นหา Ad Hoc Code, Ad Hoc Name, PNR...',
-    emptyText: 'ยังไม่มีข้อมูล Ad Hoc',
-    addButtonText: 'Add Ad Hoc',
-    addPath: '/tickets/add?stockType=AD_HOC',
-    clearButtonText: 'ล้างข้อมูล Ad Hoc',
-    clearNote: 'เฉพาะ Ad Hoc เท่านั้น ประเภทอื่นไม่ถูกลบ',
+    emptyText: 'ยังไม่มีข้อมูล Group Ad Hoc',
+    addButtonText: 'Add Group Ad Hoc',
+    addPath: null,
+    clearButtonText: 'ล้างข้อมูล Group Ad Hoc',
+    clearNote: 'เฉพาะ Group Ad Hoc เท่านั้น ประเภทอื่นไม่ถูกลบ',
     disabled: false,
-    breadcrumb: ['Ticket Stock', 'Ad Hoc'],
+    breadcrumb: ['Ticket Stock', 'Group Ad Hoc'],
     ticketType: 'Group',
     groupType: 'ADHOC',
   },
