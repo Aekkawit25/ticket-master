@@ -67,6 +67,8 @@ interface AdhocPnrRow {
   seriesName: string
   airlineCode: string
   routeText: string
+  conditionCode: string
+  conditionName: string
 }
 
 const newId = (p: string) => `${p}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
@@ -179,6 +181,7 @@ export default function GroupAdHocPage() {
     const result: AdhocPnrRow[] = []
     seriesWithAdhoc.forEach(series => {
       series.pnrs.filter(p => p.sourceType === 'AD_HOC').forEach(pnr => {
+        const sc = series.conditions.find(c => c.condition.conditionCode === pnr.conditionCode)
         result.push({
           pnrId: pnr.pnrId,
           pnrDisplay: pnr.pnrDisplay || pnr.pnrCode || pnr.dummyPnr || pnr.pnrId,
@@ -193,6 +196,8 @@ export default function GroupAdHocPage() {
           seriesName: series.groupName,
           airlineCode: series.airlineCode,
           routeText: series.routeText ?? '',
+          conditionCode: pnr.conditionCode || '',
+          conditionName: sc?.condition.conditionName || '',
         })
       })
     })
@@ -203,6 +208,8 @@ export default function GroupAdHocPage() {
       || r.seriesName.toLowerCase().includes(q)
       || r.airlineCode.toLowerCase().includes(q)
       || r.routeText.toLowerCase().includes(q)
+      || r.conditionCode.toLowerCase().includes(q)
+      || r.conditionName.toLowerCase().includes(q)
     )
   }, [seriesWithAdhoc, search])
 
@@ -276,7 +283,7 @@ export default function GroupAdHocPage() {
 
   const searchPlaceholder = tab === 'STANDALONE'
     ? 'ค้นหา Ad Hoc Code, Name, Airline, Route, PNR...'
-    : 'ค้นหา PNR, Series Code, Series Name, Airline, Route...'
+    : 'ค้นหา PNR, Series, Condition, Airline, Route...'
 
   // ─── Render ───────────────────────────────────────────────────────────────
 
@@ -433,20 +440,21 @@ export default function GroupAdHocPage() {
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200 h-9">
                 <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[120px]">PNR</th>
-                <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[120px]">Ad Hoc Name</th>
-                <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[130px]">Series ที่เชื่อมโยง</th>
+                <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[110px]">Ad Hoc Name</th>
+                <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[120px]">Series ที่เชื่อมโยง</th>
                 <th className="px-2 py-2 text-center text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap w-[52px]">Airline</th>
-                <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[90px]">Route</th>
-                <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[100px]">Period</th>
-                <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[150px]">Seat (Bal/Total)</th>
+                <th className="px-2 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[80px]">Route</th>
+                <th className="px-2 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[90px]">Period</th>
+                <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[130px]">Seat (Bal/Total)</th>
+                <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[100px]">Condition</th>
                 <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[110px]">NAME DL</th>
-                <th className="px-2 py-2 text-center text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap w-[52px]">Actions</th>
+                <th className="px-2 py-2 text-center text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap w-[44px]">Actions</th>
               </tr>
             </thead>
             <tbody>
               {inSeriesRows.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-12 text-center text-sm text-slate-400">
+                  <td colSpan={10} className="px-4 py-12 text-center text-sm text-slate-400">
                     {search ? 'ไม่พบ PNR Ad Hoc ที่ตรงกับการค้นหา' : 'ยังไม่มี PNR Ad Hoc ที่เพิ่มเข้าไปใน Series'}
                   </td>
                 </tr>
@@ -479,10 +487,24 @@ export default function GroupAdHocPage() {
                         {row.airlineCode}
                       </span>
                     </td>
-                    <td className="px-3 py-2.5 text-xs text-slate-600">{row.routeText || '—'}</td>
-                    <td className="px-3 py-2.5 text-xs text-slate-600 whitespace-nowrap">{period || '—'}</td>
+                    <td className="px-2 py-2.5 text-xs text-slate-600">{row.routeText || '—'}</td>
+                    <td className="px-2 py-2.5 text-xs text-slate-600 whitespace-nowrap">{period || '—'}</td>
                     <td className="px-3 py-2.5">
                       <SeatBar total={row.seatTotal} balance={row.seatBalance} />
+                    </td>
+                    <td className="px-3 py-2.5">
+                      {row.conditionCode ? (
+                        <div>
+                          <span className="font-mono text-[11px] font-bold text-slate-800">{row.conditionCode}</span>
+                          {row.conditionName && (
+                            <div className="text-[10px] text-slate-400 truncate max-w-[90px]" title={row.conditionName}>
+                              {row.conditionName}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-[10px] text-amber-500 font-medium">ยังไม่ระบุ</span>
+                      )}
                     </td>
                     <td className="px-3 py-2.5 text-xs whitespace-nowrap">
                       {ttlText
