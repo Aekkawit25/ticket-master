@@ -581,7 +581,8 @@ export default function TicketTable({ tickets, filterType, filterGroupType, filt
 
   // Show Type column only on pages where multiple types can appear
   const showTypeColumn = !filterType || (filterType === 'Group' && !filterGroupType)
-  const colCount = showTypeColumn ? 10 : 9
+  const showSupplierColumn = filterType === 'Ticket + Land'
+  const colCount = showTypeColumn ? 10 : showSupplierColumn ? 10 : 9
 
   // Derive column label config from current filter context
   const pageConfig = getStockTypeConfig(filterType ?? '', filterGroupType)
@@ -648,6 +649,7 @@ export default function TicketTable({ tickets, filterType, filterGroupType, filt
             {showTypeColumn && <Th className="hidden md:table-cell">Type</Th>}
             <Th>{nameColLabel}</Th>
             <Th className="hidden sm:table-cell">Airline</Th>
+            {showSupplierColumn && <Th className="hidden lg:table-cell">Supplier</Th>}
             <Th className="hidden lg:table-cell">Route</Th>
             <Th className="hidden lg:table-cell" title="ช่วงวันเดินทาง คำนวณจาก Dep Date แรกสุดถึง Dep Date ท้ายสุดของ PNR">Period</Th>
             <Th className="hidden sm:table-cell">PNR</Th>
@@ -697,6 +699,18 @@ export default function TicketTable({ tickets, filterType, filterGroupType, filt
                 <Td className="hidden sm:table-cell">
                   <Badge variant="gray">{t.airline_code}</Badge>
                 </Td>
+                {showSupplierColumn && (
+                  <Td className="hidden lg:table-cell text-xs">
+                    {t.supplierCode ? (
+                      <span>
+                        <span className="font-mono font-bold text-slate-500 mr-1">{t.supplierCode}</span>
+                        <span className="text-slate-700">{t.supplierName}</span>
+                      </span>
+                    ) : (
+                      <span className="text-amber-500 text-[11px]">ยังไม่ระบุ</span>
+                    )}
+                  </Td>
+                )}
                 <Td className="hidden lg:table-cell font-mono text-xs">{t.route_text || '-'}</Td>
                 <Td className="hidden lg:table-cell text-xs">
                   {formatStockPeriod(t.period_start, t.period_end)}

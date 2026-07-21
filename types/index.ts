@@ -71,6 +71,9 @@ export interface FlightSeries {
   seat_used?: number
   seat_balance?: number
   nearest_ttl?: string | null
+  supplierId?: string
+  supplierCode?: string
+  supplierName?: string
 }
 
 export interface FlightSeriesFormData {
@@ -85,6 +88,9 @@ export interface FlightSeriesFormData {
   airline_code: string
   currency: string
   remark: string
+  supplierId?: string | null
+  supplierCode?: string
+  supplierName?: string
 }
 
 // ============================================================

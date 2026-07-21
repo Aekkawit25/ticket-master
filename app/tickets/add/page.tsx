@@ -489,6 +489,7 @@ function AddStockPageInner() {
       if (existingCodes.includes(state.stockInfo.stock_code.trim())) return `${stepCfg.codeLabel} นี้ถูกใช้งานแล้ว กรุณาใช้รหัสอื่น`
       if (!state.stockInfo.airline_code) return 'กรุณาเลือก Airline'
       if (!state.stockInfo.currency) return 'กรุณาเลือก Currency'
+      if (state.stockInfo.ticket_type === 'Ticket + Land' && !state.stockInfo.supplierId) return 'กรุณาเลือก Supplier สำหรับ Ticket (Land)'
       return null
     }
     if (s === 2) {

@@ -324,6 +324,19 @@ export default function Step5Review({
               <p className="text-xs text-slate-400">Airline</p>
               <p className="font-bold">{stockInfo.airline_code || '—'}</p>
             </div>
+            {stockInfo.ticket_type === 'Ticket + Land' && (
+              <div>
+                <p className="text-xs text-slate-400">Supplier</p>
+                {stockInfo.supplierId ? (
+                  <p className="font-medium">
+                    <span className="font-mono text-xs text-slate-500 mr-1">{stockInfo.supplierCode}</span>
+                    {stockInfo.supplierName}
+                  </p>
+                ) : (
+                  <p className="text-xs text-amber-500 font-medium">ยังไม่ได้เลือก Supplier</p>
+                )}
+              </div>
+            )}
             <div>
               <p className="text-xs text-slate-400">Ticket Type</p>
               <p className="font-medium">{stockInfo.ticket_type}</p>

@@ -285,6 +285,19 @@ export function SummaryTab({
                 <p className="text-[10px] text-slate-400 mb-0.5">Airline · Currency</p>
                 <p className="font-bold">{liveStock.airlineCode} · {currency}</p>
               </div>
+              {liveStock.ticketType === 'Ticket + Land' && (
+                <div>
+                  <p className="text-[10px] text-slate-400 mb-0.5">Supplier</p>
+                  {liveStock.supplierCode || liveStock.supplierName ? (
+                    <p className="text-slate-700">
+                      <span className="font-mono text-[11px] font-bold text-slate-500 mr-1">{liveStock.supplierCode}</span>
+                      {liveStock.supplierName}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-amber-500 italic">ยังไม่ระบุ</p>
+                  )}
+                </div>
+              )}
               <div>
                 <p className="text-[10px] text-slate-400 mb-0.5">Route</p>
                 <p className="font-mono font-bold text-[#05a94f]">{routeText || '—'}</p>

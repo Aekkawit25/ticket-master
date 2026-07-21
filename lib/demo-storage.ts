@@ -443,6 +443,9 @@ export interface DemoStock {
   logs: DemoLog[]
   transactions: FinancialTransaction[]
   defaultConditionCode?: string
+  supplierId?: string
+  supplierCode?: string
+  supplierName?: string
 }
 
 // ============================================================
@@ -947,6 +950,9 @@ export function demoStockToWizardState(stock: DemoStock): WizardState {
       airline_code: stock.airlineCode,
       currency: stock.currency,
       remark: stock.remark,
+      supplierId: stock.supplierId ?? null,
+      supplierCode: stock.supplierCode ?? '',
+      supplierName: stock.supplierName ?? '',
     },
     schedules: (() => {
       if (stock.schedules && stock.schedules.length > 0) {
@@ -1339,6 +1345,9 @@ export function wizardStateToDemoStock(state: WizardState): DemoStock {
     currency: stockInfo.currency,
     remark: stockInfo.remark ?? '',
     routeText,
+    supplierId: stockInfo.supplierId ?? undefined,
+    supplierCode: stockInfo.supplierCode ?? undefined,
+    supplierName: stockInfo.supplierName ?? undefined,
     createdAt: now,
     updatedAt: now,
     sectors: demoSectors,
@@ -1750,6 +1759,9 @@ export function demoStockToFlightSeries(d: DemoStock): FlightSeries {
     seat_used: d.summary.seatUsed,
     seat_balance: d.summary.seatBalance,
     nearest_ttl: getNextTTL(d.pnrs),  // always recompute from PNRs — never read stale summary value
+    supplierId: d.supplierId,
+    supplierCode: d.supplierCode,
+    supplierName: d.supplierName,
   }
 }
 

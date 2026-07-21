@@ -1,14 +1,15 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import type { ReactNode } from 'react'
-import { Lock, Check, AlertTriangle, ListChecks, Users, User, Globe } from 'lucide-react'
+import { Lock, Check, AlertTriangle, ListChecks, Users, User, Globe, ChevronDown, Search } from 'lucide-react'
 import { Input, Textarea } from '@/components/ui/input'
 import { AirlineCombobox } from '@/components/shared/AirlineCombobox'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import type { FlightSeriesFormData, TicketType, GroupType } from '@/types'
 import { CurrencyCombobox } from '@/components/shared/CurrencyCombobox'
 import { getStockTypeConfigSafe, STOCK_TYPE_CONFIG } from '@/lib/stock-type-config'
+import { getDemoSuppliers, type DemoSupplier } from '@/lib/demo-storage'
 
 // ─── Type options definition ──────────────────────────────────────────────────
 
@@ -108,6 +109,38 @@ export default function Step1StockInfo({
   onTypeConfirm,
 }: Step1Props) {
   const [pendingType, setPendingType] = useState<{ ticketType: TicketType; groupType?: GroupType } | null>(null)
+  const [suppliers, setSuppliers] = useState<DemoSupplier[]>([])
+  const [supplierOpen, setSupplierOpen] = useState(false)
+  const [supplierQuery, setSupplierQuery] = useState('')
+  const supplierRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    setSuppliers(getDemoSuppliers().filter(s => s.status === 'Active'))
+    const handler = () => setSuppliers(getDemoSuppliers().filter(s => s.status === 'Active'))
+    window.addEventListener('suppliers_updated', handler)
+    return () => window.removeEventListener('suppliers_updated', handler)
+  }, [])
+
+  useEffect(() => {
+    if (!supplierOpen) return
+    const close = (e: MouseEvent) => {
+      if (supplierRef.current && !supplierRef.current.contains(e.target as Node)) {
+        setSupplierOpen(false)
+        setSupplierQuery('')
+      }
+    }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [supplierOpen])
+
+  const filteredSuppliers = useMemo(() => {
+    const q = supplierQuery.trim().toLowerCase()
+    if (!q) return suppliers
+    return suppliers.filter(s =>
+      s.supplierCode.toLowerCase().includes(q) ||
+      s.supplierName.toLowerCase().includes(q)
+    )
+  }, [supplierQuery, suppliers])
 
   const isCurrentType = (opt: TypeOption) => {
     if (!typeConfirmed) return false
@@ -119,7 +152,12 @@ export default function Step1StockInfo({
   const hasData = !!(data.group_name || data.airline_code)
 
   const applyType = (ticketType: TicketType, groupType?: GroupType) => {
-    onChange({ ticket_type: ticketType, group_type: groupType })
+    const clearSupplier = ticketType !== 'Ticket + Land'
+    onChange({
+      ticket_type: ticketType,
+      group_type: groupType,
+      ...(clearSupplier ? { supplierId: null, supplierCode: '', supplierName: '' } : {}),
+    })
     if (!typeConfirmed) onTypeConfirm?.()
   }
 
@@ -271,6 +309,85 @@ export default function Step1StockInfo({
               error={errors.currency}
             />
           </div>
+
+          {/* Supplier — only for Ticket (Land) */}
+          {data.ticket_type === 'Ticket + Land' && (
+            <div className="mt-4 pt-4 border-t border-slate-100">
+              <div className="max-w-sm">
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  Supplier<span className="text-red-500 ml-0.5">*</span>
+                </label>
+                <div ref={supplierRef} className="relative">
+                  <button
+                    type="button"
+                    onClick={() => { setSupplierOpen(o => !o); setSupplierQuery('') }}
+                    className={`w-full flex items-center justify-between gap-2 px-3 py-2 text-sm rounded-lg border transition-colors outline-none ${
+                      errors.supplierId
+                        ? 'border-red-400 focus:border-red-500'
+                        : 'border-slate-300 hover:border-slate-400 focus:border-[#05a94f]'
+                    } bg-white`}
+                  >
+                    {data.supplierId ? (
+                      <span className="flex items-center gap-1.5 truncate">
+                        <span className="font-mono text-xs font-bold text-slate-600">{data.supplierCode}</span>
+                        <span className="text-slate-700 truncate">{data.supplierName}</span>
+                      </span>
+                    ) : (
+                      <span className="text-slate-400">เลือก Supplier...</span>
+                    )}
+                    <ChevronDown size={14} className="text-slate-400 flex-shrink-0" />
+                  </button>
+
+                  {supplierOpen && (
+                    <div className="absolute left-0 top-full mt-1 z-30 w-full min-w-[280px] bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden">
+                      <div className="p-2 border-b border-slate-100">
+                        <div className="relative">
+                          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                          <input
+                            autoFocus
+                            type="text"
+                            value={supplierQuery}
+                            onChange={e => setSupplierQuery(e.target.value)}
+                            placeholder="ค้นหา Code หรือชื่อ Supplier"
+                            className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg outline-none focus:border-[#05a94f]"
+                          />
+                        </div>
+                      </div>
+                      <div className="max-h-48 overflow-y-auto">
+                        {filteredSuppliers.length === 0 ? (
+                          <div className="px-3 py-4 text-xs text-slate-400 text-center">ไม่พบ Supplier</div>
+                        ) : (
+                          filteredSuppliers.map(s => (
+                            <button
+                              key={s.supplierId}
+                              type="button"
+                              onClick={() => {
+                                onChange({ supplierId: s.supplierId, supplierCode: s.supplierCode, supplierName: s.supplierName })
+                                setSupplierOpen(false)
+                                setSupplierQuery('')
+                              }}
+                              className={`w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 transition-colors ${
+                                data.supplierId === s.supplierId ? 'bg-emerald-50' : ''
+                              }`}
+                            >
+                              <span className="font-mono text-[11px] font-bold text-slate-500 w-16 flex-shrink-0">{s.supplierCode}</span>
+                              <span className="text-xs text-slate-800 truncate">{s.supplierName}</span>
+                              {data.supplierId === s.supplierId && <Check size={12} className="text-[#05a94f] ml-auto flex-shrink-0" />}
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                {errors.supplierId ? (
+                  <p className="text-xs text-red-500 mt-0.5">{errors.supplierId}</p>
+                ) : (
+                  <p className="text-xs text-slate-400 mt-0.5">เลือก Supplier สำหรับ Ticket (Land) (เฉพาะ Active เท่านั้น)</p>
+                )}
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 

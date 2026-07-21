@@ -399,6 +399,7 @@ function EditStockPageInner() {
       if (!state.stockInfo.stock_code.trim()) return 'กรุณากรอก Series Code'
       if (!state.stockInfo.group_name.trim()) return 'กรุณากรอก Series Name'
       if (!state.stockInfo.airline_code) return 'กรุณาเลือก Airline'
+      if (state.stockInfo.ticket_type === 'Ticket + Land' && !state.stockInfo.supplierId) return 'กรุณาเลือก Supplier สำหรับ Ticket (Land)'
       return null
     }
     if (s === 2) {
