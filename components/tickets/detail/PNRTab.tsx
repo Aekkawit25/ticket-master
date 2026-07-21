@@ -638,9 +638,9 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                 <th className="px-2 py-1.5 text-right text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[75px]">ราคา</th>
                 <th className="px-2 py-1.5 text-right text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[65px]">Tax</th>
                 <th className="px-2 py-1.5 text-right text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[65px]">YQ</th>
-                <th className="px-2 py-1.5 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[140px]">Condition</th>
-                <th className="px-2 py-1.5 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[115px]">NAME DL</th>
-                <th className="px-2 py-1.5 text-center text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[90px]">การยืนยัน</th>
+                <th className="px-2 py-1.5 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap w-[210px]">Condition</th>
+                <th className="px-2 py-1.5 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap w-[145px]">NAME DL</th>
+                <th className="px-2 py-1.5 text-center text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap w-[95px]">การยืนยัน</th>
                 {canEdit && (
                   <th className="sticky right-0 z-20 bg-slate-50 w-[64px] px-2 py-1.5 text-center text-[10px] font-semibold text-slate-500 uppercase tracking-wider border-l border-slate-200 shadow-[-2px_0_4px_rgba(0,0,0,0.04)]">Actions</th>
                 )}
@@ -793,40 +793,42 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                                     : p.yq > 0 ? formatNumber(p.yq) : <span className="text-slate-400">0</span>}
                                 </td>
                                 {/* Condition */}
-                                <td rowSpan={rowCount} className="px-2 py-1.5 align-top min-w-[180px]">
+                                <td rowSpan={rowCount} className="px-2 py-1.5 align-top w-[210px]">
                                   {canEdit ? (
                                     <div>
                                       <button
                                         data-cond-dd=""
-                                        className={`w-full flex items-center justify-between gap-1 rounded-lg border px-2 py-1 text-[11px] transition-colors ${
+                                        className={`w-full h-[34px] flex items-center justify-between gap-1 rounded-md border px-2 text-[11px] transition-colors ${
                                           openCondPnrId === p.id
-                                            ? 'border-[#05a94f] bg-emerald-50/30 ring-1 ring-[#05a94f]/20'
+                                            ? 'border-[#05a94f] bg-emerald-50/40 ring-1 ring-[#05a94f]/20'
                                             : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/60'
                                         }`}
                                         onClick={(e) => {
                                           if (!demoPnr) return
                                           if (openCondPnrId === p.id) { setOpenCondPnrId(null); return }
                                           const rect = e.currentTarget.getBoundingClientRect()
-                                          const approxH = 280
+                                          const dropW = Math.min(Math.max(rect.width, 180), 260)
+                                          const approxH = 240
                                           const spaceBelow = window.innerHeight - rect.bottom
-                                          const top = spaceBelow > approxH ? rect.bottom + 2 : Math.max(4, rect.top - approxH - 2)
-                                          const left = Math.min(rect.left, window.innerWidth - 320)
-                                          setDropdownAnchor({ top, left, minWidth: Math.max(rect.width, 280) })
+                                          const top = spaceBelow > approxH + 4 ? rect.bottom + 2 : rect.top - approxH - 2
+                                          setDropdownAnchor({ top, left: rect.left, minWidth: dropW })
                                           setOpenCondPnrId(p.id)
                                         }}
                                       >
-                                        <span className={`truncate ${p.condition_code ? 'text-slate-700 font-medium' : 'text-slate-400 italic'}`}>
+                                        <span className={`truncate text-[11px] ${p.condition_code ? 'text-slate-700 font-medium' : 'text-slate-400 italic'}`}>
                                           {p.condition_code
                                             ? formatCondLabel(p.condition_code, p.condition)
-                                            : '— ยังไม่ระบุ Condition —'}
+                                            : '— ยังไม่ระบุ —'}
                                         </span>
-                                        <span className="text-slate-400 shrink-0 leading-none">▾</span>
+                                        <svg className="w-3 h-3 text-slate-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                                        </svg>
                                       </button>
                                       {p.condition_code && (
-                                        <span className={`inline-flex mt-0.5 w-fit px-1.5 py-px rounded text-[9px] font-medium whitespace-nowrap ${
+                                        <span className={`inline-flex mt-0.5 w-fit px-1 py-px rounded text-[9px] font-medium whitespace-nowrap ${
                                           p.condition_source === 'DIRECT'
-                                            ? 'bg-blue-50 text-blue-600 border border-blue-100'
-                                            : 'bg-slate-100 text-slate-500 border border-slate-200'
+                                            ? 'bg-blue-50 text-blue-500 border border-blue-100'
+                                            : 'bg-slate-100 text-slate-400 border border-slate-200'
                                         }`}>
                                           {p.condition_source === 'DIRECT' ? 'กำหนดโดยตรง' : 'รับจาก Series'}
                                         </span>
@@ -834,9 +836,9 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                                     </div>
                                   ) : p.condition_code ? (
                                     <div className="flex flex-col gap-0.5">
-                                      <span className="text-[11px] font-medium text-slate-700">{formatCondLabel(p.condition_code, p.condition)}</span>
-                                      {p.condition_source === 'DIRECT' && <span className="inline-flex w-fit px-1.5 py-px rounded text-[9px] font-medium bg-blue-50 text-blue-600 border border-blue-100 whitespace-nowrap">กำหนดโดยตรง</span>}
-                                      {p.condition_source === 'SERIES' && <span className="inline-flex w-fit px-1.5 py-px rounded text-[9px] font-medium bg-slate-100 text-slate-500 border border-slate-200 whitespace-nowrap">รับจาก Series</span>}
+                                      <span className="text-[11px] font-medium text-slate-700 truncate">{formatCondLabel(p.condition_code, p.condition)}</span>
+                                      {p.condition_source === 'DIRECT' && <span className="inline-flex w-fit px-1 py-px rounded text-[9px] font-medium bg-blue-50 text-blue-500 border border-blue-100 whitespace-nowrap">กำหนดโดยตรง</span>}
+                                      {p.condition_source === 'SERIES' && <span className="inline-flex w-fit px-1 py-px rounded text-[9px] font-medium bg-slate-100 text-slate-400 border border-slate-200 whitespace-nowrap">รับจาก Series</span>}
                                     </div>
                                   ) : (
                                     <span className="text-slate-300 italic text-[10px]">ไม่ระบุ</span>
@@ -933,11 +935,6 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
           : eligibleTemplates
 
         const closeDD = () => setOpenCondPnrId(null)
-        const selectSeries = () => {
-          closeDD()
-          if (eff?.source === 'SERIES') { showToast('PNR รับ Condition จาก Series อยู่แล้ว'); return }
-          applyConditionChangeDirect([activeDemoPnr.pnrId], [pnrLabel], null, seriesCondName ?? '', 'SERIES')
-        }
         const selectNone = () => {
           closeDD()
           if (!eff) { showToast('PNR ยังไม่มี Condition อยู่แล้ว'); return }
@@ -959,74 +956,55 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
               position: 'fixed',
               top: dropdownAnchor.top,
               left: dropdownAnchor.left,
-              minWidth: dropdownAnchor.minWidth,
-              width: 320,
-              maxWidth: 380,
+              width: dropdownAnchor.minWidth,
               zIndex: 9999,
             }}
-            className="bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden"
+            className="bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden"
           >
-            <div className="max-h-72 overflow-y-auto divide-y divide-slate-100">
-              {/* ใช้ตาม Series — when series has condition */}
-              {hasSeriesCond && seriesCondName && (
-                <button
-                  className={`w-full text-left px-3 py-2.5 hover:bg-emerald-50 transition-colors ${eff?.source === 'SERIES' ? 'bg-emerald-50/60' : ''}`}
-                  onClick={selectSeries}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-semibold text-slate-700">ใช้ตาม Series</span>
-                    {eff?.source === 'SERIES' && (
-                      <span className="text-[9px] px-1.5 py-px rounded-full bg-emerald-100 text-emerald-700 whitespace-nowrap shrink-0 font-medium">✓ ใช้งาน</span>
-                    )}
-                  </div>
-                  <div className="text-[10px] text-slate-500 mt-0.5 truncate">
-                    {seriesCondCode ? formatCondLabel(seriesCondCode, seriesCondName) : seriesCondName}
-                  </div>
-                </button>
-              )}
-              {/* ยังไม่ระบุ — only when series has no condition */}
-              {!hasSeriesCond && (
-                <button
-                  className={`w-full text-left px-3 py-2.5 hover:bg-slate-50 transition-colors ${!eff ? 'bg-slate-50/60' : ''}`}
-                  onClick={selectNone}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs text-slate-400 italic">— ยังไม่ระบุ Condition —</span>
-                    {!eff && <span className="text-[9px] px-1.5 py-px rounded-full bg-slate-100 text-slate-500 whitespace-nowrap shrink-0 font-medium">✓ ใช้งาน</span>}
-                  </div>
-                </button>
-              )}
-              {/* Template list */}
+            <div className="max-h-[240px] overflow-y-auto">
+              {/* ยังไม่ระบุ Condition — always first */}
+              <button
+                className={`w-full text-left px-3 py-2 text-[11px] transition-colors flex items-center gap-1.5 ${
+                  !eff
+                    ? 'bg-slate-50 text-slate-600 font-medium'
+                    : 'text-slate-400 italic hover:bg-slate-50'
+                }`}
+                onClick={selectNone}
+              >
+                {!eff
+                  ? <span className="text-[#05a94f] shrink-0 font-bold">✓</span>
+                  : <span className="w-3 shrink-0" />
+                }
+                ยังไม่ระบุ Condition
+              </button>
+              {/* Divider + template list */}
               {templatesForDisplay.length === 0 ? (
-                <div className="px-3 py-5 text-xs text-slate-400 text-center italic">ไม่มี Condition Template ที่ใช้ได้</div>
-              ) : templatesForDisplay.map(t => {
-                const isCurrent = eff?.templateId === t.templateId
-                const isSeriesMatch = seriesTemplateId === t.templateId && hasSeriesCond
-                const currencyMismatch = !!(t.currency && liveStock.currency && t.currency !== liveStock.currency)
-                return (
-                  <button
-                    key={t.templateId}
-                    className={`w-full text-left px-3 py-2.5 hover:bg-emerald-50 transition-colors ${isCurrent ? 'bg-emerald-50/50' : ''}`}
-                    onClick={() => selectTemplate(t)}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs font-medium text-slate-800 min-w-0 truncate">
-                        {formatCondLabel(t.condition.conditionCode, t.condition.conditionName)}
-                      </span>
-                      <div className="flex items-center gap-1 shrink-0">
-                        {isCurrent && <span className="text-[9px] px-1.5 py-px rounded-full bg-emerald-100 text-emerald-700 whitespace-nowrap font-medium">✓ ใช้งาน</span>}
-                        {!isCurrent && isSeriesMatch && <span className="text-[9px] px-1.5 py-px rounded-full bg-slate-100 text-slate-500 whitespace-nowrap">Series</span>}
-                      </div>
-                    </div>
-                    <div className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1">
-                      <span>{t.airlineCode ?? 'All'}</span>
-                      <span>·</span>
-                      <span className="text-emerald-600">Active</span>
-                      {currencyMismatch && <><span>·</span><span className="text-amber-500">⚠ สกุลเงินต่างกัน</span></>}
-                    </div>
-                  </button>
-                )
-              })}
+                <div className="border-t border-slate-100 px-3 py-2 text-[11px] text-slate-400 italic">ไม่มี Condition Template ที่ใช้ได้</div>
+              ) : (
+                <>
+                  <div className="border-t border-slate-100" />
+                  {templatesForDisplay.map(t => {
+                    const isCurrent = eff?.templateId === t.templateId
+                    return (
+                      <button
+                        key={t.templateId}
+                        className={`w-full text-left px-3 py-2 text-[11px] transition-colors flex items-center gap-1.5 ${
+                          isCurrent
+                            ? 'bg-emerald-50/60 text-slate-800 font-semibold hover:bg-emerald-50'
+                            : 'text-slate-700 hover:bg-emerald-50/40'
+                        }`}
+                        onClick={() => selectTemplate(t)}
+                      >
+                        {isCurrent
+                          ? <span className="text-[#05a94f] shrink-0 font-bold">✓</span>
+                          : <span className="w-3 shrink-0" />
+                        }
+                        <span className="truncate">{formatCondLabel(t.condition.conditionCode, t.condition.conditionName)}</span>
+                      </button>
+                    )
+                  })}
+                </>
+              )}
             </div>
           </div>
         )
