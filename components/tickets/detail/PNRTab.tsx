@@ -104,12 +104,6 @@ function PNRCell({ code, dummy, route }: { code: string | null; dummy: string | 
       >
         {routeLabel ?? <span className="italic text-slate-300">Route: ยังไม่ระบุ</span>}
       </span>
-      {/* บรรทัด 3: Badge ประเภทรหัส */}
-      {code ? (
-        <span className="inline-flex w-fit px-1.5 py-px rounded text-[9px] font-medium bg-blue-50 text-blue-600 border border-blue-200 whitespace-nowrap">มี PNR แล้ว</span>
-      ) : dummy ? (
-        <span className="inline-flex w-fit px-1.5 py-px rounded text-[9px] font-medium bg-amber-50 text-amber-600 border border-amber-200 whitespace-nowrap">Dummy</span>
-      ) : null}
     </div>
   )
 }
@@ -771,13 +765,28 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                             {isFirstRow && (
                               <td rowSpan={rowCount} className={`${canEdit ? 'sticky left-8 z-10' : 'sticky left-0 z-10'} bg-inherit min-w-[190px] px-2 py-1.5 align-top border-r border-slate-200 shadow-[2px_0_4px_rgba(0,0,0,0.04)]`}>
                                 <PNRCell code={p.pnr_code} dummy={p.dummy_pnr} type={p.pnr_type} route={p.route} />
-                                {/* Source type badge */}
-                                {isSeries && demoPnr?.sourceType === 'AD_HOC' && (
-                                  <span className="inline-flex mt-1 w-fit px-1.5 py-px rounded text-[9px] font-semibold bg-amber-50 text-amber-600 border border-amber-200 whitespace-nowrap">Ad Hoc</span>
-                                )}
-                                {demoPnr?.sectorSchedules?.some(s => s.isTimeOverride || s.isDateOverride) && (
-                                  <span className="inline-flex mt-1 w-fit px-1.5 py-px rounded text-[9px] font-medium bg-amber-50 text-amber-600 border border-amber-200 whitespace-nowrap">ปรับจาก FS</span>
-                                )}
+                                {/* Badge row: Dummy / มี PNR แล้ว / Ad Hoc — all on the same line */}
+                                {(() => {
+                                  const isAdHoc = isSeries && demoPnr?.sourceType === 'AD_HOC'
+                                  const hasReal = !!p.pnr_code
+                                  const hasDummy = !p.pnr_code && !!p.dummy_pnr
+                                  const hasTimeOverride = demoPnr?.sectorSchedules?.some(s => s.isTimeOverride || s.isDateOverride)
+                                  const showBadgeRow = hasReal || hasDummy || isAdHoc
+                                  return (
+                                    <>
+                                      {showBadgeRow && (
+                                        <div className="flex flex-wrap items-center gap-1 mt-0.5">
+                                          {hasReal && <span className="inline-flex w-fit px-1.5 py-px rounded text-[9px] font-medium bg-blue-50 text-blue-600 border border-blue-200 whitespace-nowrap">มี PNR แล้ว</span>}
+                                          {hasDummy && <span className="inline-flex w-fit px-1.5 py-px rounded text-[9px] font-medium bg-amber-50 text-amber-600 border border-amber-200 whitespace-nowrap">Dummy</span>}
+                                          {isAdHoc && <span className="inline-flex w-fit px-1.5 py-px rounded text-[9px] font-semibold bg-amber-50 text-amber-600 border border-amber-200 whitespace-nowrap">Ad Hoc</span>}
+                                        </div>
+                                      )}
+                                      {hasTimeOverride && (
+                                        <span className="inline-flex mt-0.5 w-fit px-1.5 py-px rounded text-[9px] font-medium bg-amber-50 text-amber-600 border border-amber-200 whitespace-nowrap">ปรับจาก FS</span>
+                                      )}
+                                    </>
+                                  )
+                                })()}
                               </td>
                             )}
 
