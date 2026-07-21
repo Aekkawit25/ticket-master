@@ -262,7 +262,7 @@ export default function GroupAdHocPage() {
             <span className="text-slate-600 font-medium">Group Ad Hoc</span>
           </div>
           <h1 className="text-lg font-bold text-slate-900">Group Ad Hoc</h1>
-          <p className="text-sm text-slate-500">Ad Hoc แบบอิสระ และ PNR Ad Hoc ที่เพิ่มเข้าไปใน Series</p>
+          <p className="text-sm text-slate-500">Ad Hoc และ PNR Ad Hoc ที่เพิ่มเข้าไปใน Series</p>
         </div>
         <div className="flex gap-2 flex-wrap">
           <Button
@@ -291,8 +291,8 @@ export default function GroupAdHocPage() {
       <div className="flex items-center gap-2 mb-3 flex-wrap">
         {([
           { key: 'ALL',        label: 'ทั้งหมด',            count: standaloneStocks.length + totalAdhocPnrInSeries },
-          { key: 'STANDALONE', label: 'Ad Hoc แบบอิสระ',   count: standaloneStocks.length },
-          { key: 'IN_SERIES',  label: 'Ad Hoc ที่อยู่ใน Series', count: totalAdhocPnrInSeries },
+          { key: 'STANDALONE', label: 'Ad Hoc',              count: standaloneStocks.length },
+          { key: 'IN_SERIES',  label: 'Ad Hoc ใน Series',        count: totalAdhocPnrInSeries },
         ] as { key: AdHocViewMode; label: string; count: number }[]).map(tab => (
           <button
             key={tab.key}
@@ -364,7 +364,7 @@ export default function GroupAdHocPage() {
                     </td>
                     <td className="px-3 py-2 text-center">
                       <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-600 border border-amber-200 whitespace-nowrap">
-                        Ad Hoc แบบอิสระ
+                        Ad Hoc
                       </span>
                     </td>
                     <td className="px-3 py-2 text-slate-300 text-xs italic">—</td>
@@ -406,7 +406,7 @@ export default function GroupAdHocPage() {
                   </td>
                   <td className="px-3 py-2 text-center">
                     <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-purple-50 text-purple-600 border border-purple-200 whitespace-nowrap">
-                      เพิ่มใน Series
+                      Ad Hoc ใน Series
                     </span>
                   </td>
                   <td className="px-3 py-2">
@@ -459,9 +459,9 @@ export default function GroupAdHocPage() {
         title="Add Group Ad Hoc"
         size="lg"
       >
-        <p className="text-sm text-slate-500 mb-5">เลือกรูปแบบการเพิ่ม Ad Hoc</p>
+        <p className="text-sm text-slate-500 mb-5">เลือกรูปแบบการสร้าง Ad Hoc</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {/* Option 1: Add to existing Series */}
+          {/* Option 1: Add Ad Hoc PNR into existing Series */}
           <div
             className="flex flex-col rounded-xl border-2 border-slate-200 p-5 cursor-pointer transition-all hover:border-purple-400 hover:bg-purple-50/30"
             onClick={() => { setShowAddModal(false); setShowSeriesPicker(true) }}
@@ -469,16 +469,16 @@ export default function GroupAdHocPage() {
             <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-3 bg-purple-50 text-purple-600 border border-purple-200">
               <List size={22} />
             </div>
-            <h4 className="text-base font-bold text-slate-800 mb-1">เพิ่ม Ad Hoc เข้า Series ที่มี</h4>
-            <p className="text-sm text-slate-600 mb-1">ค้นหาและเลือก Series เดิม แล้วเพิ่ม PNR Ad Hoc เข้าไป</p>
-            <p className="text-xs text-slate-400 leading-relaxed mb-4">PNR จะถูกเพิ่มเข้า Series เดิม โดยมี Badge แสดงว่าเป็น Ad Hoc</p>
+            <h4 className="text-base font-bold text-slate-800 mb-1">เพิ่ม Ad Hoc ใน Series</h4>
+            <p className="text-sm text-slate-600 mb-1">เพิ่ม PNR ประเภท Ad Hoc เข้าไปใน Series ที่มีอยู่</p>
+            <p className="text-xs text-slate-400 leading-relaxed mb-4">PNR จะถูกเพิ่มเข้า Series เดิม และแสดง Badge "Ad Hoc" ในตาราง PNR</p>
             <button className="mt-auto w-full py-2 px-4 rounded-lg text-sm font-semibold text-white bg-purple-500 hover:bg-purple-600 transition-colors">
               เลือก Series
               <ChevronRight size={14} className="inline ml-1" />
             </button>
           </div>
 
-          {/* Option 2: Create standalone Group Ad Hoc */}
+          {/* Option 2: Create new standalone Ad Hoc */}
           <div
             className="flex flex-col rounded-xl border-2 border-slate-200 p-5 cursor-pointer transition-all hover:border-amber-400 hover:bg-amber-50/30"
             onClick={() => { setShowAddModal(false); router.push('/tickets/add?stockType=AD_HOC') }}
@@ -486,11 +486,11 @@ export default function GroupAdHocPage() {
             <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-3 bg-amber-50 text-amber-600 border border-amber-200">
               <Users size={22} />
             </div>
-            <h4 className="text-base font-bold text-slate-800 mb-1">สร้าง Group Ad Hoc ใหม่</h4>
-            <p className="text-sm text-slate-600 mb-1">สร้าง Stock ใหม่แบบ Group Ad Hoc อิสระ ไม่เชื่อมกับ Series ใด</p>
-            <p className="text-xs text-slate-400 leading-relaxed mb-4">รองรับหลาย PNR ใช้ขั้นตอนเดียวกับการสร้าง Series</p>
+            <h4 className="text-base font-bold text-slate-800 mb-1">สร้าง Ad Hoc</h4>
+            <p className="text-sm text-slate-600 mb-1">สร้าง Stock ประเภท Ad Hoc ใหม่ โดยใช้โครงสร้างเดียวกับ Series</p>
+            <p className="text-xs text-slate-400 leading-relaxed mb-4">รองรับหลาย PNR ใช้ขั้นตอนและ Validation ชุดเดียวกับ Series</p>
             <button className="mt-auto w-full py-2 px-4 rounded-lg text-sm font-semibold text-white bg-amber-500 hover:bg-amber-600 transition-colors">
-              สร้าง Group Ad Hoc
+              สร้าง Ad Hoc
               <ChevronRight size={14} className="inline ml-1" />
             </button>
           </div>

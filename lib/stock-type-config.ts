@@ -82,7 +82,7 @@ export const STOCK_TYPE_CONFIG: Record<StockType, StockTypeConfig> = {
     displayName: 'Group Ad Hoc',
     description: 'ตั๋วกรุ๊ปแบบ Group Ad Hoc',
     pageTitle: 'Group Ad Hoc',
-    subtitle: 'Stock ตั๋วกรุ๊ปแบบ Group Ad Hoc — แบบอิสระ และ PNR Ad Hoc ใน Series',
+    subtitle: 'Stock ตั๋วกรุ๊ปแบบ Group Ad Hoc — Ad Hoc และ PNR Ad Hoc ใน Series',
     addTitle: 'Add Stock — Group Ad Hoc',
     editTitle: 'Edit Stock — Group Ad Hoc',
     codeLabel: 'Ad Hoc Code',
