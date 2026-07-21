@@ -163,11 +163,20 @@ export function validateTab(key: TabKey, v: AppCondition, conditionMode: Conditi
       const sp = migrateSeatReductionPolicy(v.seatReductionPolicy)
       if (!sp.enabled) return errs
       if (sp.mode === 'SINGLE') {
-        const spCt = sp.calcType ?? 'PERCENT'
-        if (spCt === 'PERCENT' && sp.maxReducePercent != null && (sp.maxReducePercent < 0 || sp.maxReducePercent > 100))
-          errs.push('ลดได้สูงสุด (%) ต้องอยู่ระหว่าง 0–100')
-        if (spCt === 'SEAT_COUNT' && sp.maxReduceSeat != null && (sp.maxReduceSeat < 0 || !Number.isInteger(sp.maxReduceSeat)))
-          errs.push('จำนวน Seat ต้องเป็นจำนวนเต็มที่ไม่ติดลบ')
+        const spCt = sp.calcType
+        if (spCt == null || spCt === 'UNLIMITED') {
+          errs.push('กรุณาเลือกวิธีระบุจำนวนที่ลดได้ (เปอร์เซ็นต์หรือจำนวน Seat)')
+        } else if (spCt === 'PERCENT') {
+          if (sp.maxReducePercent == null || sp.maxReducePercent < 0 || sp.maxReducePercent > 100)
+            errs.push('ลดได้สูงสุด (%) ต้องอยู่ระหว่าง 0–100')
+          if (!sp.scope)
+            errs.push('กรุณาเลือกขอบเขต (ต่อ PNR หรือต่อ Series)')
+        } else if (spCt === 'SEAT_COUNT') {
+          if (sp.maxReduceSeat == null || sp.maxReduceSeat < 0 || !Number.isInteger(sp.maxReduceSeat))
+            errs.push('จำนวน Seat ต้องเป็นจำนวนเต็มที่ไม่ติดลบ')
+          if (!sp.scope)
+            errs.push('กรุณาเลือกขอบเขต (ต่อ PNR หรือต่อ Series)')
+        }
         if (sp.noticeDays != null && sp.noticeDays < 0)
           errs.push('แจ้งลดไม่น้อยกว่า ต้องมากกว่าหรือเท่ากับ 0')
         if (sp.singleOverLimitAction === 'FORFEIT' && !sp.singleForfeitSource)
@@ -2227,27 +2236,43 @@ function SrRuleCard({
             {formatDayRange(rule.rangeType, rule.fromDays, rule.toDays)}
           </p>
           {(() => {
-            const rCt = rule.calcType ?? 'PERCENT'
-            if (rCt === 'UNLIMITED') {
+            const rCt = rule.calcType ?? null
+            if (rCt === 'NOT_ALLOWED') {
               return (
-                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-400 font-medium shrink-0">
-                  ไม่จำกัด
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 font-medium shrink-0">
+                  ลดไม่ได้
+                </span>
+              )
+            } else if (rCt === 'UNLIMITED') {
+              return (
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium shrink-0">
+                  ต้องตรวจสอบ
                 </span>
               )
             } else if (rCt === 'SEAT_COUNT') {
-              return (
-                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 font-medium shrink-0">
-                  ลด {rule.maxReduceSeat != null ? rule.maxReduceSeat : '?'} Seat
+              return rule.maxReduceSeat != null ? (
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-50 text-purple-700 font-medium shrink-0">
+                  ลด {rule.maxReduceSeat} Seat
+                </span>
+              ) : (
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-400 font-medium shrink-0">
+                  ยังไม่ระบุ
                 </span>
               )
-            } else {
+            } else if (rCt === 'PERCENT') {
               return rule.maxReducePercent != null ? (
                 <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 font-medium shrink-0">
                   ลด {rule.maxReducePercent}%
                 </span>
               ) : (
                 <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-400 font-medium shrink-0">
-                  ไม่จำกัด
+                  ยังไม่ระบุ
+                </span>
+              )
+            } else {
+              return (
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-400 font-medium shrink-0">
+                  ยังไม่ระบุ
                 </span>
               )
             }
@@ -2348,24 +2373,34 @@ function SrRuleCard({
           {/* calcType selector (Row A) */}
           {(() => {
             const rCt: CondSeatCalcType = rule.calcType ?? 'PERCENT'
+            const isLegacyUnlimited = rule.calcType === 'UNLIMITED'
             return (
               <div className="space-y-3">
+                {/* Legacy UNLIMITED warning for step rules */}
+                {isLegacyUnlimited && !readOnly && (
+                  <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl bg-amber-50 border border-amber-200">
+                    <AlertCircle size={13} className="text-amber-600 mt-0.5 shrink-0" />
+                    <p className="text-xs text-amber-800 font-semibold">ข้อมูลเดิมใช้ "ไม่จำกัด" ซึ่งไม่รองรับอีกต่อไป — กรุณาเลือกวิธีระบุใหม่:</p>
+                  </div>
+                )}
                 <div>
                   <Label>วิธีระบุจำนวนที่ลดได้</Label>
                   <div className="flex gap-2 mt-1">
                     {([
-                      { value: 'UNLIMITED' as CondSeatCalcType,  label: 'ไม่จำกัด' },
-                      { value: 'PERCENT'   as CondSeatCalcType,  label: 'เปอร์เซ็นต์ (%)' },
-                      { value: 'SEAT_COUNT' as CondSeatCalcType, label: 'จำนวน Seat' },
+                      { value: 'PERCENT'     as CondSeatCalcType, label: 'เปอร์เซ็นต์ (%)' },
+                      { value: 'SEAT_COUNT'  as CondSeatCalcType, label: 'จำนวน Seat' },
+                      { value: 'NOT_ALLOWED' as CondSeatCalcType, label: 'ลดไม่ได้' },
                     ]).map(opt => (
                       <button key={opt.value} type="button" disabled={readOnly}
                         onClick={() => {
                           const patch: Partial<CondSeatReductionRule> = { calcType: opt.value }
-                          if (opt.value === 'UNLIMITED') {
+                          if (opt.value === 'NOT_ALLOWED') {
                             patch.maxReducePercent = null
                             patch.maxReduceSeat = null
+                            patch.scope = null
                           } else if (opt.value === 'PERCENT') {
                             patch.maxReduceSeat = null
+                            if (!rule.scope) patch.scope = 'PER_PNR'
                           } else {
                             patch.maxReducePercent = null
                             if (!rule.scope) patch.scope = 'PER_PNR'
@@ -2385,8 +2420,15 @@ function SrRuleCard({
                   </div>
                 </div>
 
-                {/* Row B: conditional fields */}
-                {rCt !== 'UNLIMITED' && (
+                {/* NOT_ALLOWED note */}
+                {rCt === 'NOT_ALLOWED' && (
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-50 border border-red-200">
+                    <span className="text-xs text-red-700 font-medium">ช่วงนี้ไม่อนุญาตให้ลดที่นั่ง</span>
+                  </div>
+                )}
+
+                {/* Row B: conditional fields (hidden for NOT_ALLOWED) */}
+                {rCt !== 'NOT_ALLOWED' && (
                   <div className="grid grid-cols-2 gap-3">
                     {rCt === 'PERCENT' && (
                       <div>
@@ -2703,26 +2745,33 @@ export function SeatReductionSection({ value, onChange, readOnly, currency, erro
 
                   {/* ── จำนวนที่นั่งที่ลดได้ ─────────────────────────────────────────── */}
                   {sp.mode === 'SINGLE' && (() => {
-                    const calcType: CondSeatCalcType = sp.calcType ?? 'PERCENT'
+                    const calcType = (sp.calcType === 'PERCENT' || sp.calcType === 'SEAT_COUNT') ? sp.calcType : null
+                    const isLegacyUnlimited = sp.calcType === 'UNLIMITED'
                     return (
                       <div className="space-y-3">
+                        {/* Legacy UNLIMITED warning */}
+                        {isLegacyUnlimited && !readOnly && (
+                          <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl bg-amber-50 border border-amber-200">
+                            <AlertCircle size={13} className="text-amber-600 mt-0.5 shrink-0" />
+                            <div className="min-w-0">
+                              <p className="text-xs text-amber-800 font-semibold">ข้อมูลเดิมใช้ "ไม่จำกัด" ซึ่งไม่รองรับอีกต่อไป — กรุณาเลือกวิธีระบุใหม่:</p>
+                            </div>
+                          </div>
+                        )}
                         {/* Row 1: calcType selector */}
                         <div>
                           <Label>วิธีระบุจำนวนที่ลดได้</Label>
                           <div className="flex gap-2 mt-1">
                             {([
-                              { value: 'UNLIMITED'  as CondSeatCalcType, label: 'ไม่จำกัด' },
                               { value: 'PERCENT'    as CondSeatCalcType, label: 'เปอร์เซ็นต์ (%)' },
                               { value: 'SEAT_COUNT' as CondSeatCalcType, label: 'จำนวน Seat' },
                             ]).map(opt => (
                               <button key={opt.value} type="button" disabled={readOnly}
                                 onClick={() => {
                                   const patch: Partial<CondSeatReductionPolicy> = { calcType: opt.value }
-                                  if (opt.value === 'UNLIMITED') {
-                                    patch.maxReducePercent = null
+                                  if (opt.value === 'PERCENT') {
                                     patch.maxReduceSeat = null
-                                  } else if (opt.value === 'PERCENT') {
-                                    patch.maxReduceSeat = null
+                                    if (!sp.scope) patch.scope = 'PER_PNR'
                                   } else {
                                     patch.maxReducePercent = null
                                     if (!sp.scope) patch.scope = 'PER_PNR'
@@ -2743,7 +2792,7 @@ export function SeatReductionSection({ value, onChange, readOnly, currency, erro
                         </div>
 
                         {/* Row 2: conditional fields */}
-                        {calcType !== 'UNLIMITED' && (
+                        {calcType !== null && (
                           <div className="grid grid-cols-2 gap-3">
                             {calcType === 'PERCENT' && (
                               <div>
@@ -3016,10 +3065,10 @@ export function SeatReductionSection({ value, onChange, readOnly, currency, erro
             const basisLabel = SR_BASIS_OPTIONS.find(o => o.value === sp.basis)?.label ?? sp.basis
             const lines: { text: string; missing: boolean }[] = []
             if (sp.mode === 'SINGLE') {
-              const spCt = sp.calcType ?? 'PERCENT'
+              const spCt = sp.calcType
               const scopeText = sp.scope === 'PER_PNR' ? ' ต่อ PNR' : sp.scope === 'PER_SERIES' ? ' รวมต่อ Series' : ' (ยังไม่ระบุขอบเขต)'
-              if (spCt === 'UNLIMITED') {
-                lines.push({ text: 'อนุญาตลดที่นั่งได้ไม่จำกัด', missing: false })
+              if (spCt == null || spCt === 'UNLIMITED') {
+                lines.push({ text: 'ยังไม่ได้กำหนดวิธีระบุจำนวนที่ลดได้ — กรุณาเลือกเปอร์เซ็นต์หรือจำนวน Seat', missing: true })
               } else if (spCt === 'SEAT_COUNT') {
                 if (sp.maxReduceSeat != null) {
                   lines.push({ text: `อนุญาตลดที่นั่งได้ไม่เกิน ${sp.maxReduceSeat} Seat${scopeText}`, missing: false })
@@ -3089,8 +3138,11 @@ export function SeatReductionSection({ value, onChange, readOnly, currency, erro
                   const rCt = r.calcType ?? 'PERCENT'
                   let reductionText: string
                   let missing = false
-                  if (rCt === 'UNLIMITED') {
-                    reductionText = 'ไม่จำกัด'
+                  if (rCt === 'NOT_ALLOWED') {
+                    reductionText = 'ลดไม่ได้'
+                  } else if (rCt === 'UNLIMITED') {
+                    reductionText = 'ต้องตรวจสอบ (ข้อมูลเดิม)'
+                    missing = true
                   } else if (rCt === 'SEAT_COUNT') {
                     reductionText = r.maxReduceSeat != null ? `${r.maxReduceSeat} Seat` : '? Seat'
                     missing = r.maxReduceSeat == null

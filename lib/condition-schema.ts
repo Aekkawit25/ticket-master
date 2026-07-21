@@ -198,7 +198,9 @@ export type CondSeatReductionAllow  = 'ALLOW' | 'UNSPECIFIED'
 export type CondSeatBasis           = 'INITIAL_SEAT' | 'REMAINING_SEAT'
 export type CondSeatNoticeDaysBase  = 'DEPARTURE_DATE' | 'TICKET_ISSUE' | 'SEAT_CONFIRMED'
 export type CondSeatReductionMode   = 'SINGLE' | 'STEP_RULE'
-export type CondSeatCalcType        = 'UNLIMITED' | 'PERCENT' | 'SEAT_COUNT'
+export type CondSeatCalcType        = 'UNLIMITED' | 'PERCENT' | 'SEAT_COUNT' | 'NOT_ALLOWED'
+// UNLIMITED: legacy backward-compat only — never set by new UI
+// NOT_ALLOWED: step rules only — means no reduction allowed in this time window
 export type CondSeatScope           = 'PER_PNR' | 'PER_SERIES'
 export type CondSeatRangeType       = 'FROM_DAY_UP' | 'BETWEEN' | 'UNTIL_DAY'
 export type CondSingleOverLimit     = 'UNSPECIFIED' | 'NO_FORFEIT' | 'FORFEIT' | 'PENALTY' | 'REQUIRE_APPROVAL'
@@ -972,7 +974,7 @@ export function migrateSeatReductionPolicy(raw: any): CondSeatReductionPolicy {
     // Normalize per-rule fields
     const VALID_RULE: CondRuleOverLimitAction[] = ['UNSPECIFIED', 'NO_FORFEIT', 'FORFEIT', 'PENALTY', 'REQUIRE_APPROVAL']
     const VALID_FORFEIT: CondForfeitSource[] = ['DEPOSIT', 'RSVN_FEE', 'ALL', 'PAID_SO_FAR']
-    const VALID_CALC_TYPE: CondSeatCalcType[] = ['UNLIMITED', 'PERCENT', 'SEAT_COUNT']
+    const VALID_CALC_TYPE: CondSeatCalcType[] = ['UNLIMITED', 'PERCENT', 'SEAT_COUNT', 'NOT_ALLOWED']
     const VALID_SCOPE: CondSeatScope[] = ['PER_PNR', 'PER_SERIES']
     const rules: CondSeatReductionRule[] = (raw.rules as any[]).map(r => {
       const rFrom = r.fromDays ?? null
@@ -1094,8 +1096,9 @@ export function formatSeatReductionSummary(sp: CondSeatReductionPolicy): string 
         `${r.fromDays ?? '?'}-${r.toDays ?? '?'} วัน`
       const rCt = r.calcType ?? 'PERCENT'
       const reductionText =
-        rCt === 'UNLIMITED'  ? ' ลดได้ไม่จำกัด' :
-        rCt === 'SEAT_COUNT' ? (r.maxReduceSeat != null ? ` ลด ${r.maxReduceSeat} Seat` : '') :
+        rCt === 'NOT_ALLOWED' ? ' ลดไม่ได้' :
+        rCt === 'UNLIMITED'   ? ' ต้องตรวจสอบ' :
+        rCt === 'SEAT_COUNT'  ? (r.maxReduceSeat != null ? ` ลด ${r.maxReduceSeat} Seat` : '') :
         (r.maxReducePercent != null ? ` ลด ${r.maxReducePercent}%` : '')
       const over =
         r.ruleOverLimitAction === 'FORFEIT'   ? ' ยึดเงิน' :
@@ -1114,7 +1117,7 @@ export function formatSeatReductionSummary(sp: CondSeatReductionPolicy): string 
   const basisLabel = sp.basis === 'REMAINING_SEAT' ? 'Seat ปัจจุบัน' : 'Seat เริ่มต้น'
   const scopePart = sp.scope === 'PER_PNR' ? ' ต่อ PNR' : sp.scope === 'PER_SERIES' ? ' รวมต่อ Series' : ' (ยังไม่ระบุขอบเขต)'
   if (spCt === 'UNLIMITED') {
-    parts.push('ลดที่นั่งได้ไม่จำกัด')
+    parts.push('ต้องตรวจสอบ (ข้อมูลเดิมระบุ \'ไม่จำกัด\' — กรุณาระบุวิธีใหม่)')
   } else if (spCt === 'SEAT_COUNT') {
     if (sp.maxReduceSeat != null) parts.push(`ลดได้สูงสุด ${sp.maxReduceSeat} Seat${scopePart}`)
   } else {

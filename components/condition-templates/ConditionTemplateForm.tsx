@@ -1968,6 +1968,8 @@ export default function ConditionTemplateForm({ mode, template, initialCode = ''
               overReductionConditionText: prev.overReductionConditionText ?? '',
               seatReductionMode: prev.seatReductionMode ?? 'single',
               seatReductionTiers: prev.seatReductionTiers ?? [],
+              calcType: 'PERCENT' as const,
+              scope: 'PER_PNR' as const,
             },
       )
     } else {
@@ -2559,9 +2561,17 @@ export default function ConditionTemplateForm({ mode, template, initialCode = ''
 
               {/* calcType selector (Row 1) */}
               {(() => {
-                const calcType = seatReduction.calcType
+                const calcType = (seatReduction.calcType === 'PERCENT' || seatReduction.calcType === 'SEAT_COUNT') ? seatReduction.calcType : null
+                const isLegacyUnlimited = seatReduction.calcType === 'UNLIMITED'
                 return (
                   <div className="space-y-3">
+                    {/* Legacy UNLIMITED warning */}
+                    {isLegacyUnlimited && (
+                      <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl bg-amber-50 border border-amber-200">
+                        <AlertCircle size={13} className="text-amber-600 mt-0.5 shrink-0" />
+                        <p className="text-xs text-amber-800 font-semibold">ข้อมูลเดิมใช้ "ไม่จำกัด" ซึ่งไม่รองรับอีกต่อไป — กรุณาเลือกวิธีระบุใหม่:</p>
+                      </div>
+                    )}
                     {/* Row 1: calcType buttons */}
                     <div>
                       <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
@@ -2569,16 +2579,13 @@ export default function ConditionTemplateForm({ mode, template, initialCode = ''
                       </label>
                       <div className="flex gap-2">
                         {([
-                          { val: 'UNLIMITED'  as const, label: 'ไม่จำกัด' },
                           { val: 'PERCENT'    as const, label: 'เปอร์เซ็นต์ (%)' },
                           { val: 'SEAT_COUNT' as const, label: 'จำนวน Seat' },
                         ]).map(opt => (
                           <button key={opt.val} type="button"
                             onClick={() => {
-                              if (opt.val === 'UNLIMITED') {
-                                setSeatReduction(prev => ({ ...prev, calcType: 'UNLIMITED', maxReduceSeat: null }))
-                              } else if (opt.val === 'PERCENT') {
-                                setSeatReduction(prev => ({ ...prev, calcType: 'PERCENT', maxReduceSeat: null }))
+                              if (opt.val === 'PERCENT') {
+                                setSeatReduction(prev => ({ ...prev, calcType: 'PERCENT', maxReduceSeat: null, scope: prev.scope ?? 'PER_PNR' }))
                               } else {
                                 setSeatReduction(prev => ({ ...prev, calcType: 'SEAT_COUNT', scope: prev.scope ?? 'PER_PNR' }))
                               }
@@ -2596,10 +2603,10 @@ export default function ConditionTemplateForm({ mode, template, initialCode = ''
                     </div>
 
                     {/* Row 2: conditional fields */}
-                    {calcType !== 'UNLIMITED' && (
+                    {calcType !== null && (
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {/* Amount field */}
-                        {calcType === 'PERCENT' || calcType == null ? (
+                        {calcType === 'PERCENT' ? (
                           <div>
                             <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
                               ลดได้ไม่เกิน (%)

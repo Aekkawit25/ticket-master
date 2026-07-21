@@ -467,7 +467,7 @@ export interface SeatReductionTier {
   calculationBase: TierCalcBase | null
   calculationBaseCustomText: string | null
   remark: string | null
-  calcType?: 'UNLIMITED' | 'PERCENT' | 'SEAT_COUNT' | null
+  calcType?: 'PERCENT' | 'SEAT_COUNT' | 'UNLIMITED' | 'NOT_ALLOWED' | null
   scope?: 'PER_PNR' | 'PER_SERIES' | null
   maxReduceSeat?: number | null
 }
@@ -511,7 +511,7 @@ export interface SeatReductionCondition {
   seatReductionMode?: SeatReductionMode      // default 'single' (undefined = single for back-compat)
   seatReductionTiers?: SeatReductionTier[]   // used when seatReductionMode === 'tier'
   // New fields: how reduction limit is specified
-  calcType?: 'UNLIMITED' | 'PERCENT' | 'SEAT_COUNT' | null
+  calcType?: 'PERCENT' | 'SEAT_COUNT' | 'UNLIMITED' | 'NOT_ALLOWED' | null
   scope?: 'PER_PNR' | 'PER_SERIES' | null
   maxReduceSeat?: number | null
 }
@@ -611,7 +611,7 @@ export function formatSeatReductionSummary(s: SeatReductionCondition | null | un
   const scopePart = scope === 'PER_PNR' ? ' ต่อ PNR' : scope === 'PER_SERIES' ? ' รวมต่อ Series' : ''
   let text: string
   if (calcType === 'UNLIMITED') {
-    text = 'ลดที่นั่งได้ไม่จำกัด'
+    text = 'ต้องตรวจสอบ (ข้อมูลเดิม ไม่จำกัด)'
   } else if (calcType === 'SEAT_COUNT') {
     text = `ลดได้สูงสุด ${s.maxReduceSeat != null ? s.maxReduceSeat : 0} Seat${scopePart}`
   } else {
