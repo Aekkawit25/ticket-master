@@ -8,13 +8,30 @@ import { Modal } from '@/components/ui/modal'
 import { StatCard } from '@/components/ui/card'
 import { SinglePnrModal } from '@/components/shared/SinglePnrModal'
 import {
-  getDemoStocks, saveDemoStock, calculateStockSummary, getStockFlightSets,
+  getDemoStocks, saveDemoStock, calculateStockSummary, getStockFlightSets, getNextTTL,
   type DemoStock, type DemoPNR, type DemoLog,
 } from '@/lib/demo-storage'
 import { buildDemoPnrFromForm } from '@/lib/pnr-shared-utils'
 import type { PnrFormValues, PnrModalCondition } from '@/lib/pnr-shared-utils'
-import { formatDate } from '@/lib/utils'
+import { formatDate, formatDateTime } from '@/lib/utils'
 import { PlusCircle, Users, List, ChevronRight, ExternalLink, Search, X, Eye } from 'lucide-react'
+
+// ─── SeatBar (mirrors TicketTable pattern) ────────────────────────────────────
+
+function SeatBar({ total, balance }: { total: number; balance: number }) {
+  const used  = total - balance
+  const pct   = total > 0 ? Math.round((used / total) * 100) : 0
+  const color = balance <= 0 ? '#ef4444' : balance / total < 0.2 ? '#f59e0b' : '#05a94f'
+  return (
+    <div className="flex items-center gap-1.5">
+      <div className="progress-bar w-12 shrink-0">
+        <div className="progress-fill" style={{ width: `${pct}%`, background: color }} />
+      </div>
+      <span style={{ color }} className="text-xs font-bold whitespace-nowrap">{balance}</span>
+      <span className="text-xs text-slate-400 whitespace-nowrap">/ {total}</span>
+    </div>
+  )
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -32,8 +49,8 @@ interface AdhocStockRow {
   seatBalance: number
   seatTotal: number
   currency: string
-  // for search
-  pnrCodes: string[]
+  nearestTtl: string | null  // earliest ttlDateTime across all PNRs
+  pnrCodes: string[]         // for search
 }
 
 interface AdhocPnrRow {
@@ -43,6 +60,7 @@ interface AdhocPnrRow {
   travelEnd: string
   seatTotal: number
   seatBalance: number
+  ttlDateTime: string | null
   currency: string
   seriesStockId: string
   seriesCode: string
@@ -141,6 +159,7 @@ export default function GroupAdHocPage() {
           seatBalance: s.summary.seatBalance,
           seatTotal: s.summary.seatTotal,
           currency: s.currency,
+          nearestTtl: getNextTTL(s.pnrs),
           pnrCodes,
         }
       })
@@ -167,6 +186,7 @@ export default function GroupAdHocPage() {
           travelEnd: pnr.travelEnd,
           seatTotal: pnr.seatTotal,
           seatBalance: pnr.seatBalance,
+          ttlDateTime: pnr.ttlDateTime ?? null,
           currency: series.currency,
           seriesStockId: series.stockId,
           seriesCode: series.stockCode,
@@ -339,20 +359,21 @@ export default function GroupAdHocPage() {
           <table className="w-full border-collapse text-[11px]">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200 h-9">
-                <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[130px]">Ad Hoc Code</th>
-                <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[150px]">Ad Hoc Name</th>
-                <th className="px-3 py-2 text-center text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap w-[60px]">Airline</th>
-                <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[100px]">Route</th>
-                <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[110px]">Period</th>
-                <th className="px-3 py-2 text-center text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap w-[64px]">จำนวน PNR</th>
-                <th className="px-3 py-2 text-right text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[90px]">Seat คงเหลือ/ทั้งหมด</th>
-                <th className="px-3 py-2 text-center text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap w-[72px]">Actions</th>
+                <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[120px]">Ad Hoc Code</th>
+                <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[140px]">Ad Hoc Name</th>
+                <th className="px-2 py-2 text-center text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap w-[52px]">Airline</th>
+                <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[90px]">Route</th>
+                <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[100px]">Period</th>
+                <th className="px-2 py-2 text-center text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap w-[50px]">PNR</th>
+                <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[150px]">Seat (Bal/Total)</th>
+                <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[110px]">NAME DL</th>
+                <th className="px-2 py-2 text-center text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap w-[52px]">Actions</th>
               </tr>
             </thead>
             <tbody>
               {standaloneRows.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-12 text-center text-sm text-slate-400">
+                  <td colSpan={9} className="px-4 py-12 text-center text-sm text-slate-400">
                     {search ? 'ไม่พบ Ad Hoc ที่ตรงกับการค้นหา' : 'ยังไม่มีข้อมูล Ad Hoc'}
                   </td>
                 </tr>
@@ -363,27 +384,32 @@ export default function GroupAdHocPage() {
                       ? formatDate(row.periodStart)
                       : `${formatDate(row.periodStart)} – ${formatDate(row.periodEnd)}`)
                   : '—'
+                const ttlText = row.nearestTtl ? formatDateTime(row.nearestTtl) : null
                 return (
                   <tr key={row.stockId} className={`bg-white hover:bg-slate-50/60 transition-colors ${border}`}>
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-2.5">
                       <span className="font-mono text-xs font-bold text-slate-800">{row.stockCode}</span>
                     </td>
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-2.5">
                       <span className="text-xs text-slate-700 font-medium">{row.stockName || '—'}</span>
                     </td>
-                    <td className="px-3 py-2 text-center">
-                      <span className="inline-flex items-center justify-center w-10 h-5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-100">
+                    <td className="px-2 py-2.5 text-center">
+                      <span className="inline-flex items-center justify-center w-9 h-5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-100">
                         {row.airlineCode}
                       </span>
                     </td>
-                    <td className="px-3 py-2 text-xs text-slate-600">{row.routeText || '—'}</td>
-                    <td className="px-3 py-2 text-xs text-slate-600">{period}</td>
-                    <td className="px-3 py-2 text-center text-xs font-semibold text-slate-700">{row.pnrCount}</td>
-                    <td className="px-3 py-2 text-right">
-                      <span className="text-xs font-bold text-[#05a94f]">{row.seatBalance}</span>
-                      <span className="text-xs text-slate-400"> / {row.seatTotal}</span>
+                    <td className="px-3 py-2.5 text-xs text-slate-600">{row.routeText || '—'}</td>
+                    <td className="px-3 py-2.5 text-xs text-slate-600 whitespace-nowrap">{period}</td>
+                    <td className="px-2 py-2.5 text-center text-xs font-semibold text-slate-700">{row.pnrCount}</td>
+                    <td className="px-3 py-2.5">
+                      <SeatBar total={row.seatTotal} balance={row.seatBalance} />
                     </td>
-                    <td className="px-3 py-2 text-center">
+                    <td className="px-3 py-2.5 text-xs whitespace-nowrap">
+                      {ttlText
+                        ? <span className="text-slate-700">{ttlText}</span>
+                        : <span className="text-slate-300">—</span>}
+                    </td>
+                    <td className="px-2 py-2.5 text-center">
                       <button
                         title="ดูรายละเอียด"
                         onClick={() => router.push(`/tickets/${row.stockId}`)}
@@ -406,20 +432,21 @@ export default function GroupAdHocPage() {
           <table className="w-full border-collapse text-[11px]">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200 h-9">
-                <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[130px]">PNR</th>
-                <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[130px]">Ad Hoc Name</th>
-                <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[140px]">Series ที่เชื่อมโยง</th>
-                <th className="px-3 py-2 text-center text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap w-[60px]">Airline</th>
-                <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[100px]">Route</th>
-                <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[110px]">Period</th>
-                <th className="px-3 py-2 text-right text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[90px]">Seat คงเหลือ/ทั้งหมด</th>
-                <th className="px-3 py-2 text-center text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap w-[72px]">Actions</th>
+                <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[120px]">PNR</th>
+                <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[120px]">Ad Hoc Name</th>
+                <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[130px]">Series ที่เชื่อมโยง</th>
+                <th className="px-2 py-2 text-center text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap w-[52px]">Airline</th>
+                <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[90px]">Route</th>
+                <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[100px]">Period</th>
+                <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[150px]">Seat (Bal/Total)</th>
+                <th className="px-3 py-2 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap min-w-[110px]">NAME DL</th>
+                <th className="px-2 py-2 text-center text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap w-[52px]">Actions</th>
               </tr>
             </thead>
             <tbody>
               {inSeriesRows.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-12 text-center text-sm text-slate-400">
+                  <td colSpan={9} className="px-4 py-12 text-center text-sm text-slate-400">
                     {search ? 'ไม่พบ PNR Ad Hoc ที่ตรงกับการค้นหา' : 'ยังไม่มี PNR Ad Hoc ที่เพิ่มเข้าไปใน Series'}
                   </td>
                 </tr>
@@ -428,15 +455,16 @@ export default function GroupAdHocPage() {
                 const period = row.travelEnd && row.travelEnd !== row.travelStart
                   ? `${formatDate(row.travelStart)} – ${formatDate(row.travelEnd)}`
                   : formatDate(row.travelStart)
+                const ttlText = row.ttlDateTime ? formatDateTime(row.ttlDateTime) : null
                 return (
                   <tr key={row.pnrId} className={`bg-white hover:bg-slate-50/60 transition-colors ${border}`}>
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-2.5">
                       <span className="font-mono text-xs font-bold text-slate-800">{row.pnrDisplay}</span>
                     </td>
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-2.5">
                       <span className="text-xs text-slate-500">PNR Ad Hoc ใน Series</span>
                     </td>
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-2.5">
                       <button
                         onClick={() => router.push(`/tickets/${row.seriesStockId}?tab=pnr`)}
                         className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 hover:underline"
@@ -444,20 +472,24 @@ export default function GroupAdHocPage() {
                         <span className="font-mono font-bold">{row.seriesCode}</span>
                         <ExternalLink size={10} />
                       </button>
-                      <div className="text-[10px] text-slate-400 truncate max-w-[130px]">{row.seriesName}</div>
+                      <div className="text-[10px] text-slate-400 truncate max-w-[120px]">{row.seriesName}</div>
                     </td>
-                    <td className="px-3 py-2 text-center">
-                      <span className="inline-flex items-center justify-center w-10 h-5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-100">
+                    <td className="px-2 py-2.5 text-center">
+                      <span className="inline-flex items-center justify-center w-9 h-5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-100">
                         {row.airlineCode}
                       </span>
                     </td>
-                    <td className="px-3 py-2 text-xs text-slate-600">{row.routeText || '—'}</td>
-                    <td className="px-3 py-2 text-xs text-slate-600">{period || '—'}</td>
-                    <td className="px-3 py-2 text-right">
-                      <span className="text-xs font-bold text-[#05a94f]">{row.seatBalance}</span>
-                      <span className="text-xs text-slate-400"> / {row.seatTotal}</span>
+                    <td className="px-3 py-2.5 text-xs text-slate-600">{row.routeText || '—'}</td>
+                    <td className="px-3 py-2.5 text-xs text-slate-600 whitespace-nowrap">{period || '—'}</td>
+                    <td className="px-3 py-2.5">
+                      <SeatBar total={row.seatTotal} balance={row.seatBalance} />
                     </td>
-                    <td className="px-3 py-2 text-center">
+                    <td className="px-3 py-2.5 text-xs whitespace-nowrap">
+                      {ttlText
+                        ? <span className="text-slate-700">{ttlText}</span>
+                        : <span className="text-slate-300">—</span>}
+                    </td>
+                    <td className="px-2 py-2.5 text-center">
                       <button
                         title="เปิด Series ที่เชื่อมโยง"
                         onClick={() => router.push(`/tickets/${row.seriesStockId}?tab=pnr`)}
