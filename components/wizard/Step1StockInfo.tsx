@@ -154,7 +154,7 @@ export default function Step1StockInfo({
   const pendingLabel = pendingType
     ? (pendingType.ticketType === 'Group' && pendingType.groupType === 'SERIES' ? 'Series'
       : pendingType.ticketType === 'Group' && pendingType.groupType === 'ADHOC' ? 'Ad Hoc'
-      : pendingType.ticketType === 'Ticket + Land' ? 'Ticket Only'
+      : pendingType.ticketType === 'Ticket + Land' ? 'Ticket (Land)'
       : pendingType.ticketType)
     : ''
 

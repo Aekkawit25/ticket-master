@@ -45,7 +45,7 @@ const navItems: NavItem[] = [
       { label: 'Series',             href: '/tickets/group/series',        icon: <List size={16} /> },
       { label: 'Group Ad Hoc',        href: '/tickets/group/adhoc',         icon: <Users size={16} /> },
       { label: 'FIT',                href: '/tickets/fit',                 icon: <Ticket size={16} /> },
-      { label: 'Ticket Only',        href: '/tickets/land',                icon: <Globe size={16} /> },
+      { label: 'Ticket (Land)',       href: '/tickets/land',                icon: <Globe size={16} /> },
       { label: 'Template Condition', href: '/tickets/condition-templates', icon: <FileSpreadsheet size={16} /> },
     ],
   },

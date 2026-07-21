@@ -97,7 +97,7 @@ export default function TicketFilter({ onFilter, showTypeFilter = true, searchPl
               options={[
                 { value: 'Group', label: 'Group (Series / Ad Hoc)' },
                 { value: 'FIT', label: 'FIT' },
-                { value: 'Ticket + Land', label: 'Ticket Only' },
+                { value: 'Ticket + Land', label: 'Ticket (Land)' },
               ]}
               placeholder="ทุกประเภท"
             />

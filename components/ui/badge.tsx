@@ -55,6 +55,6 @@ export function TicketTypeBadge({ type, groupType }: { type: string; groupType?:
     return <Badge variant="green">Series</Badge>
   }
   if (type === 'FIT') return <Badge variant="blue">FIT</Badge>
-  if (type === 'Ticket + Land') return <Badge variant="purple">Ticket Only</Badge>
+  if (type === 'Ticket + Land') return <Badge variant="purple">Ticket (Land)</Badge>
   return <Badge variant="gray">{type}</Badge>
 }

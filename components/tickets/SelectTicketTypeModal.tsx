@@ -56,7 +56,7 @@ const TYPE_OPTIONS: TypeOption[] = [
   },
   {
     key: 'ticket-only',
-    label: 'Ticket Only',
+    label: 'Ticket (Land)',
     description: 'ตั๋วเครื่องบินอย่างเดียว',
     detail: 'ตั๋วเครื่องบินโดยไม่รวมบริการภาคพื้นดิน',
     minSectors: 'ขั้นต่ำ 2 Sectors',

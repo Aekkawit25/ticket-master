@@ -62,7 +62,7 @@ function getConfig(t: TicketType | null, g?: GroupType | null): PageConfig {
     addLabel: 'Add Group Stock',
     addPath: null,
     clearLabel: 'ล้างข้อมูล Group',
-    clearNote: 'ข้อมูลประเภทอื่น (FIT / Ticket Only) จะไม่ถูกลบ',
+    clearNote: 'ข้อมูลประเภทอื่น (FIT / Ticket (Land)) จะไม่ถูกลบ',
     searchPlaceholder: 'ค้นหา Stock Code, Name, PNR...',
   }
   // All Tickets
@@ -324,7 +324,7 @@ export default function TicketStockPage({ fixedTicketType, fixedGroupType }: Tic
           <StatCard title="Series"      value={counts.series} icon={<List   size={18} />} color="#05a94f" />
           <StatCard title="Group Ad Hoc" value={counts.adhoc}  icon={<Users  size={18} />} color="#f59e0b" />
           <StatCard title="FIT"         value={counts.fit}    icon={<Ticket size={18} />} color="#3b82f6" />
-          <StatCard title="Ticket Only" value={counts.land}   icon={<Globe  size={18} />} color="#8b5cf6" />
+          <StatCard title="Ticket (Land)" value={counts.land}   icon={<Globe  size={18} />} color="#8b5cf6" />
         </div>
       )}
       {isAllGroup && (
