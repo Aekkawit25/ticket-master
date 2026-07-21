@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo, Fragment } from 'react'
+import { createPortal } from 'react-dom'
 import { Button } from '@/components/ui/button'
 import { Badge, PnrConfirmationStatusBadge } from '@/components/ui/badge'
 import { Modal } from '@/components/ui/modal'
@@ -126,7 +127,7 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
 
   const [selectedPnrIds, setSelectedPnrIds] = useState<Set<string>>(new Set())
   const [openCondPnrId, setOpenCondPnrId]        = useState<string | null>(null)
-  const [dropdownAnchor, setDropdownAnchor]      = useState<{ top: number; left: number; minWidth: number } | null>(null)
+  const [dropdownAnchor, setDropdownAnchor]      = useState<{ top: number | null; bottom: number | null; left: number; width: number } | null>(null)
   const [condChangeConfirm, setCondChangeConfirm] = useState<{
     pnrIds: string[]
     pnrDisplays: string[]
@@ -188,11 +189,14 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
         setOpenCondPnrId(null)
       }
     }
+    const handleScroll = () => setOpenCondPnrId(null)
     document.addEventListener('keydown', handleKey)
     document.addEventListener('mousedown', handleClick)
+    document.addEventListener('scroll', handleScroll, true)
     return () => {
       document.removeEventListener('keydown', handleKey)
       document.removeEventListener('mousedown', handleClick)
+      document.removeEventListener('scroll', handleScroll, true)
     }
   }, [openCondPnrId])
 
@@ -808,10 +812,13 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                                           if (openCondPnrId === p.id) { setOpenCondPnrId(null); return }
                                           const rect = e.currentTarget.getBoundingClientRect()
                                           const dropW = Math.min(Math.max(rect.width, 180), 260)
-                                          const approxH = 240
-                                          const spaceBelow = window.innerHeight - rect.bottom
-                                          const top = spaceBelow > approxH + 4 ? rect.bottom + 2 : rect.top - approxH - 2
-                                          setDropdownAnchor({ top, left: rect.left, minWidth: dropW })
+                                          const openUpward = window.innerHeight - rect.bottom < 248
+                                          setDropdownAnchor({
+                                            top: openUpward ? null : rect.bottom + 4,
+                                            bottom: openUpward ? window.innerHeight - rect.top + 4 : null,
+                                            left: rect.left,
+                                            width: dropW,
+                                          })
                                           setOpenCondPnrId(p.id)
                                         }}
                                       >
@@ -949,14 +956,15 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
             applyConditionChangeDirect([activeDemoPnr.pnrId], [pnrLabel], t.templateId, t.condition.conditionName, 'DIRECT')
           }
         }
-        return (
+        return createPortal(
           <div
             data-cond-dd=""
             style={{
               position: 'fixed',
-              top: dropdownAnchor.top,
+              top: dropdownAnchor.top ?? undefined,
+              bottom: dropdownAnchor.bottom ?? undefined,
               left: dropdownAnchor.left,
-              width: dropdownAnchor.minWidth,
+              width: dropdownAnchor.width,
               zIndex: 9999,
             }}
             className="bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden"
@@ -1006,7 +1014,8 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                 </>
               )}
             </div>
-          </div>
+          </div>,
+          document.body
         )
       })()}
 
