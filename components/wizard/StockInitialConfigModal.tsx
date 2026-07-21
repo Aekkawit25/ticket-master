@@ -246,8 +246,7 @@ export default function StockInitialConfigModal({
       open={open}
       onClose={onClose}
       title="ตั้งค่าเริ่มต้น Stock"
-      noScroll
-      style={{ width: 'min(1200px, calc(100vw - 48px))', maxWidth: 'none' }}
+      style={{ width: 'min(1500px, calc(100vw - 48px))', maxWidth: 'none' }}
       footer={
         <>
           <Button variant="outline" onClick={onClose}>ยกเลิก</Button>
@@ -257,7 +256,7 @@ export default function StockInitialConfigModal({
         </>
       }
     >
-      <div className="space-y-4">
+      <div className="space-y-5">
 
         {/* ── Locked type badge (specific menu) ── */}
         {lockedCfg && !showTypeSelector && (() => {
@@ -284,7 +283,7 @@ export default function StockInitialConfigModal({
             <label className="block text-sm font-medium text-slate-700 mb-1.5">
               ประเภท Stock <span className="text-red-500">*</span>
             </label>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               {TYPE_CARDS.map(card => {
                 const selected = form.stockType === card.key
                 return (
@@ -324,10 +323,7 @@ export default function StockInitialConfigModal({
         )}
 
         {/* ── 5-column row: Airline | Currency | Seats | Travel Days | Sector Count ── */}
-        <div
-          className="grid gap-3"
-          style={{ gridTemplateColumns: 'minmax(200px, 1.5fr) minmax(115px, 1fr) minmax(115px, 1fr) minmax(148px, 1fr) minmax(138px, 1fr)' }}
-        >
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr_1.2fr_1.1fr] gap-4">
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1.5 whitespace-nowrap">
               สายการบินหลัก <span className="text-red-500">*</span>
@@ -401,7 +397,7 @@ export default function StockInitialConfigModal({
 
         {/* ── Supplier row — Ticket (Land) only ── */}
         {isTicketOnly && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1.5 whitespace-nowrap">
                 Supplier <span className="text-red-500">*</span>
@@ -432,7 +428,7 @@ export default function StockInitialConfigModal({
           <label className="block text-sm font-medium text-slate-700 mb-1.5">
             รูปแบบราคาที่ได้รับ <span className="text-red-500">*</span>
           </label>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {PRICE_TYPES.map(opt => (
               <button
                 key={opt.value}
