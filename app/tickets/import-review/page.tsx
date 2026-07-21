@@ -168,7 +168,7 @@ function ImportReviewInner() {
   type PNRDummyInput = { pnr_code: string; dummy_pnr: string; travel_start: string }
   const pnrsWithDummy: (ImportPNR & { dummy_pnr: string })[] = generateDummyPnrs<PNRDummyInput>(
     pnrs.map(p => ({ pnr_code: p.pnrCode, dummy_pnr: '', travel_start: p.travelStart })),
-    { ticket_type: stockInfo.ticketType, airline_code: stockInfo.airlineCode }
+    { ticket_type: stockInfo.ticketType, airline_code: stockInfo.airlineCode, group_type: stockInfo.groupType }
   ).map((d, i) => ({ ...pnrs[i], dummy_pnr: d.dummy_pnr }))
 
   // Compute totals per PNR

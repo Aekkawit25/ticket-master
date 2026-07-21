@@ -618,18 +618,41 @@ export function getDemoStocks(): DemoStock[] {
         sectors: migratedSectors,
         flightSets,
         conditions: migratedConditions,
-        pnrs: (s.pnrs ?? []).map(p => ({
-          ...p,
-          flightSetId: p.flightSetId ?? flightSets[0]?.flightSetId ?? 'fset-default',
-          sectorDates: (p.sectorDates ?? []).map(sd => ({
-            ...sd,
-            sectorType: migrateSectorType(sd.sectorType),
-          })),
-          initialSeatCount: p.initialSeatCount ?? p.seatTotal,
-          stageSnapshots: p.stageSnapshots ?? {},
-          // Migrate: default sourceType based on parent stock's groupType
-          sourceType: p.sourceType ?? (s.groupType === 'ADHOC' ? 'AD_HOC' as const : 'SERIES' as const),
-        })),
+        pnrs: (s.pnrs ?? []).map(p => {
+          const migratedSourceType = p.sourceType ?? (s.groupType === 'ADHOC' ? 'AD_HOC' as const : 'SERIES' as const)
+
+          // Determine the correct dummy PNR prefix for this PNR
+          const expectedPrefix =
+            migratedSourceType === 'AD_HOC' ? 'AH'
+            : s.ticketType === 'FIT' ? 'FIT'
+            : s.ticketType !== 'Group' ? 'TNL'
+            : 'GRP'
+
+          // Fix wrong prefix in existing demo dummies (e.g. DMY-GRPTG2607-0001 → DMY-AHTG2607-0001)
+          let dummyPnr = p.dummyPnr ?? ''
+          let pnrDisplay = p.pnrDisplay ?? ''
+          if (dummyPnr && !p.pnrCode) {
+            const m = dummyPnr.match(/^DMY-(GRP|AH|FIT|TNL)(.+)$/)
+            if (m && m[1] !== expectedPrefix) {
+              dummyPnr = `DMY-${expectedPrefix}${m[2]}`
+              if (pnrDisplay === p.dummyPnr) pnrDisplay = dummyPnr
+            }
+          }
+
+          return {
+            ...p,
+            flightSetId: p.flightSetId ?? flightSets[0]?.flightSetId ?? 'fset-default',
+            sectorDates: (p.sectorDates ?? []).map(sd => ({
+              ...sd,
+              sectorType: migrateSectorType(sd.sectorType),
+            })),
+            initialSeatCount: p.initialSeatCount ?? p.seatTotal,
+            stageSnapshots: p.stageSnapshots ?? {},
+            sourceType: migratedSourceType,
+            dummyPnr,
+            pnrDisplay,
+          }
+        }),
       }
     })
   } catch {

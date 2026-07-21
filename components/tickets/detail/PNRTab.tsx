@@ -245,11 +245,12 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
     if (!liveStock) throw new Error('ไม่พบ Stock')
     const flightSet = liveFlightSets.find(fs => fs.flightSetId === vals.flightSetId) ?? liveFlightSets[0]
     if (!flightSet) throw new Error('ไม่พบ Flight Set')
-    const newPnr = buildDemoPnrFromForm(vals, liveStock, flightSet, editingPnr ?? undefined)
-    // Preserve sourceType from existing PNR when editing; apply forced type when adding Ad Hoc
-    const pnrWithSource: DemoPNR = editingPnr
-      ? { ...newPnr, sourceType: editingPnr.sourceType ?? 'SERIES' }
-      : { ...newPnr, sourceType: forceSourceType ?? (liveStock.groupType === 'ADHOC' ? 'AD_HOC' : 'SERIES') }
+    // Resolve sourceType BEFORE building so dummyPnr gets the correct prefix
+    const effectiveSourceType: 'SERIES' | 'AD_HOC' = editingPnr
+      ? (editingPnr.sourceType ?? 'SERIES')
+      : (forceSourceType ?? (liveStock.groupType === 'ADHOC' ? 'AD_HOC' : 'SERIES'))
+    const newPnr = buildDemoPnrFromForm(vals, liveStock, flightSet, editingPnr ?? undefined, effectiveSourceType)
+    const pnrWithSource: DemoPNR = { ...newPnr, sourceType: effectiveSourceType }
     executeSavePNR(pnrWithSource, editingPnr ?? undefined)
   }
 
@@ -292,7 +293,7 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
   const handleDuplicate = (pnr: DemoPNR) => {
     if (!liveStock) return
     const now = new Date().toISOString()
-    const dup: DemoPNR = { ...pnr, pnrId: newId('PNR'), pnrCode: '', dummyPnr: generateDummyPnrCode(pnr.travelStart, liveStock), pnrType: 'dummy', pnrDisplay: '', seatUsed: 0, seatBalance: pnr.seatTotal, ttlDate: null, ttlTime: null, ttlDateTime: null }
+    const dup: DemoPNR = { ...pnr, pnrId: newId('PNR'), pnrCode: '', dummyPnr: generateDummyPnrCode(pnr.travelStart, liveStock, undefined, pnr.sourceType), pnrType: 'dummy', pnrDisplay: '', seatUsed: 0, seatBalance: pnr.seatTotal, ttlDate: null, ttlTime: null, ttlDateTime: null }
     dup.pnrDisplay = dup.dummyPnr
     const log: DemoLog = { logId: newId('LOG'), action: 'Duplicate PNR', message: `Duplicate: ${pnr.pnrDisplay} → ${dup.pnrDisplay}`, createdAt: now, createdBy: 'System' }
     const newPnrs = [...liveStock.pnrs, dup]

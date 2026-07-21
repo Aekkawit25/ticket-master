@@ -167,7 +167,9 @@ export function calcTravelEndFromFlightSet(
 
 // ── Dummy PNR code generation ─────────────────────────────────────────────────
 
-function pnrTypePrefix(ticketType: string): string {
+function pnrTypePrefix(ticketType: string, groupType?: string, sourceType?: string): string {
+  if (sourceType === 'AD_HOC') return 'AH'
+  if (ticketType === 'Group' && groupType === 'ADHOC') return 'AH'
   if (ticketType === 'Group') return 'GRP'
   if (ticketType === 'FIT') return 'FIT'
   return 'TNL'
@@ -176,14 +178,16 @@ function pnrTypePrefix(ticketType: string): string {
 /**
  * Generate a globally-unique dummy PNR code.
  * Format: DMY-{TYPE}{AIRLINE}{YYMM}-{NNNN}
+ * Prefix: GRP=Series, AH=Ad Hoc (standalone or in-Series), FIT=FIT, TNL=Ticket+Land
  * Scans stock.pnrs + optional alreadyUsed set to find the next available sequence.
  */
 export function generateDummyPnrCode(
   travelStart: string,
-  stock: Pick<DemoStock, 'ticketType' | 'airlineCode' | 'pnrs'>,
-  alreadyUsed?: Set<string>
+  stock: Pick<DemoStock, 'ticketType' | 'airlineCode' | 'pnrs' | 'groupType'>,
+  alreadyUsed?: Set<string>,
+  sourceType?: 'SERIES' | 'AD_HOC'
 ): string {
-  const typeCode = pnrTypePrefix(stock.ticketType)
+  const typeCode = pnrTypePrefix(stock.ticketType, stock.groupType, sourceType)
   const airline  = (stock.airlineCode || 'XX').toUpperCase()
   const yymm     = travelStart.length >= 7
     ? travelStart.slice(2, 4) + travelStart.slice(5, 7)
@@ -272,13 +276,14 @@ export function buildDemoPnrFromForm(
   v: PnrFormValues,
   stock: DemoStock,
   flightSet: PnrModalFlightSet | DemoFlightSet,
-  existingPnr?: DemoPNR
+  existingPnr?: DemoPNR,
+  sourceType?: 'SERIES' | 'AD_HOC'
 ): DemoPNR {
   const newId = (p: string) => `${p}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
 
   // Code / dummy
   const isReal     = !!v.pnrCode.trim()
-  const dummyPnr   = isReal ? '' : (existingPnr?.dummyPnr || generateDummyPnrCode(v.travelStart, stock))
+  const dummyPnr   = isReal ? '' : (existingPnr?.dummyPnr || generateDummyPnrCode(v.travelStart, stock, undefined, sourceType))
   const pnrCode    = isReal ? v.pnrCode.trim() : ''
   const pnrDisplay = isReal ? pnrCode : dummyPnr
 

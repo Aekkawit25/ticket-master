@@ -7,7 +7,8 @@ import type { FlightSector, FlightPNR, FlightCondition, FlightConditionStage, Pa
 // Dummy PNR Generation  (สร้างเฉพาะตอนเข้า Step 5)
 // ============================================================
 
-function getTicketTypeCode(ticketType: string): string {
+function getTicketTypeCode(ticketType: string, groupType?: string): string {
+  if (ticketType === 'Group' && groupType === 'ADHOC') return 'AH'
   if (ticketType === 'Group') return 'GRP'
   if (ticketType === 'FIT') return 'FIT'
   if (ticketType === 'Ticket + Land') return 'TNL'
@@ -38,11 +39,11 @@ type PNRDummyInput = { pnr_code: string; dummy_pnr: string; travel_start: string
  */
 export function generateDummyPnrs<T extends PNRDummyInput>(
   pnrs: T[],
-  stockInfo: { ticket_type: string; airline_code: string },
+  stockInfo: { ticket_type: string; airline_code: string; group_type?: string },
   systemDummies?: Set<string>,
 ): T[] {
   const runningMap: Record<string, number> = {}
-  const typeCode = getTicketTypeCode(stockInfo.ticket_type)
+  const typeCode = getTicketTypeCode(stockInfo.ticket_type, stockInfo.group_type)
   const stockAirline = (stockInfo.airline_code || 'XX').toUpperCase()
 
   // Pass 1a: register max running numbers from dummies already on THIS stock's PNRs
