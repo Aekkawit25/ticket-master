@@ -356,6 +356,9 @@ function AddStockPageInner() {
           stock_code:   needsNewCode ? generateStockCode(prefix, existingCodes) : prev.stockInfo.stock_code,
           airline_code: config.airlineCode,
           currency:     config.currencyCode,
+          supplierId:   config.supplierId   ?? null,
+          supplierCode: config.supplierCode ?? '',
+          supplierName: config.supplierName ?? '',
         },
         schedules: [getDefaultSchedule(newTicket, config.airlineCode, config.travelDurationDays, config.sectorCount)],
       }
@@ -389,7 +392,14 @@ function AddStockPageInner() {
           ...(needsTypeChange ? {
             trip_type:  newTrip,
             stock_code: generateStockCode(prefix, existingCodes),
-          } : {}),
+            supplierId:   newTicket === 'Ticket + Land' ? (config.supplierId ?? null)   : null,
+            supplierCode: newTicket === 'Ticket + Land' ? (config.supplierCode ?? '')   : '',
+            supplierName: newTicket === 'Ticket + Land' ? (config.supplierName ?? '')   : '',
+          } : {
+            supplierId:   config.supplierId   ?? s.stockInfo.supplierId,
+            supplierCode: config.supplierCode ?? s.stockInfo.supplierCode,
+            supplierName: config.supplierName ?? s.stockInfo.supplierName,
+          }),
           ...(needsCurrencyConfirm ? {} : { currency: config.currencyCode }),
         },
         schedules: needsTypeChange

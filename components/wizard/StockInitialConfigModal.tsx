@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { Plane, CreditCard, Users, Calendar, Tag, Lock, Check, ListChecks, Globe, Layers } from 'lucide-react'
+import { useState, useEffect, useMemo } from 'react'
+import { Plane, CreditCard, Users, Calendar, Tag, Lock, Check, ListChecks, Globe, Layers, Building2 } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
@@ -10,6 +10,7 @@ import { CurrencyCombobox } from '@/components/shared/CurrencyCombobox'
 import { MASTER_AIRLINES } from '@/lib/master-data'
 import { getDefaultCurrencyCode } from '@/lib/currency-storage'
 import { STOCK_TYPE_CONFIG, type StockType } from '@/lib/stock-type-config'
+import { getDemoSuppliers, type DemoSupplier } from '@/lib/demo-storage'
 import { cn } from '@/lib/utils'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -22,6 +23,9 @@ export interface StockInitialConfig {
   travelDurationDays: number
   sectorCount: number
   priceType: 'FARE' | 'FARE_YQ' | 'ALL_IN'
+  supplierId?: string
+  supplierCode?: string
+  supplierName?: string
 }
 
 /** Form state allows '' for stockType before user selects one */
@@ -33,6 +37,9 @@ interface ModalForm {
   travelDurationDays: number
   sectorCount: number
   priceType: 'FARE' | 'FARE_YQ' | 'ALL_IN'
+  supplierId: string
+  supplierCode: string
+  supplierName: string
 }
 
 interface Props {
@@ -120,6 +127,9 @@ function mkDefaultForm(lockedStockType?: StockType | null): ModalForm {
     travelDurationDays: 7,
     sectorCount:        2,
     priceType:          'FARE',
+    supplierId:         '',
+    supplierCode:       '',
+    supplierName:       '',
   }
 }
 
@@ -130,18 +140,40 @@ export default function StockInitialConfigModal({
 }: Props) {
   const showTypeSelector = !lockedStockType
 
-  const [form, setForm]     = useState<ModalForm>(() => mkDefaultForm(lockedStockType))
-  const [errors, setErrors] = useState<Partial<Record<keyof ModalForm, string>>>({})
+  const [form, setForm]       = useState<ModalForm>(() => mkDefaultForm(lockedStockType))
+  const [errors, setErrors]   = useState<Partial<Record<keyof ModalForm, string>>>({})
+  const [suppliers, setSuppliers] = useState<DemoSupplier[]>([])
+
+  useEffect(() => {
+    const load = () => setSuppliers(getDemoSuppliers().filter(s => s.status === 'Active'))
+    load()
+    window.addEventListener('suppliers_updated', load)
+    return () => window.removeEventListener('suppliers_updated', load)
+  }, [])
 
   useEffect(() => {
     if (!open) return
     if (initial) {
-      setForm({ ...initial, stockType: lockedStockType ?? initial.stockType })
+      setForm({
+        ...mkDefaultForm(lockedStockType),
+        ...initial,
+        stockType:    lockedStockType ?? initial.stockType,
+        supplierId:   initial.supplierId   ?? '',
+        supplierCode: initial.supplierCode ?? '',
+        supplierName: initial.supplierName ?? '',
+      })
     } else {
       setForm(mkDefaultForm(lockedStockType))
     }
     setErrors({})
   }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const isTicketOnly = (form.stockType === 'TICKET_ONLY') || (lockedStockType === 'TICKET_ONLY')
+
+  const supplierOpts = useMemo(
+    () => suppliers.map(s => ({ value: s.supplierId, label: `${s.supplierCode} — ${s.supplierName}` })),
+    [suppliers],
+  )
 
   const validate = (): boolean => {
     const e: Partial<Record<keyof ModalForm, string>> = {}
@@ -151,19 +183,38 @@ export default function StockInitialConfigModal({
     if ((form.seatsPerPnr ?? 0) < 1)         e.seatsPerPnr        = 'ขั้นต่ำ 1 ที่นั่ง'
     if ((form.travelDurationDays ?? 0) < 1)  e.travelDurationDays = 'ขั้นต่ำ 1 วัน'
     if ((form.sectorCount ?? 0) < 1)         e.sectorCount        = 'ขั้นต่ำ 1 Sector'
+    if (isTicketOnly && !form.supplierId)    e.supplierId         = 'กรุณาเลือก Supplier สำหรับ Ticket (Land)'
     setErrors(e)
     return !Object.keys(e).length
   }
 
   const handleConfirm = () => {
     if (!validate()) return
-    onConfirm({ ...form, stockType: form.stockType as StockType })
+    onConfirm({
+      ...form,
+      stockType:    form.stockType as StockType,
+      supplierId:   isTicketOnly ? form.supplierId   : undefined,
+      supplierCode: isTicketOnly ? form.supplierCode : undefined,
+      supplierName: isTicketOnly ? form.supplierName : undefined,
+    })
+  }
+
+  const handleSupplierChange = (supplierId: string) => {
+    const sup = suppliers.find(s => s.supplierId === supplierId)
+    setForm(f => ({
+      ...f,
+      supplierId:   supplierId,
+      supplierCode: sup?.supplierCode ?? '',
+      supplierName: sup?.supplierName ?? '',
+    }))
+    setErrors(e => ({ ...e, supplierId: '' }))
   }
 
   const airline          = MASTER_AIRLINES.find(a => a.code === form.airlineCode)
   const priceLabel       = PRICE_TYPES.find(p => p.value === form.priceType)?.label ?? ''
   const lockedCfg        = lockedStockType ? STOCK_TYPE_CONFIG[lockedStockType] : null
   const selectedTypeCard = TYPE_CARDS.find(c => c.key === form.stockType)
+  const selectedSupplier = suppliers.find(s => s.supplierId === form.supplierId)
 
   const inputCls = (err?: string) => cn(
     'h-10 w-full rounded-lg border px-3 text-sm outline-none transition',
@@ -187,7 +238,8 @@ export default function StockInitialConfigModal({
     ? <p className="mt-1 text-xs text-red-500">{msg}</p>
     : null
 
-  const canSubmit = (!showTypeSelector || !!form.stockType) && !!form.airlineCode
+  const canSubmit = (!showTypeSelector || !!form.stockType) && !!form.airlineCode &&
+    (!isTicketOnly || !!form.supplierId)
 
   return (
     <Modal
@@ -239,7 +291,15 @@ export default function StockInitialConfigModal({
                   <button
                     key={card.key}
                     type="button"
-                    onClick={() => { setForm(f => ({ ...f, stockType: card.key })); setErrors(e => ({ ...e, stockType: '' })) }}
+                    onClick={() => {
+                      const clearSupplier = card.key !== 'TICKET_ONLY'
+                      setForm(f => ({
+                        ...f,
+                        stockType: card.key,
+                        ...(clearSupplier ? { supplierId: '', supplierCode: '', supplierName: '' } : {}),
+                      }))
+                      setErrors(e => ({ ...e, stockType: '', supplierId: '' }))
+                    }}
                     className={cn(
                       'flex flex-col items-start p-3 rounded-xl border-2 text-left transition-all duration-150',
                       selected ? card.selectedCls : `border-slate-200 bg-white ${card.hoverCls}`
@@ -339,6 +399,34 @@ export default function StockInitialConfigModal({
           </div>
         </div>
 
+        {/* ── Supplier row — Ticket (Land) only ── */}
+        {isTicketOnly && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5 whitespace-nowrap">
+                Supplier <span className="text-red-500">*</span>
+              </label>
+              <SearchableSelect
+                options={supplierOpts}
+                value={form.supplierId}
+                onChange={handleSupplierChange}
+                placeholder="ค้นหา Supplier Code หรือชื่อ..."
+                usePortal
+                error={errors.supplierId}
+              />
+              {errors.supplierId ? (
+                <p className="mt-1 text-xs text-red-500">{errors.supplierId}</p>
+              ) : form.supplierId ? (
+                <p className="mt-1 text-xs text-slate-400">
+                  <span className="font-mono font-bold">{form.supplierCode}</span> — {form.supplierName}
+                </p>
+              ) : (
+                <p className="mt-1 text-xs text-slate-400">เลือก Supplier ที่ให้บริการสำหรับ Ticket (Land) นี้</p>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* ── Price Format ── */}
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1.5">
@@ -384,6 +472,19 @@ export default function StockInitialConfigModal({
                 <strong>{form.airlineCode}</strong>
                 {airline && <span className="text-slate-400">— {airline.name}</span>}
               </span>
+              {isTicketOnly && selectedSupplier && (
+                <span className="flex items-center gap-1.5" title={`${selectedSupplier.supplierCode} — ${selectedSupplier.supplierName}`}>
+                  <Building2 size={13} className="text-[#05a94f] shrink-0" />
+                  <span className="font-mono font-bold text-slate-600">{selectedSupplier.supplierCode}</span>
+                  <span className="text-slate-500 truncate max-w-[160px]">— {selectedSupplier.supplierName}</span>
+                </span>
+              )}
+              {isTicketOnly && !selectedSupplier && (
+                <span className="flex items-center gap-1.5 text-amber-500">
+                  <Building2 size={13} className="shrink-0" />
+                  <span className="text-xs">ยังไม่ได้เลือก Supplier</span>
+                </span>
+              )}
               <span className="flex items-center gap-1.5">
                 <CreditCard size={13} className="text-[#05a94f]" />
                 {form.currencyCode}
