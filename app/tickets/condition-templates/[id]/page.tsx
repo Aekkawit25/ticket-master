@@ -346,7 +346,7 @@ export default function ConditionTemplateDetailPage({ params }: { params: Promis
         {activeTab === 'usage' && <ConditionUsageTab template={template} />}
 
         {/* ── Overview ──────────────────────────────────────────────────────── */}
-        {activeTab === 'detail' && (<div className="max-w-3xl mx-auto space-y-4">
+        {activeTab === 'detail' && (<div className="space-y-4">
         <Card>
           <CardHeader>
             <div className="flex flex-wrap items-center gap-2">
@@ -357,7 +357,7 @@ export default function ConditionTemplateDetailPage({ params }: { params: Promis
             </div>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 text-xs">
               <Kv label="สายการบิน">
                 {template.airlineCode
                   ? `${template.airlineCode} — ${AIRLINE_NAMES[template.airlineCode] ?? template.airlineCode}`
