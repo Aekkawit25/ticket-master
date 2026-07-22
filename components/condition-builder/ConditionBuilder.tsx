@@ -38,6 +38,11 @@ import {
   CondNameChangePolicy,
   CondUtilizationBase, CondUtilizationMeasure, CondUtilizationAction, CondUtilizationPenaltyType, CondUtilizationForfeitType,
   CondUtilization,
+  CondMedicalRefund, CondMedicalRefundCase, CondMedicalRefundFormat,
+  CondMedicalRefundFeeCalc, CondMedicalRefundDoc, CondMedicalRefundDeadlineBase,
+  CondMedicalRefundApproval, defaultMedicalRefund,
+  CondRefundPhase, CondSimpleRefundResult,
+  CondUtilizationMethod, CondUtilizationSimpleAction,
   defaultCondStage, defaultBaggagePolicy, defaultSeatReductionPolicy, defaultSeatReductionRule,
   defaultRefundTerms, newRefundPenaltyStepRuleId,
   defaultTtlRule, newStageId, newSeatReductionRuleId,
@@ -304,64 +309,36 @@ export function validateTab(key: TabKey, v: AppCondition, conditionMode: Conditi
     case 'refund': {
       const errs: string[] = []
       const rt = migrateRefundTerms(v.refundTerms)
-      if (!rt.enabled) return errs
       const post = rt.postTicket
-      if (post.enabled && post.refundMainPolicy !== 'UNSPECIFIED') {
-        if (post.refundMainPolicy === 'PARTIAL_REFUND' && post.refundableItems.length === 0)
-          errs.push('กรุณาเลือกอย่างน้อย 1 รายการที่ Refund ได้')
-        const overlap = post.refundableItems.filter(x => post.nonRefundableItems.includes(x))
-        if (overlap.length > 0)
-          errs.push('รายการ Refund ซ้ำกัน กรุณาเลือกแต่ละรายการให้อยู่ฝั่งใดฝั่งหนึ่งเท่านั้น')
-        if (post.refundFeeType === 'FIX' && (post.refundFeeAmount == null || post.refundFeeAmount < 0))
-          errs.push('กรุณาระบุจำนวนเงินค่าธรรมเนียม Refund')
-        if (post.refundFeeType === 'PERCENT' && (post.refundFeePercent == null || post.refundFeePercent <= 0))
-          errs.push('กรุณาระบุเปอร์เซ็นต์ค่าธรรมเนียม Refund')
-        if (post.penaltyMode === 'STEP_RULE') {
-          if (post.penaltyStepRules.length === 0)
-            errs.push('กรุณาเพิ่ม Step อย่างน้อย 1 รายการ')
-          post.penaltyStepRules.forEach((r, i) => {
-            if (r.penaltyValue == null || r.penaltyValue < 0)
-              errs.push(`Step ${i + 1}: กรุณาระบุค่าปรับ`)
-          })
-        }
-      }
-      if (rt.preTicket.enabled) {
-        rt.preTicket.moneyTypeRules.forEach(() => { /* kept for backward compat */ })
-        rt.preTicket.rules.forEach((r, i) => {
-          if (r.fromDays !== null && r.toDays !== null && r.fromDays <= r.toDays)
-            errs.push(`Step ${i + 1}: "จาก" ต้องมากกว่า "ถึง"`)
-        })
-        for (let i = 0; i < rt.preTicket.rules.length; i++) {
-          for (let j = i + 1; j < rt.preTicket.rules.length; j++) {
-            const a = rt.preTicket.rules[i], b = rt.preTicket.rules[j]
-            const shared = a.appliesToMoneyTypes.some(t => b.appliesToMoneyTypes.includes(t))
-            if (!shared) continue
-            const aLo = a.toDays ?? 0, aHi = a.fromDays ?? Infinity
-            const bLo = b.toDays ?? 0, bHi = b.fromDays ?? Infinity
-            if (aLo <= bHi && bLo <= aHi)
-              errs.push(`Step ${i + 1} และ Step ${j + 1} มีช่วงวันซ้อนกันในประเภทเงินเดียวกัน`)
-          }
-        }
+      if (post.enabled) {
+        if (!post.simpleResult)
+          errs.push('Refund หลังส่งชื่อ/ออกตั๋ว: กรุณาเลือกผลการ Refund')
       }
       if (rt.utilization.enabled) {
-        const pct = rt.utilization.requiredPercent
-        if (pct == null || pct <= 0)
-          errs.push('ใช้ที่นั่งขั้นต่ำ: กรุณาระบุเปอร์เซ็นต์การใช้ที่นั่งขั้นต่ำ (มากกว่า 0)')
-        else if (pct > 100)
-          errs.push('ใช้ที่นั่งขั้นต่ำ: เปอร์เซ็นต์การใช้ที่นั่งขั้นต่ำต้องไม่เกิน 100')
-        if (rt.utilization.calcBase === 'LATEST_SEAT' && rt.utilization.measureBy === 'CURRENT_TICKET')
-          errs.push('ใช้ที่นั่งขั้นต่ำ: ฐานคำนวณและจำนวนที่ใช้ตรวจสอบไม่ควรเป็นค่าเดียวกัน เพราะจะทำให้เงื่อนไขไม่มีผล')
-        if (rt.utilization.exceedAction === 'PENALTY') {
-          if (rt.utilization.penaltyType === 'AMOUNT_PER_MISSING') {
-            if (rt.utilization.penaltyAmount == null || rt.utilization.penaltyAmount <= 0)
-              errs.push('ใช้ที่นั่งขั้นต่ำ: กรุณาระบุจำนวนเงินค่าปรับ (มากกว่า 0)')
-          } else if (rt.utilization.penaltyType === 'PERCENT_GROUP' || rt.utilization.penaltyType === 'PERCENT_DEPOSIT') {
-            if (rt.utilization.penaltyPercent == null || rt.utilization.penaltyPercent <= 0)
-              errs.push('ใช้ที่นั่งขั้นต่ำ: กรุณาระบุเปอร์เซ็นต์ค่าปรับ (มากกว่า 0)')
-            else if (rt.utilization.penaltyPercent > 100)
-              errs.push('ใช้ที่นั่งขั้นต่ำ: เปอร์เซ็นต์ค่าปรับต้องไม่เกิน 100')
-          }
+        if (!rt.utilization.simpleAction)
+          errs.push('Refund ตามจำนวนที่นั่งขั้นต่ำ: กรุณาเลือกกรณีที่ใช้งานต่ำกว่ากำหนด')
+        const method = rt.utilization.utilizationMethod
+        if (method === 'COUNT' && (rt.utilization.requiredCount == null || rt.utilization.requiredCount <= 0))
+          errs.push('Refund ตามจำนวนที่นั่งขั้นต่ำ: กรุณาระบุจำนวนที่นั่งขั้นต่ำ')
+        if (method === 'PERCENT' && (rt.utilization.requiredPercent == null || rt.utilization.requiredPercent <= 0))
+          errs.push('Refund ตามจำนวนที่นั่งขั้นต่ำ: กรุณาระบุเปอร์เซ็นต์ขั้นต่ำ')
+      }
+      const mr = rt.medicalRefund
+      if (mr?.enabled) {
+        if (mr.cases.length === 0)
+          errs.push('กรณีป่วย/เสียชีวิต: กรุณาเลือกกรณีที่รองรับอย่างน้อย 1 รายการ')
+        if (!mr.refundFormat)
+          errs.push('กรณีป่วย/เสียชีวิต: กรุณาเลือกรูปแบบการ Refund')
+        if (mr.refundFormat === 'WITH_FEE') {
+          if (!mr.feeCalcType)
+            errs.push('กรณีป่วย/เสียชีวิต: กรุณาเลือกวิธีคิดค่าธรรมเนียม')
+          if (mr.feeValue == null)
+            errs.push('กรณีป่วย/เสียชีวิต: กรุณาระบุจำนวนเงินหรือเปอร์เซ็นต์')
+          if (mr.feeCalcType === 'PERCENT' && mr.feeValue != null && (mr.feeValue < 0 || mr.feeValue > 100))
+            errs.push('กรณีป่วย/เสียชีวิต: เปอร์เซ็นต์ต้องอยู่ระหว่าง 0–100')
         }
+        if (mr.deadlineBase && mr.deadlineBase !== 'AIRLINE_POLICY' && mr.deadlineDays != null && (mr.deadlineDays < 0 || !Number.isInteger(mr.deadlineDays)))
+          errs.push('กรณีป่วย/เสียชีวิต: จำนวนวันต้องเป็นเลขจำนวนเต็มตั้งแต่ 0 ขึ้นไป')
       }
       return errs
     }
@@ -517,22 +494,19 @@ export function getTabStatus(key: TabKey, v: AppCondition, errs: string[] = [], 
     }
     case 'refund': {
       const rt = migrateRefundTerms(v.refundTerms)
-      if (!rt.enabled) return 'empty'
       const post = rt.postTicket
-      if (post.enabled) {
-        if (post.refundMainPolicy === 'UNSPECIFIED') return 'incomplete'
-        if (post.refundMainPolicy === 'PARTIAL_REFUND' && post.refundableItems.length === 0) return 'incomplete'
-        if (post.penaltyMode === 'STEP_RULE' && post.penaltyStepRules.length === 0) return 'incomplete'
-      }
       const util = rt.utilization
-      if (util.enabled) {
-        if (util.requiredPercent == null) return 'incomplete'
-        if (util.exceedAction === 'PENALTY') {
-          if (util.penaltyType === 'AMOUNT_PER_MISSING' && util.penaltyAmount == null) return 'incomplete'
-          if ((util.penaltyType === 'PERCENT_GROUP' || util.penaltyType === 'PERCENT_DEPOSIT') && util.penaltyPercent == null) return 'incomplete'
-        }
+      const mr = rt.medicalRefund
+      const anyEnabled = post.enabled || util.enabled || !!mr?.enabled
+      if (!anyEnabled) return 'empty'
+      if (post.enabled && !post.simpleResult) return 'incomplete'
+      if (util.enabled && !util.simpleAction) return 'incomplete'
+      if (util.enabled && util.utilizationMethod === 'COUNT' && (util.requiredCount == null || util.requiredCount <= 0)) return 'incomplete'
+      if (util.enabled && util.utilizationMethod === 'PERCENT' && (util.requiredPercent == null || util.requiredPercent <= 0)) return 'incomplete'
+      if (mr?.enabled) {
+        if (mr.cases.length === 0 || !mr.refundFormat) return 'incomplete'
+        if (mr.refundFormat === 'WITH_FEE' && (!mr.feeCalcType || mr.feeValue == null)) return 'incomplete'
       }
-      if (!post.enabled && !util.enabled) return 'incomplete'
       return 'complete'
     }
     case 'extra':
@@ -4574,6 +4548,377 @@ export function CancelGroupSection({ value, onChange, readOnly, currency, errors
   )
 }
 
+// ─── Simplified Refund tab constants ─────────────────────────────────────────
+
+const REFUND_PHASE_OPTIONS: { val: CondRefundPhase; label: string }[] = [
+  { val: 'POST_NAME',   label: 'Refund หลังส่งชื่อ' },
+  { val: 'POST_TICKET', label: 'Refund หลังออกตั๋ว' },
+  { val: 'BOTH',        label: 'Refund หลังส่งชื่อและออกตั๋วแล้ว' },
+]
+
+const SIMPLE_REFUND_RESULT_OPTIONS: { val: CondSimpleRefundResult; label: string; desc: string }[] = [
+  { val: 'NON_REFUNDABLE', label: 'Refund ไม่ได้',                      desc: 'ไม่คืนเงินในทุกกรณี' },
+  { val: 'PARTIAL_REFUND', label: 'Refund ได้บางส่วน',                  desc: 'คืนเงินบางรายการ' },
+  { val: 'FULL_REFUND',    label: 'Refund ได้ทั้งหมด',                  desc: 'คืนเงินทั้งหมด' },
+  { val: 'TAX_ONLY',       label: 'Refund เฉพาะ Tax',                   desc: 'คืนเฉพาะภาษีที่ชำระ' },
+  { val: 'TAX_FUEL_ONLY',  label: 'Refund เฉพาะ Tax / Fuel Surcharge', desc: 'คืนภาษีและ Fuel Surcharge' },
+  { val: 'AIRLINE_POLICY', label: 'พิจารณาตามสายการบิน',                 desc: 'ขึ้นอยู่กับเงื่อนไข Airline' },
+]
+
+const UTIL_METHOD_OPTIONS: { val: CondUtilizationMethod; label: string; desc: string }[] = [
+  { val: 'COUNT',   label: 'จำนวนที่นั่ง', desc: 'ระบุจำนวน Seat ขั้นต่ำ' },
+  { val: 'PERCENT', label: 'เปอร์เซ็นต์',  desc: 'ระบุ % ของฐานที่เลือก' },
+]
+
+const UTIL_SIMPLE_CALC_BASE_OPTIONS: { val: 'INITIAL_SEAT' | 'LATEST_SEAT'; label: string; desc: string }[] = [
+  { val: 'INITIAL_SEAT', label: 'Seat เริ่มต้น',  desc: 'จำนวน Seat ที่บล็อกไว้ตอนแรก' },
+  { val: 'LATEST_SEAT',  label: 'Seat ปัจจุบัน', desc: 'จำนวน Seat ล่าสุด ณ ขณะนั้น' },
+]
+
+const UTIL_SIMPLE_ACTION_OPTIONS: { val: CondUtilizationSimpleAction; label: string; desc: string }[] = [
+  { val: 'NON_REFUNDABLE',  label: 'Refund ไม่ได้',          desc: 'ไม่คืนเงินกรณีใช้ไม่ถึงขั้นต่ำ' },
+  { val: 'FORFEIT_DEPOSIT', label: 'ถูกหักเงินมัดจำ',         desc: 'ยึด Deposit ตามเงื่อนไขที่กำหนด' },
+  { val: 'PENALTY_FEE',     label: 'ถูกหักค่าธรรมเนียม',      desc: 'หักค่าปรับจากจำนวนที่นั่งที่ขาด' },
+  { val: 'AIRLINE_POLICY',  label: 'พิจารณาตามสายการบิน',     desc: 'ขึ้นอยู่กับเงื่อนไข Airline' },
+]
+
+function CardStatusBadge({ enabled, notSupported }: { enabled: boolean; notSupported?: boolean }) {
+  if (!enabled) return <span className="text-[10px] text-slate-400">ยังไม่ได้กำหนด</span>
+  if (notSupported) return <span className="text-[10px] text-red-500 font-medium">ไม่รองรับ</span>
+  return <span className="text-[10px] text-emerald-600 font-medium">เปิดใช้งาน</span>
+}
+
+// ─── Medical Refund constants ─────────────────────────────────────────────────
+
+const MEDICAL_CASE_OPTIONS: { val: CondMedicalRefundCase; label: string }[] = [
+  { val: 'PASSENGER_SICK',           label: 'ผู้โดยสารป่วย' },
+  { val: 'PASSENGER_DEATH',          label: 'ผู้โดยสารเสียชีวิต' },
+  { val: 'RELATIVE_SERIOUSLY_SICK',  label: 'ญาติสายตรงป่วยหนัก' },
+  { val: 'RELATIVE_DEATH',           label: 'ญาติสายตรงเสียชีวิต' },
+  { val: 'OTHER',                    label: 'อื่น ๆ' },
+]
+
+const MEDICAL_FORMAT_OPTIONS: { val: CondMedicalRefundFormat; label: string; desc: string }[] = [
+  { val: 'FULL_REFUND',     label: 'Refund เต็มจำนวน',                         desc: 'คืนเงินทั้งหมด' },
+  { val: 'TAX_ONLY',        label: 'Refund เฉพาะ Tax',                          desc: 'คืนเฉพาะภาษี' },
+  { val: 'TAX_FUEL_ONLY',   label: 'Refund เฉพาะ Tax / Fuel Surcharge',        desc: 'คืนภาษีและ Fuel Surcharge' },
+  { val: 'WITH_FEE',        label: 'Refund โดยหักค่าธรรมเนียม',               desc: 'Refund หักค่าธรรมเนียมก่อน' },
+  { val: 'AIRLINE_POLICY',  label: 'พิจารณาตามเงื่อนไขของสายการบิน',           desc: 'ขึ้นอยู่กับ Airline' },
+  { val: 'NON_REFUNDABLE',  label: 'ไม่สามารถ Refund ได้',                     desc: 'ไม่คืนเงินแม้กรณีพิเศษ' },
+]
+
+const MEDICAL_FEE_CALC_OPTIONS: { val: CondMedicalRefundFeeCalc; label: string }[] = [
+  { val: 'PER_PAX',    label: 'จำนวนเงินต่อคน' },
+  { val: 'PERCENT',    label: 'เปอร์เซ็นต์จากราคาตั๋ว' },
+  { val: 'PER_PNR',    label: 'จำนวนเงินต่อ PNR' },
+  { val: 'PER_SERIES', label: 'จำนวนเงินต่อ Series' },
+]
+
+const MEDICAL_DOC_OPTIONS: { val: CondMedicalRefundDoc; label: string }[] = [
+  { val: 'MEDICAL_CERT',      label: 'ใบรับรองแพทย์' },
+  { val: 'DEATH_CERT',        label: 'ใบมรณบัตร' },
+  { val: 'RELATIONSHIP_DOC',  label: 'เอกสารยืนยันความสัมพันธ์' },
+  { val: 'PASSPORT_COPY',     label: 'สำเนาหนังสือเดินทาง' },
+  { val: 'ID_COPY',           label: 'สำเนาบัตรประชาชน' },
+  { val: 'OTHER',             label: 'เอกสารอื่น ๆ' },
+]
+
+const MEDICAL_DEADLINE_BASE_OPTIONS: { val: CondMedicalRefundDeadlineBase; label: string }[] = [
+  { val: 'INCIDENT_DATE',  label: 'วันที่เกิดเหตุ' },
+  { val: 'TRAVEL_DATE',    label: 'วันเดินทาง' },
+  { val: 'CANCEL_DATE',    label: 'วันที่ยกเลิกการเดินทาง' },
+  { val: 'AIRLINE_POLICY', label: 'ตามที่สายการบินกำหนด' },
+]
+
+const MEDICAL_APPROVAL_OPTIONS: { val: CondMedicalRefundApproval; label: string; desc: string }[] = [
+  { val: 'AUTO',         label: 'อนุมัติอัตโนมัติตามเงื่อนไข', desc: 'ระบบอนุมัติเองเมื่อครบเงื่อนไข' },
+  { val: 'AIRLINE',      label: 'ต้องส่งให้สายการบินพิจารณา',   desc: 'ส่งต่อให้ Airline อนุมัติ' },
+  { val: 'STAFF',        label: 'ต้องให้เจ้าหน้าที่อนุมัติ',    desc: 'Staff ต้องอนุมัติก่อนคืนเงิน' },
+  { val: 'CASE_BY_CASE', label: 'พิจารณาเป็นรายกรณี',           desc: 'ไม่มีกฎตายตัว' },
+]
+
+// ─── MedicalRefundSection component ──────────────────────────────────────────
+
+function MedicalRefundSection({ value, onChange, readOnly, currency }: {
+  value: CondMedicalRefund
+  onChange: (v: CondMedicalRefund) => void
+  readOnly: boolean
+  currency: string
+}) {
+  const p = (patch: Partial<CondMedicalRefund>) => onChange({ ...value, ...patch })
+  const currencyOptions = getCurrencyOptions().map(c => ({ value: c.currencyCode, label: c.currencyCode }))
+  const showFee = value.refundFormat === 'WITH_FEE'
+  const deadlineByAirline = value.deadlineBase === 'AIRLINE_POLICY'
+
+  const toggleCase = (c: CondMedicalRefundCase) => {
+    const next = value.cases.includes(c)
+      ? value.cases.filter(x => x !== c)
+      : [...value.cases, c]
+    p({ cases: next })
+  }
+  const toggleDoc = (d: CondMedicalRefundDoc) => {
+    const next = value.docs.includes(d)
+      ? value.docs.filter(x => x !== d)
+      : [...value.docs, d]
+    p({ docs: next })
+  }
+
+  return (
+    <div className="rounded-2xl border border-rose-200 overflow-hidden">
+      {/* Header + sub-toggle */}
+      <div className="px-4 py-3 bg-rose-50 border-b border-rose-100 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-base">🏥</span>
+          <div>
+            <p className="text-xs font-semibold text-rose-700">Refund กรณี (ป่วย/เสียชีวิต)</p>
+            <p className="text-[10px] text-rose-400 mt-0.5">
+              {value.enabled ? 'เปิดใช้งาน — กรอกรายละเอียดด้านล่าง' : 'ยังไม่ได้กำหนด'}
+            </p>
+          </div>
+        </div>
+        <label className="flex items-center gap-2 cursor-pointer select-none shrink-0">
+          <Toggle checked={value.enabled} onChange={v => p({ enabled: v })} disabled={readOnly} />
+          <span className="text-[11px] text-slate-500">{value.enabled ? 'เปิด' : 'ปิด'}</span>
+        </label>
+      </div>
+
+      {value.enabled && (
+        <div className="px-4 py-4 space-y-5">
+
+          {/* 1. กรณีที่รองรับ */}
+          <div>
+            <Label required>กรณีที่รองรับ</Label>
+            <p className="text-[10px] text-slate-400 mb-2">เลือกได้หลายรายการ</p>
+            <div className="flex flex-wrap gap-2">
+              {MEDICAL_CASE_OPTIONS.map(opt => (
+                <label key={opt.val} className={cn(
+                  'flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs cursor-pointer transition select-none',
+                  value.cases.includes(opt.val)
+                    ? 'border-rose-400 bg-rose-50 text-rose-700 font-semibold'
+                    : 'border-slate-200 text-slate-600 hover:border-slate-300',
+                  readOnly && 'pointer-events-none',
+                )}>
+                  <input type="checkbox" className="sr-only"
+                    checked={value.cases.includes(opt.val)}
+                    onChange={() => toggleCase(opt.val)}
+                    disabled={readOnly} />
+                  {opt.label}
+                </label>
+              ))}
+            </div>
+            {value.cases.includes('OTHER') && (
+              <FInput type="text" value={value.casesOtherText}
+                onChange={v => p({ casesOtherText: v })}
+                placeholder="ระบุกรณีอื่น ๆ..."
+                disabled={readOnly}
+                className="mt-2" />
+            )}
+          </div>
+
+          {/* 2. รูปแบบการ Refund */}
+          <div>
+            <Label required>รูปแบบการ Refund</Label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 mt-1">
+              {MEDICAL_FORMAT_OPTIONS.map(opt => (
+                <label key={opt.val} className={cn(
+                  'flex flex-col px-3 py-2 rounded-xl border cursor-pointer transition text-xs select-none',
+                  value.refundFormat === opt.val
+                    ? 'border-rose-400 bg-rose-50'
+                    : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50',
+                  readOnly && 'pointer-events-none',
+                )}>
+                  <input type="radio" className="sr-only"
+                    checked={value.refundFormat === opt.val}
+                    onChange={() => p({
+                      refundFormat: opt.val,
+                      ...(opt.val !== 'WITH_FEE' ? { feeCalcType: null, feeValue: null } : {}),
+                    })}
+                    disabled={readOnly} />
+                  <span className={cn('font-semibold', value.refundFormat === opt.val ? 'text-rose-700' : 'text-slate-700')}>
+                    {opt.label}
+                  </span>
+                  <span className={cn('text-[10px] mt-0.5', value.refundFormat === opt.val ? 'text-rose-500' : 'text-slate-400')}>
+                    {opt.desc}
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* 3. ค่าธรรมเนียม Refund (only when WITH_FEE) */}
+          {showFee && (
+            <div className="rounded-xl border border-slate-200 p-3 bg-slate-50 space-y-3">
+              <Label required>ค่าธรรมเนียม Refund</Label>
+
+              {/* วิธีคิดค่าธรรมเนียม */}
+              <div>
+                <p className="text-[10px] text-slate-500 mb-1.5 font-medium">วิธีคิดค่าธรรมเนียม</p>
+                <div className="flex flex-wrap gap-2">
+                  {MEDICAL_FEE_CALC_OPTIONS.map(opt => (
+                    <label key={opt.val} className={cn(
+                      'flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs cursor-pointer transition select-none',
+                      value.feeCalcType === opt.val ? 'border-rose-400 bg-rose-50 text-rose-700 font-semibold' : 'border-slate-200 text-slate-600 hover:border-slate-300',
+                      readOnly && 'pointer-events-none',
+                    )}>
+                      <input type="radio" className="sr-only"
+                        checked={value.feeCalcType === opt.val}
+                        onChange={() => p({ feeCalcType: opt.val, feeValue: null })}
+                        disabled={readOnly} />
+                      {opt.label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* จำนวนเงินหรือเปอร์เซ็นต์ + สกุลเงิน */}
+              {value.feeCalcType && (
+                <div>
+                  <Label required>{value.feeCalcType === 'PERCENT' ? 'เปอร์เซ็นต์' : 'จำนวนเงิน'}</Label>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <FInput
+                      type="number" min={0}
+                      max={value.feeCalcType === 'PERCENT' ? 100 : undefined}
+                      value={value.feeValue ?? ''}
+                      onChange={v => p({ feeValue: v === '' ? null : Number(v) })}
+                      placeholder={value.feeCalcType === 'PERCENT' ? 'เช่น 10' : '0.00'}
+                      disabled={readOnly}
+                      className="w-[140px]"
+                    />
+                    {value.feeCalcType === 'PERCENT'
+                      ? <span className="text-xs text-slate-500">%</span>
+                      : (
+                        <div className="w-[160px] shrink-0">
+                          <SearchableSelect
+                            options={currencyOptions}
+                            value={value.feeCurrency || currency}
+                            onChange={v => p({ feeCurrency: v })}
+                            placeholder="สกุลเงิน"
+                            disabled={readOnly}
+                            usePortal
+                          />
+                        </div>
+                      )
+                    }
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 4. เอกสารประกอบที่ต้องใช้ */}
+          <div>
+            <Label>เอกสารประกอบที่ต้องใช้</Label>
+            <p className="text-[10px] text-slate-400 mb-2">เลือกได้หลายรายการ</p>
+            <div className="flex flex-wrap gap-2">
+              {MEDICAL_DOC_OPTIONS.map(opt => (
+                <label key={opt.val} className={cn(
+                  'flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs cursor-pointer transition select-none',
+                  value.docs.includes(opt.val)
+                    ? 'border-[#05a94f] bg-emerald-50 text-[#05a94f] font-semibold'
+                    : 'border-slate-200 text-slate-600 hover:border-slate-300',
+                  readOnly && 'pointer-events-none',
+                )}>
+                  <input type="checkbox" className="sr-only"
+                    checked={value.docs.includes(opt.val)}
+                    onChange={() => toggleDoc(opt.val)}
+                    disabled={readOnly} />
+                  {opt.label}
+                </label>
+              ))}
+            </div>
+            {value.docs.includes('OTHER') && (
+              <FInput type="text" value={value.docsOtherText}
+                onChange={v => p({ docsOtherText: v })}
+                placeholder="ระบุเอกสารอื่น ๆ..."
+                disabled={readOnly}
+                className="mt-2" />
+            )}
+          </div>
+
+          {/* 5. ระยะเวลายื่นคำร้อง */}
+          <div>
+            <Label>ระยะเวลายื่นคำร้อง</Label>
+            <div className="flex flex-wrap items-center gap-2 mt-1">
+              <span className="text-xs text-slate-500">ต้องยื่นคำร้องภายใน</span>
+              {!deadlineByAirline && (
+                <FInput
+                  type="number" min={0}
+                  value={value.deadlineDays ?? ''}
+                  onChange={v => p({ deadlineDays: v === '' ? null : Number(v) })}
+                  placeholder="จำนวนวัน"
+                  disabled={readOnly}
+                  className="w-[100px]"
+                />
+              )}
+              {!deadlineByAirline && <span className="text-xs text-slate-500">วัน นับจาก</span>}
+              <div className="flex flex-wrap gap-1.5">
+                {MEDICAL_DEADLINE_BASE_OPTIONS.map(opt => (
+                  <label key={opt.val} className={cn(
+                    'flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs cursor-pointer transition select-none',
+                    value.deadlineBase === opt.val ? 'border-[#05a94f] bg-emerald-50 text-[#05a94f] font-semibold' : 'border-slate-200 text-slate-600 hover:border-slate-300',
+                    readOnly && 'pointer-events-none',
+                  )}>
+                    <input type="radio" className="sr-only"
+                      checked={value.deadlineBase === opt.val}
+                      onChange={() => p({
+                        deadlineBase: opt.val,
+                        ...(opt.val === 'AIRLINE_POLICY' ? { deadlineDays: null } : {}),
+                      })}
+                      disabled={readOnly} />
+                    {opt.label}
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* 6. เงื่อนไขการพิจารณา */}
+          <div>
+            <Label>เงื่อนไขการพิจารณา</Label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
+              {MEDICAL_APPROVAL_OPTIONS.map(opt => (
+                <label key={opt.val} className={cn(
+                  'flex flex-col px-3 py-2 rounded-xl border cursor-pointer transition text-xs select-none',
+                  value.approvalType === opt.val
+                    ? 'border-[#05a94f] bg-emerald-50'
+                    : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50',
+                  readOnly && 'pointer-events-none',
+                )}>
+                  <input type="radio" className="sr-only"
+                    checked={value.approvalType === opt.val}
+                    onChange={() => p({ approvalType: opt.val })}
+                    disabled={readOnly} />
+                  <span className={cn('font-semibold', value.approvalType === opt.val ? 'text-[#05a94f]' : 'text-slate-700')}>
+                    {opt.label}
+                  </span>
+                  <span className={cn('text-[10px] mt-0.5', value.approvalType === opt.val ? 'text-emerald-600' : 'text-slate-400')}>
+                    {opt.desc}
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* 7. รายละเอียดเงื่อนไขเพิ่มเติม */}
+          <div>
+            <Label>รายละเอียดเงื่อนไขเพิ่มเติม</Label>
+            <FTextarea
+              value={value.remarks}
+              onChange={v => p({ remarks: v })}
+              rows={4}
+              disabled={readOnly}
+              placeholder={
+                'เช่น\n- เงื่อนไขของสายการบิน\n- ข้อยกเว้น\n- รายการที่ไม่สามารถ Refund ได้\n- ระยะเวลาดำเนินการคืนเงิน\n- หมายเหตุสำหรับเจ้าหน้าที่'
+              }
+            />
+          </div>
+
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── CombinedRefundSection ─────────────────────────────────────────────────────
 
 export function CombinedRefundSection({ value, onChange, readOnly, currency, errors = [] }: {
@@ -4583,19 +4928,8 @@ export function CombinedRefundSection({ value, onChange, readOnly, currency, err
   const setRt = (upd: Partial<CondRefundTerms>) => onChange({ ...value, refundTerms: { ...rt, ...upd } })
   const post = rt.postTicket
   const setPost = (upd: Partial<typeof post>) => setRt({ postTicket: { ...post, ...upd } })
-  const isUnspecified = post.refundMainPolicy === 'UNSPECIFIED'
   const util = rt.utilization
   const setUtil = (upd: Partial<CondUtilization>) => setRt({ utilization: { ...util, ...upd } })
-
-  const addPenaltyStepRule = () => {
-    const newRule: CondRefundPenaltyStepRule = {
-      id: newRefundPenaltyStepRuleId(),
-      fromDaysBefore: null, toDaysBefore: null,
-      penaltyType: 'PERCENT', penaltyValue: null,
-      penaltyBase: 'GROUP_PRICE', currency, remark: '',
-    }
-    setPost({ penaltyStepRules: [...post.penaltyStepRules, newRule] })
-  }
 
   const buildPreviewLines = (): { text: string; missing: boolean }[] => {
     const lines: { text: string; missing: boolean }[] = []
@@ -4699,630 +5033,352 @@ export function CombinedRefundSection({ value, onChange, readOnly, currency, err
     <div className="space-y-4">
       <ErrorBox errors={errors} />
 
-      {/* ── Card 1: Master toggle ── */}
-      <label className="flex items-center gap-3 cursor-pointer select-none p-4 rounded-2xl border border-slate-200 hover:bg-slate-50 transition">
-        <Toggle checked={rt.enabled} onChange={v => setRt({ enabled: v })} disabled={readOnly} />
-        <div>
-          <p className="text-sm font-semibold text-slate-800">เปิดใช้งานเงื่อนไขการคืน</p>
-          <p className="text-[11px] text-slate-400 mt-0.5">
-            {rt.enabled ? 'เปิดใช้งาน — กรอกนโยบายด้านล่าง' : 'ปิดอยู่ — ยังไม่ได้กำหนด'}
-          </p>
+      {/* ── Card 1: Refund หลังส่งชื่อ / หลังออกตั๋ว ── */}
+      <div className="rounded-2xl border border-slate-200 overflow-hidden">
+        <div className="px-4 py-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Receipt size={14} className="text-slate-400" />
+            <div>
+              <p className="text-xs font-semibold text-slate-700">Refund หลังส่งชื่อ / หลังออกตั๋ว</p>
+              <CardStatusBadge enabled={post.enabled} notSupported={post.enabled && post.simpleResult === 'NON_REFUNDABLE'} />
+            </div>
+          </div>
+          <label className="flex items-center gap-2 cursor-pointer select-none shrink-0">
+            <Toggle checked={post.enabled} onChange={v => setPost({ enabled: v })} disabled={readOnly} />
+            <span className="text-[11px] text-slate-500">{post.enabled ? 'เปิด' : 'ปิด'}</span>
+          </label>
         </div>
-      </label>
 
-      {rt.enabled && (
-        <div className="space-y-4">
+        {post.enabled && (
+          <div className="px-4 py-4 space-y-4">
 
-          {/* ── Card 2: Refund หลังส่งชื่อ / หลังออกตั๋ว ── */}
-          <div className="rounded-2xl border border-slate-200 overflow-hidden">
-            <div className="px-4 py-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Receipt size={14} className="text-slate-400" />
-                <div>
-                  <p className="text-xs font-semibold text-slate-700">Refund หลังส่งชื่อ / หลังออกตั๋ว</p>
-                  <p className="text-[10px] text-slate-400 mt-0.5">เงื่อนไขการคืนเงินหลังจากส่งชื่อหรือออกตั๋วแล้ว</p>
-                </div>
+            {/* ช่วงเวลาที่รองรับ */}
+            <div>
+              <Label>ช่วงเวลาที่รองรับ</Label>
+              <div className="flex flex-wrap gap-2 mt-1">
+                {REFUND_PHASE_OPTIONS.map(opt => (
+                  <label key={opt.val} className={cn(
+                    'flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs cursor-pointer transition select-none',
+                    post.refundPhase === opt.val ? 'border-[#05a94f] bg-emerald-50 text-[#05a94f] font-semibold' : 'border-slate-200 text-slate-600 hover:border-slate-300',
+                    readOnly && 'pointer-events-none',
+                  )}>
+                    <input type="radio" className="sr-only"
+                      checked={post.refundPhase === opt.val}
+                      onChange={() => setPost({ refundPhase: opt.val })}
+                      disabled={readOnly} />
+                    {opt.label}
+                  </label>
+                ))}
               </div>
-              <label className="flex items-center gap-2 cursor-pointer select-none shrink-0">
-                <Toggle checked={post.enabled} onChange={v => setPost({ enabled: v })} disabled={readOnly} />
-                <span className="text-[11px] text-slate-500">{post.enabled ? 'เปิด' : 'ปิด'}</span>
-              </label>
             </div>
 
-            {post.enabled && (
-              <div className="px-4 py-4 space-y-4">
+            {/* ผลการ Refund */}
+            <div>
+              <Label required>ผลการ Refund</Label>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-1">
+                {SIMPLE_REFUND_RESULT_OPTIONS.map(opt => (
+                  <label key={opt.val} className={cn(
+                    'flex flex-col px-3 py-2 rounded-xl border cursor-pointer transition text-xs select-none',
+                    post.simpleResult === opt.val ? 'border-[#05a94f] bg-emerald-50' : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50',
+                    readOnly && 'pointer-events-none',
+                  )}>
+                    <input type="radio" className="sr-only"
+                      checked={post.simpleResult === opt.val}
+                      onChange={() => setPost({
+                        simpleResult: opt.val,
+                        refundMainPolicy: opt.val === 'NON_REFUNDABLE' ? 'NON_REFUNDABLE'
+                          : opt.val === 'FULL_REFUND' ? 'FULL_REFUND'
+                          : 'PARTIAL_REFUND',
+                      })}
+                      disabled={readOnly} />
+                    <span className={cn('font-semibold', post.simpleResult === opt.val ? 'text-[#05a94f]' : 'text-slate-700')}>
+                      {opt.label}
+                    </span>
+                    <span className={cn('text-[10px] mt-0.5', post.simpleResult === opt.val ? 'text-emerald-600' : 'text-slate-400')}>
+                      {opt.desc}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
 
-                {/* นโยบาย Refund */}
-                <div>
-                  <Label>นโยบาย Refund</Label>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-1">
-                    {POST_REFUND_MAIN_POLICY_OPTIONS.map(opt => (
-                      <label key={opt.value} className={cn(
-                        'flex flex-col px-3 py-2 rounded-xl border cursor-pointer transition text-xs select-none',
-                        post.refundMainPolicy === opt.value
-                          ? 'border-[#05a94f] bg-emerald-50'
-                          : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50',
-                        readOnly && 'pointer-events-none',
-                      )}>
-                        <input type="radio" className="sr-only" checked={post.refundMainPolicy === opt.value}
-                          onChange={() => setPost({
-                            refundMainPolicy: opt.value,
-                            ...(opt.value === 'NON_REFUNDABLE' ? { refundableItems: [] } : {}),
-                            ...(opt.value === 'UNSPECIFIED' ? {
-                              applyAfter: null, refundableItems: [], nonRefundableItems: [],
-                              refundFeeType: 'NONE', refundFeeAmount: null, refundFeePercent: null,
-                              refundFeeBase: 'REFUNDABLE_AMOUNT', refundFeeUnit: 'PER_SEAT', refundFeeCurrency: '',
-                              penaltyMode: 'NONE', penaltySingleType: 'PERCENT', penaltySingleValue: null,
-                              penaltySingleBase: 'GROUP_PRICE', penaltyStepRules: [], remark: '',
-                            } : {}),
-                          })} disabled={readOnly} />
-                        <span className={cn('font-semibold', post.refundMainPolicy === opt.value ? 'text-[#05a94f]' : 'text-slate-700')}>
-                          {opt.label}
-                        </span>
-                        <span className={cn('text-[10px] mt-0.5', post.refundMainPolicy === opt.value ? 'text-emerald-600' : 'text-slate-400')}>
-                          {opt.desc}
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-
-                {/* ── fields 2–6: disabled when UNSPECIFIED ── */}
-                <div className={cn('space-y-4', isUnspecified && 'opacity-50 pointer-events-none select-none')}>
-
-                {/* ช่วงเวลาที่เริ่มใช้เงื่อนไข */}
-                <div>
-                  <Label>ช่วงเวลาที่เริ่มใช้เงื่อนไขนี้</Label>
-                  <div className="flex gap-1.5 flex-wrap mt-1">
-                    {POST_REFUND_APPLY_AFTER_OPTIONS.map(opt => (
-                      <label key={opt.value} className={cn(
-                        'flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs cursor-pointer transition select-none',
-                        post.applyAfter === opt.value ? 'border-[#05a94f] bg-emerald-50 text-[#05a94f] font-semibold' : 'border-slate-200 text-slate-600 hover:border-slate-300',
-                        readOnly && 'pointer-events-none',
-                      )}>
-                        <input type="radio" className="sr-only" checked={post.applyAfter === opt.value}
-                          onChange={() => setPost({ applyAfter: opt.value })} disabled={readOnly} />
-                        {opt.label}
-                      </label>
-                    ))}
-                  </div>
-                </div>
-
-                {/* การเปลี่ยนชื่อผู้โดยสาร */}
-                <div>
-                  <Label>การเปลี่ยนชื่อผู้โดยสาร</Label>
-                  <div className="flex gap-1.5 flex-wrap mt-1">
-                    {NAME_CHANGE_POLICY_OPTIONS.map(opt => (
-                      <label key={opt.value} className={cn(
-                        'flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs cursor-pointer transition select-none',
-                        post.nameChangePolicy === opt.value ? 'border-[#05a94f] bg-emerald-50 text-[#05a94f] font-semibold' : 'border-slate-200 text-slate-600 hover:border-slate-300',
-                        readOnly && 'pointer-events-none',
-                      )}>
-                        <input type="radio" className="sr-only"
-                          checked={post.nameChangePolicy === opt.value}
-                          onChange={() => setPost({ nameChangePolicy: opt.value })}
-                          disabled={readOnly} />
-                        {opt.label}
-                      </label>
-                    ))}
-                  </div>
-                </div>
-
-                {/* รายการที่ Refund ได้ / ไม่ได้ */}
-                {post.refundMainPolicy !== 'NON_REFUNDABLE' && (
-                  <div className="space-y-3">
-                    {/* Rule + preset actions */}
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-                      <p className="text-[11px] text-slate-500 flex items-center gap-1 shrink-0">
-                        <Info size={10} className="shrink-0" />
-                        รายการเดียวกันเลือกได้เพียงฝั่งเดียวเท่านั้น
-                      </p>
-                      {!readOnly && (
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <button type="button"
-                            onClick={() => setPost({ refundableItems: ['TAX', 'YQ'], nonRefundableItems: ['FARE', 'YR'] })}
-                            className="px-2.5 py-1 rounded-lg border border-sky-200 bg-sky-50 text-[11px] font-medium text-sky-700 hover:bg-sky-100 transition">
-                            เลือกค่าเริ่มต้น Tax + YQ
-                          </button>
-                          <span className="text-[10px] text-slate-400 hidden sm:inline">คืนได้เฉพาะ Tax และ YQ ไม่คืน Fare / YR</span>
-                          {(post.refundableItems.length > 0 || post.nonRefundableItems.length > 0) && (
-                            <button type="button"
-                              onClick={() => setPost({ refundableItems: [], nonRefundableItems: [] })}
-                              className="px-2 py-1 rounded-lg border border-slate-200 bg-slate-50 text-[11px] text-slate-500 hover:bg-slate-100 transition">
-                              ล้างรายการ
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* 2 cards */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {/* Card A: Refund ได้ */}
-                      <div className="rounded-xl border border-emerald-200 overflow-hidden flex flex-col">
-                        <div className="px-4 py-3 bg-emerald-50 border-b border-emerald-200">
-                          <div className="flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
-                            <span className="text-sm font-semibold text-emerald-800">Refund ได้</span>
+            {/* ค่าธรรมเนียม (not shown for FULL_REFUND, NON_REFUNDABLE, AIRLINE_POLICY) */}
+            {post.simpleResult && !['FULL_REFUND', 'NON_REFUNDABLE', 'AIRLINE_POLICY'].includes(post.simpleResult) && (
+              <div>
+                <Label>ค่าธรรมเนียม</Label>
+                <div className="flex flex-wrap items-center gap-2 mt-1">
+                  <span className="text-xs text-slate-500">วิธีคิด:</span>
+                  {([
+                    { val: 'PERCENT',  label: 'เปอร์เซ็นต์' },
+                    { val: 'PER_SEAT', label: 'ต่อที่นั่ง' },
+                    { val: 'PER_PNR',  label: 'ต่อ PNR' },
+                  ] as { val: 'PERCENT' | 'PER_SEAT' | 'PER_PNR'; label: string }[]).map(opt => (
+                    <label key={opt.val} className={cn(
+                      'flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs cursor-pointer transition select-none',
+                      (opt.val === 'PERCENT' ? post.penaltySingleType === 'PERCENT' : post.refundFeeUnit === opt.val && post.penaltySingleType !== 'PERCENT')
+                        ? 'border-[#05a94f] bg-emerald-50 text-[#05a94f] font-semibold' : 'border-slate-200 text-slate-600 hover:border-slate-300',
+                      readOnly && 'pointer-events-none',
+                    )}>
+                      <input type="radio" className="sr-only"
+                        checked={opt.val === 'PERCENT' ? post.penaltySingleType === 'PERCENT' : post.refundFeeUnit === opt.val && post.penaltySingleType !== 'PERCENT'}
+                        onChange={() => setPost({
+                          penaltySingleType: opt.val === 'PERCENT' ? 'PERCENT' : 'FIXED',
+                          refundFeeUnit: opt.val === 'PERCENT' ? 'PER_SEAT' : opt.val as 'PER_SEAT' | 'PER_PNR',
+                          penaltySingleValue: null,
+                        })}
+                        disabled={readOnly} />
+                      {opt.label}
+                    </label>
+                  ))}
+                  {(post.penaltySingleType === 'PERCENT' || post.penaltySingleType === 'FIXED') && (
+                    <>
+                      <FInput
+                        type="number" min={0}
+                        max={post.penaltySingleType === 'PERCENT' ? 100 : undefined}
+                        value={post.penaltySingleValue ?? ''}
+                        onChange={v => setPost({ penaltySingleValue: v === '' ? null : Number(v) })}
+                        placeholder={post.penaltySingleType === 'PERCENT' ? 'เช่น 10' : '0.00'}
+                        disabled={readOnly}
+                        className="w-[120px]"
+                      />
+                      {post.penaltySingleType === 'PERCENT'
+                        ? <span className="text-xs text-slate-500">%</span>
+                        : (
+                          <div className="w-[140px]">
+                            <SearchableSelect
+                              options={CURRENCY_OPTIONS}
+                              value={post.refundFeeCurrency || currency}
+                              onChange={v => setPost({ refundFeeCurrency: v })}
+                              placeholder="สกุลเงิน"
+                              disabled={readOnly}
+                              usePortal
+                            />
                           </div>
-                          <p className="text-[11px] text-emerald-600 mt-0.5 ml-4">รายการที่สามารถขอคืนเงินได้</p>
-                        </div>
-                        <div className="px-4 py-3 bg-white flex-1">
-                          <RefundItemCheckboxes
-                            selected={post.refundableItems}
-                            disabledItems={post.nonRefundableItems}
-                            onChange={v => setPost({
-                              refundableItems: v,
-                              nonRefundableItems: post.nonRefundableItems.filter(x => !v.includes(x)),
-                            })}
-                            readOnly={readOnly}
-                            colorScheme="green"
-                          />
-                        </div>
-                        <div className={cn('px-4 py-2 border-t text-[11px] font-medium',
-                          post.refundableItems.length > 0 ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : 'bg-slate-50 border-slate-100 text-slate-400')}>
-                          {post.refundableItems.length > 0
-                            ? `เลือกแล้ว: ${post.refundableItems.map(i => REFUND_ITEM_OPTIONS.find(o => o.value === i)?.label ?? i).join(', ')}`
-                            : 'ยังไม่ได้เลือกรายการ'}
-                        </div>
-                        {post.refundMainPolicy === 'PARTIAL_REFUND' && post.refundableItems.length === 0 && (
-                          <div className="px-4 pb-2">
-                            <p className="text-[10px] text-amber-600 flex items-center gap-1">
-                              <AlertCircle size={10} /> เลือกอย่างน้อย 1 รายการ
-                            </p>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Card B: Refund ไม่ได้ */}
-                      <div className="rounded-xl border border-orange-200 overflow-hidden flex flex-col">
-                        <div className="px-4 py-3 bg-orange-50 border-b border-orange-200">
-                          <div className="flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full bg-orange-400 shrink-0" />
-                            <span className="text-sm font-semibold text-orange-800">Refund ไม่ได้</span>
-                          </div>
-                          <p className="text-[11px] text-orange-600 mt-0.5 ml-4">รายการที่ไม่คืนเงินไม่ว่ากรณีใด</p>
-                        </div>
-                        <div className="px-4 py-3 bg-white flex-1">
-                          <RefundItemCheckboxes
-                            selected={post.nonRefundableItems}
-                            disabledItems={post.refundableItems}
-                            onChange={v => setPost({
-                              nonRefundableItems: v,
-                              refundableItems: post.refundableItems.filter(x => !v.includes(x)),
-                            })}
-                            readOnly={readOnly}
-                            colorScheme="orange"
-                          />
-                        </div>
-                        <div className={cn('px-4 py-2 border-t text-[11px] font-medium',
-                          post.nonRefundableItems.length > 0 ? 'bg-orange-50 border-orange-100 text-orange-700' : 'bg-slate-50 border-slate-100 text-slate-400')}>
-                          {post.nonRefundableItems.length > 0
-                            ? `เลือกแล้ว: ${post.nonRefundableItems.map(i => REFUND_ITEM_OPTIONS.find(o => o.value === i)?.label ?? i).join(', ')}`
-                            : 'ยังไม่ได้เลือกรายการ'}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* ค่าธรรมเนียม Refund */}
-                <div>
-                  <Label>ค่าธรรมเนียม Refund</Label>
-                  <div className="flex gap-1.5 flex-wrap mt-1 mb-2">
-                    {POST_FEE_TYPE_OPTIONS.map(opt => (
-                      <label key={opt.value} className={cn(
-                        'flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs cursor-pointer transition select-none',
-                        post.refundFeeType === opt.value ? 'border-[#05a94f] bg-emerald-50 text-[#05a94f] font-semibold' : 'border-slate-200 text-slate-600 hover:border-slate-300',
-                        readOnly && 'pointer-events-none',
-                      )}>
-                        <input type="radio" className="sr-only" checked={post.refundFeeType === opt.value}
-                          onChange={() => setPost({
-                            refundFeeType: opt.value,
-                            ...(opt.value !== 'FIX'     ? { refundFeeAmount: null, refundFeeCurrency: '' } : {}),
-                            ...(opt.value !== 'PERCENT' ? { refundFeePercent: null } : {}),
-                          })} disabled={readOnly} />
-                        {opt.label}
-                      </label>
-                    ))}
-                  </div>
-                  {post.refundFeeType === 'FIX' && (
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <FInput type="number" min={0} value={post.refundFeeAmount ?? ''} disabled={readOnly}
-                        onChange={v => setPost({ refundFeeAmount: v === '' ? null : Number(v) })}
-                        placeholder="0.00" className="w-[160px]" />
-                      <div className="w-[160px] shrink-0">
-                        <SearchableSelect
-                          options={CURRENCY_OPTIONS}
-                          value={post.refundFeeCurrency || currency}
-                          onChange={v => setPost({ refundFeeCurrency: v })}
-                          placeholder="เลือกสกุลเงิน"
-                          disabled={readOnly}
-                          usePortal
-                        />
-                      </div>
-                      <div className="flex gap-1.5 flex-wrap">
-                        {REFUND_FEE_UNIT_OPTIONS.map(opt => (
-                          <label key={opt.value} className={cn(
-                            'flex items-center gap-1 px-2 py-1 rounded-lg border text-[11px] cursor-pointer transition select-none',
-                            post.refundFeeUnit === opt.value ? 'border-[#05a94f] bg-emerald-50 text-[#05a94f] font-semibold' : 'border-slate-200 text-slate-500 hover:border-slate-300',
-                            readOnly && 'pointer-events-none',
-                          )}>
-                            <input type="radio" className="sr-only" checked={post.refundFeeUnit === opt.value}
-                              onChange={() => setPost({ refundFeeUnit: opt.value })} disabled={readOnly} />
-                            {opt.label}
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {post.refundFeeType === 'PERCENT' && (
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <FInput type="number" min={0} max={100} value={post.refundFeePercent ?? ''} disabled={readOnly}
-                          onChange={v => setPost({ refundFeePercent: v === '' ? null : Number(v) })}
-                          placeholder="เช่น 10" className="max-w-[140px]" />
-                        <span className="text-xs text-slate-500">%</span>
-                      </div>
-                      <div>
-                        <Label>คำนวณจาก</Label>
-                        <div className="flex gap-1.5 flex-wrap">
-                          {POST_FEE_BASE_OPTIONS.map(opt => (
-                            <label key={opt.value} className={cn(
-                              'flex items-center gap-1 px-2 py-1 rounded-lg border text-[11px] cursor-pointer transition select-none',
-                              post.refundFeeBase === opt.value ? 'border-[#05a94f] bg-emerald-50 text-[#05a94f] font-semibold' : 'border-slate-200 text-slate-500 hover:border-slate-300',
-                              readOnly && 'pointer-events-none',
-                            )}>
-                              <input type="radio" className="sr-only" checked={post.refundFeeBase === opt.value}
-                                onChange={() => setPost({ refundFeeBase: opt.value })} disabled={readOnly} />
-                              {opt.label}
-                            </label>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
+                        )
+                      }
+                    </>
                   )}
                 </div>
-
-                {/* รูปแบบค่าปรับ */}
-                <div>
-                  <Label>รูปแบบค่าปรับ</Label>
-                  <p className="text-[10px] text-slate-400 mb-1">กรณีแจ้ง Refund นอกเงื่อนไขหรือนอกระยะเวลาที่กำหนด</p>
-                  <div className="flex gap-1.5 flex-wrap">
-                    {REFUND_PENALTY_MODE_OPTIONS.map(opt => (
-                      <label key={opt.value} className={cn(
-                        'flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs cursor-pointer transition select-none',
-                        post.penaltyMode === opt.value ? 'border-[#05a94f] bg-emerald-50 text-[#05a94f] font-semibold' : 'border-slate-200 text-slate-600 hover:border-slate-300',
-                        readOnly && 'pointer-events-none',
-                      )}>
-                        <input type="radio" className="sr-only" checked={post.penaltyMode === opt.value}
-                          onChange={() => setPost({
-                            penaltyMode: opt.value,
-                            ...(opt.value !== 'SINGLE' ? { penaltySingleType: 'PERCENT', penaltySingleValue: null, penaltySingleBase: 'GROUP_PRICE' } : {}),
-                            ...(opt.value !== 'STEP_RULE' ? { penaltyStepRules: [] } : {}),
-                          })} disabled={readOnly} />
-                        {opt.label}
-                      </label>
-                    ))}
-                  </div>
-
-                  {post.penaltyMode === 'SINGLE' && (
-                    <div className="mt-3 grid grid-cols-2 gap-3">
-                      <div>
-                        <Label>ประเภท</Label>
-                        <div className="flex gap-1.5 flex-wrap">
-                          {([
-                            { value: 'PERCENT',      label: '%' },
-                            { value: 'FIXED',        label: 'จำนวนเงิน' },
-                            { value: 'FULL_FORFEIT', label: 'ยึดเต็ม' },
-                          ] as const).map(opt => (
-                            <label key={opt.value} className={cn(
-                              'flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs cursor-pointer transition select-none',
-                              post.penaltySingleType === opt.value ? 'border-[#05a94f] bg-emerald-50 text-[#05a94f] font-semibold' : 'border-slate-200 text-slate-600 hover:border-slate-300',
-                              readOnly && 'pointer-events-none',
-                            )}>
-                              <input type="radio" className="sr-only" checked={post.penaltySingleType === opt.value}
-                                onChange={() => setPost({ penaltySingleType: opt.value })} disabled={readOnly} />
-                              {opt.label}
-                            </label>
-                          ))}
-                        </div>
-                      </div>
-                      {(post.penaltySingleType === 'PERCENT' || post.penaltySingleType === 'FIXED') && (
-                        <div>
-                          <Label required>{post.penaltySingleType === 'PERCENT' ? 'เปอร์เซ็นต์' : `จำนวนเงิน (${currency})`}</Label>
-                          <FInput type="number" min={0} max={post.penaltySingleType === 'PERCENT' ? 100 : undefined}
-                            value={post.penaltySingleValue ?? ''} disabled={readOnly}
-                            onChange={v => setPost({ penaltySingleValue: v === '' ? null : Number(v) })}
-                            placeholder={post.penaltySingleType === 'PERCENT' ? 'เช่น 15' : '0.00'} />
-                        </div>
-                      )}
-                      {post.penaltySingleType === 'PERCENT' && (
-                        <div className="col-span-2">
-                          <Label>คำนวณจาก</Label>
-                          <div className="flex gap-1.5 flex-wrap">
-                            {REFUND_PENALTY_BASE_OPTIONS.map(opt => (
-                              <label key={opt.value} className={cn(
-                                'flex items-center gap-1 px-2 py-1 rounded-lg border text-[11px] cursor-pointer transition select-none',
-                                post.penaltySingleBase === opt.value ? 'border-[#05a94f] bg-emerald-50 text-[#05a94f] font-semibold' : 'border-slate-200 text-slate-500 hover:border-slate-300',
-                                readOnly && 'pointer-events-none',
-                              )}>
-                                <input type="radio" className="sr-only" checked={post.penaltySingleBase === opt.value}
-                                  onChange={() => setPost({ penaltySingleBase: opt.value })} disabled={readOnly} />
-                                {opt.label}
-                              </label>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {post.penaltyMode === 'STEP_RULE' && (
-                    <div className="mt-3 space-y-2">
-                      {post.penaltyStepRules.length === 0 && (
-                        <div className="text-center py-4 bg-slate-50 rounded-xl border border-dashed border-amber-300">
-                          <p className="text-xs text-slate-500">ยังไม่มี Step</p>
-                          <p className="text-[10px] text-slate-400 mt-0.5">เพิ่ม Step เพื่อกำหนดค่าปรับตามช่วงวัน</p>
-                        </div>
-                      )}
-                      {post.penaltyStepRules.map((r, i) => (
-                        <RefundPenaltyStepRuleRow
-                          key={r.id} rule={r} index={i} readOnly={readOnly} currency={currency}
-                          onUpdate={upd => setPost({ penaltyStepRules: post.penaltyStepRules.map((x, j) => j === i ? upd : x) })}
-                          onRemove={() => setPost({ penaltyStepRules: post.penaltyStepRules.filter((_, j) => j !== i) })}
-                        />
-                      ))}
-                      {!readOnly && (
-                        <button type="button" onClick={addPenaltyStepRule}
-                          className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl border border-dashed border-[#05a94f]/40 text-[#05a94f] text-xs font-medium hover:bg-emerald-50 transition">
-                          <Plus size={12} /> เพิ่ม Step
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* หมายเหตุ */}
-                <div>
-                  <Label>หมายเหตุ Refund</Label>
-                  <FTextarea value={post.remark} onChange={v => setPost({ remark: v })} rows={3} disabled={readOnly}
-                    placeholder="เช่น หลังส่งชื่อแล้วไม่สามารถเปลี่ยนผู้โดยสารได้ กรณีผู้โดยสารเดินทางไม่ได้ Refund ได้เฉพาะ Tax และ Fuel Charge ยกเว้น YR" />
-                </div>
-
-                </div>{/* end disabled wrapper */}
-
               </div>
             )}
-          </div>
 
-          {/* ── Card 3: Utilization ── */}
-          <div className="rounded-2xl border border-slate-200 overflow-hidden">
-            <div className="px-4 py-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Calculator size={14} className="text-slate-400" />
-                <div>
-                  <p className="text-xs font-semibold text-slate-700">ใช้ที่นั่งขั้นต่ำ</p>
-                  <p className="text-[10px] text-slate-400 mt-0.5">กำหนดจำนวนที่นั่งขั้นต่ำที่ต้องใช้ตามเงื่อนไขสายการบิน</p>
-                </div>
+            {/* ระยะเวลายื่น Refund */}
+            <div>
+              <Label>ระยะเวลายื่น Refund</Label>
+              <div className="flex flex-wrap items-center gap-2 mt-1">
+                <span className="text-xs text-slate-500">ต้องยื่นภายใน</span>
+                <FInput
+                  type="number" min={0}
+                  value={post.deadlineDays ?? ''}
+                  onChange={v => setPost({
+                    deadlineDays: v === '' ? null : Number(v),
+                    deadlineType: v === '' ? 'NONE' : 'BEFORE_TRAVEL',
+                  })}
+                  placeholder="จำนวนวัน"
+                  disabled={readOnly}
+                  className="w-[100px]"
+                />
+                <span className="text-xs text-slate-500">วัน ก่อนวันเดินทาง</span>
               </div>
-              <label className="flex items-center gap-2 cursor-pointer select-none shrink-0">
-                <Toggle checked={util.enabled} onChange={v => setUtil({ enabled: v })} disabled={readOnly} />
-                <span className="text-[11px] text-slate-500">{util.enabled ? 'เปิด' : 'ปิด'}</span>
-              </label>
             </div>
 
-            {util.enabled && (
-              <div className="px-4 py-4 space-y-4">
+            {/* รายละเอียดเพิ่มเติม */}
+            <div>
+              <Label>รายละเอียดเพิ่มเติม</Label>
+              <FTextarea
+                value={post.remark}
+                onChange={v => setPost({ remark: v })}
+                rows={3}
+                disabled={readOnly}
+                placeholder="เช่น เงื่อนไขจากสายการบิน ข้อยกเว้น หรือรายละเอียดค่าธรรมเนียมเพิ่มเติม"
+              />
+            </div>
 
-                {/* ฐานคำนวณ + % */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <Label required>เปอร์เซ็นต์การใช้ที่นั่งขั้นต่ำ</Label>
-                    <div className="flex items-center gap-2 mt-1">
-                      <FInput type="number" min={0.01} max={100} step={0.01} value={util.requiredPercent ?? ''} disabled={readOnly}
-                        onChange={v => setUtil({ requiredPercent: v === '' ? null : Number(v) })} placeholder="เช่น 90" />
-                      <span className="text-xs text-slate-500 shrink-0">%</span>
-                    </div>
-                    <p className="text-[10px] text-slate-400 mt-1">
-                      เช่น 90 หมายถึงต้องใช้ที่นั่งอย่างน้อย 90% ของฐานที่เลือก
-                    </p>
-                  </div>
-                  <div>
-                    <Label required>ฐานที่ใช้คำนวณขั้นต่ำ</Label>
-                    <FSelect<CondUtilizationBase>
-                      value={util.calcBase}
-                      onChange={v => {
-                        if (!v) return
-                        setUtil({
-                          calcBase: v,
-                          ...(v === 'LATEST_SEAT' && util.measureBy === 'CURRENT_TICKET'
-                            ? { measureBy: 'ISSUED_TICKET' } : {}),
-                        })
-                      }}
-                      options={UTIL_BASE_OPTIONS}
-                      disabled={readOnly}
-                    />
-                    <p className="text-[10px] text-slate-400 mt-1">
-                      เลือกจำนวนตั้งต้นที่ใช้คำนวณ % ขั้นต่ำ เช่น จำนวนตั๋วเริ่มต้น หรือจำนวนตั๋วที่มัดจำ
-                    </p>
-                  </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Card 2: Refund ตามจำนวนที่นั่งขั้นต่ำ ── */}
+      <div className="rounded-2xl border border-slate-200 overflow-hidden">
+        <div className="px-4 py-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Calculator size={14} className="text-slate-400" />
+            <div>
+              <p className="text-xs font-semibold text-slate-700">Refund ตามจำนวนที่นั่งขั้นต่ำ</p>
+              <CardStatusBadge enabled={util.enabled} notSupported={util.enabled && util.simpleAction === 'NON_REFUNDABLE'} />
+            </div>
+          </div>
+          <label className="flex items-center gap-2 cursor-pointer select-none shrink-0">
+            <Toggle checked={util.enabled} onChange={v => setUtil({ enabled: v })} disabled={readOnly} />
+            <span className="text-[11px] text-slate-500">{util.enabled ? 'เปิด' : 'ปิด'}</span>
+          </label>
+        </div>
+
+        {util.enabled && (
+          <div className="px-4 py-4 space-y-4">
+
+            {/* วิธีระบุ */}
+            <div>
+              <Label required>วิธีระบุจำนวนขั้นต่ำ</Label>
+              <div className="grid grid-cols-2 gap-2 mt-1">
+                {UTIL_METHOD_OPTIONS.map(opt => (
+                  <label key={opt.val} className={cn(
+                    'flex flex-col px-3 py-2 rounded-xl border cursor-pointer transition text-xs select-none',
+                    util.utilizationMethod === opt.val ? 'border-[#05a94f] bg-emerald-50' : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50',
+                    readOnly && 'pointer-events-none',
+                  )}>
+                    <input type="radio" className="sr-only"
+                      checked={util.utilizationMethod === opt.val}
+                      onChange={() => setUtil({
+                        utilizationMethod: opt.val,
+                        ...(opt.val === 'COUNT' ? { requiredPercent: null } : { requiredCount: null }),
+                      })}
+                      disabled={readOnly} />
+                    <span className={cn('font-semibold', util.utilizationMethod === opt.val ? 'text-[#05a94f]' : 'text-slate-700')}>
+                      {opt.label}
+                    </span>
+                    <span className={cn('text-[10px] mt-0.5', util.utilizationMethod === opt.val ? 'text-emerald-600' : 'text-slate-400')}>
+                      {opt.desc}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* ค่าที่ระบุ */}
+            {util.utilizationMethod === 'COUNT' && (
+              <div>
+                <Label required>จำนวนที่นั่งขั้นต่ำ</Label>
+                <div className="flex items-center gap-2 mt-1">
+                  <FInput
+                    type="number" min={1} step={1}
+                    value={util.requiredCount ?? ''}
+                    onChange={v => setUtil({ requiredCount: v === '' ? null : Math.round(Number(v)) })}
+                    placeholder="เช่น 30"
+                    disabled={readOnly}
+                    className="w-[120px]"
+                  />
+                  <span className="text-xs text-slate-500">ที่นั่ง</span>
                 </div>
-
-                {/* จำนวนที่ใช้ตรวจสอบจริง */}
-                <div>
-                  <Label required>จำนวนที่ใช้ตรวจสอบจริง</Label>
-                  <p className="text-[10px] text-slate-400 mt-0.5 mb-2">
-                    เลือกจำนวนจริงที่ระบบจะนำมาเทียบกับขั้นต่ำ เช่น จำนวนตั๋วปัจจุบัน หรือจำนวนที่ออกตั๋วจริง
-                  </p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {UTIL_MEASURE_OPTIONS.map(opt => {
-                      const notAllowed = util.calcBase === 'LATEST_SEAT' && opt.value === 'CURRENT_TICKET'
-                      return (
-                        <label key={opt.value} className={cn(
-                          'flex flex-col px-3 py-2 rounded-xl border transition select-none',
-                          notAllowed
-                            ? 'border-slate-100 bg-slate-50 opacity-50 cursor-not-allowed'
-                            : util.measureBy === opt.value
-                              ? 'border-[#05a94f] bg-emerald-50 cursor-pointer'
-                              : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50 cursor-pointer',
-                          readOnly && 'pointer-events-none',
-                        )}>
-                          <input type="radio" className="sr-only" checked={util.measureBy === opt.value}
-                            onChange={() => !notAllowed && setUtil({ measureBy: opt.value })}
-                            disabled={readOnly || notAllowed} />
-                          <span className={cn('text-xs font-semibold',
-                            notAllowed ? 'text-slate-300' : util.measureBy === opt.value ? 'text-[#05a94f]' : 'text-slate-700')}>
-                            {opt.label}
-                          </span>
-                          <span className={cn('text-[10px] mt-0.5 leading-relaxed',
-                            notAllowed ? 'text-slate-300' : util.measureBy === opt.value ? 'text-emerald-600' : 'text-slate-400')}>
-                            {opt.desc}
-                          </span>
-                          {notAllowed && (
-                            <span className="text-[9px] text-slate-400 mt-1">
-                              ไม่รองรับเมื่อฐาน = จำนวนตั๋วล่าสุด
-                            </span>
-                          )}
-                        </label>
-                      )
-                    })}
-                  </div>
-                  {util.calcBase === 'LATEST_SEAT' && util.measureBy === 'CURRENT_TICKET' && (
-                    <p className="text-[10px] text-amber-600 mt-1.5 flex items-center gap-1">
-                      <AlertCircle size={10} />
-                      ฐานคำนวณและจำนวนที่ใช้ตรวจสอบไม่ควรเป็นค่าเดียวกัน เพราะจะทำให้เงื่อนไขใช้ที่นั่งขั้นต่ำไม่มีผล
-                    </p>
-                  )}
-                </div>
-
-                <div>
-                  <Label required>หากใช้ไม่ถึงขั้นต่ำ</Label>
-                  <div className="flex gap-1.5 flex-wrap mt-1">
-                    {UTIL_ACTION_OPTIONS.map(opt => (
-                      <label key={opt.value} className={cn(
-                        'flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs cursor-pointer transition select-none',
-                        util.exceedAction === opt.value ? 'border-[#05a94f] bg-emerald-50 text-[#05a94f] font-semibold' : 'border-slate-200 text-slate-600 hover:border-slate-300',
-                        readOnly && 'pointer-events-none',
-                      )}>
-                        <input type="radio" className="sr-only" checked={util.exceedAction === opt.value}
-                          onChange={() => setUtil({
-                            exceedAction: opt.value,
-                            ...(opt.value !== 'PENALTY' ? { penaltyAmount: null, penaltyPercent: null, penaltyCurrency: '' } : {}),
-                          })} disabled={readOnly} />
-                        {opt.label}
-                      </label>
-                    ))}
-                  </div>
-                </div>
-
-                {util.exceedAction === 'PENALTY' && (
-                  <div>
-                    <Label required>วิธีคิดค่าปรับ</Label>
-                    <div className="flex gap-1.5 flex-wrap mt-1 mb-2">
-                      {UTIL_PENALTY_TYPE_OPTIONS.map(opt => (
-                        <label key={opt.value} className={cn(
-                          'flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs cursor-pointer transition select-none',
-                          util.penaltyType === opt.value ? 'border-[#05a94f] bg-emerald-50 text-[#05a94f] font-semibold' : 'border-slate-200 text-slate-600 hover:border-slate-300',
-                          readOnly && 'pointer-events-none',
-                        )}>
-                          <input type="radio" className="sr-only" checked={util.penaltyType === opt.value}
-                            onChange={() => setUtil({
-                              penaltyType: opt.value,
-                              ...(opt.value === 'AMOUNT_PER_MISSING' ? { penaltyPercent: null } : { penaltyAmount: null, penaltyCurrency: '' }),
-                            })} disabled={readOnly} />
-                          {opt.label}
-                        </label>
-                      ))}
-                    </div>
-                    {util.penaltyType === 'AMOUNT_PER_MISSING' && (
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <FInput type="number" min={0} value={util.penaltyAmount ?? ''} disabled={readOnly}
-                          onChange={v => setUtil({ penaltyAmount: v === '' ? null : Number(v) })}
-                          placeholder="0.00" className="w-[160px]" />
-                        <div className="w-[160px] shrink-0">
-                          <SearchableSelect
-                            options={CURRENCY_OPTIONS}
-                            value={util.penaltyCurrency || currency}
-                            onChange={v => setUtil({ penaltyCurrency: v })}
-                            placeholder="เลือกสกุลเงิน"
-                            disabled={readOnly}
-                            usePortal
-                          />
-                        </div>
-                        <span className="text-xs text-slate-500 shrink-0">ต่อที่นั่งที่ขาด</span>
-                      </div>
-                    )}
-                    {(util.penaltyType === 'PERCENT_GROUP' || util.penaltyType === 'PERCENT_DEPOSIT') && (
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <FInput type="number" min={0} max={100} step={0.01} value={util.penaltyPercent ?? ''} disabled={readOnly}
-                          onChange={v => setUtil({ penaltyPercent: v === '' ? null : Number(v) })}
-                          placeholder="เช่น 10" className="w-[160px]" />
-                        <span className="text-xs text-slate-500 shrink-0">%</span>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {util.exceedAction === 'FORFEIT_DEPOSIT' && (
-                  <div>
-                    <Label required>รูปแบบการยึด</Label>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-1">
-                      {UTIL_FORFEIT_TYPE_OPTIONS.map(opt => (
-                        <label key={opt.value} className={cn(
-                          'flex flex-col px-3 py-2 rounded-xl border cursor-pointer transition text-xs select-none',
-                          util.forfeitType === opt.value
-                            ? 'border-[#05a94f] bg-emerald-50'
-                            : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50',
-                          readOnly && 'pointer-events-none',
-                        )}>
-                          <input type="radio" className="sr-only" checked={util.forfeitType === opt.value}
-                            onChange={() => setUtil({ forfeitType: opt.value })} disabled={readOnly} />
-                          <span className={cn('font-semibold', util.forfeitType === opt.value ? 'text-[#05a94f]' : 'text-slate-700')}>
-                            {opt.label}
-                          </span>
-                          <span className={cn('text-[10px] mt-0.5', util.forfeitType === opt.value ? 'text-emerald-600' : 'text-slate-400')}>
-                            {opt.desc}
-                          </span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                <div>
-                  <Label>หมายเหตุ</Label>
-                  <FTextarea value={util.remark} onChange={v => setUtil({ remark: v })} rows={2} disabled={readOnly}
-                    placeholder="เช่น ต้องออกตั๋วอย่างน้อย 90% ของ Deposit หากไม่ถึงจะคิดค่าปรับตามจำนวนที่นั่งที่ขาด" />
-                </div>
-
               </div>
             )}
-          </div>
-
-          {/* ── Card 4: Live Preview ── */}
-          {(post.enabled || util.enabled) && (
-            <div className="rounded-2xl border border-sky-200 bg-sky-50 overflow-hidden">
-              <div className="flex items-center gap-2 px-4 py-2.5 bg-sky-100 border-b border-sky-200">
-                <Eye size={13} className="text-sky-600 shrink-0" />
-                <span className="text-xs font-semibold text-sky-800">ตัวอย่างจากข้อมูลที่ตั้งค่า</span>
+            {util.utilizationMethod === 'PERCENT' && (
+              <div>
+                <Label required>เปอร์เซ็นต์ขั้นต่ำ</Label>
+                <div className="flex items-center gap-2 mt-1">
+                  <FInput
+                    type="number" min={0.01} max={100} step={0.01}
+                    value={util.requiredPercent ?? ''}
+                    onChange={v => setUtil({ requiredPercent: v === '' ? null : Number(v) })}
+                    placeholder="เช่น 80"
+                    disabled={readOnly}
+                    className="w-[120px]"
+                  />
+                  <span className="text-xs text-slate-500">%</span>
+                </div>
               </div>
-              <div className="px-4 py-3 space-y-1">
-                {previewLines.length === 0 ? (
-                  <p className="text-sm text-slate-400 italic">ยังไม่มีข้อมูลสำหรับแสดงตัวอย่าง</p>
-                ) : (
-                  previewLines.map((line, i) => (
-                    <p key={i} className={cn('text-sm leading-relaxed', line.missing ? 'text-amber-600 italic' : 'text-slate-700')}>
-                      {line.text}
-                    </p>
-                  ))
-                )}
+            )}
+
+            {/* คำนวณจาก */}
+            <div>
+              <Label>คำนวณจาก</Label>
+              <div className="grid grid-cols-2 gap-2 mt-1">
+                {UTIL_SIMPLE_CALC_BASE_OPTIONS.map(opt => (
+                  <label key={opt.val} className={cn(
+                    'flex flex-col px-3 py-2 rounded-xl border cursor-pointer transition text-xs select-none',
+                    util.calcBase === opt.val ? 'border-[#05a94f] bg-emerald-50' : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50',
+                    readOnly && 'pointer-events-none',
+                  )}>
+                    <input type="radio" className="sr-only"
+                      checked={util.calcBase === opt.val}
+                      onChange={() => setUtil({ calcBase: opt.val })}
+                      disabled={readOnly} />
+                    <span className={cn('font-semibold', util.calcBase === opt.val ? 'text-[#05a94f]' : 'text-slate-700')}>
+                      {opt.label}
+                    </span>
+                    <span className={cn('text-[10px] mt-0.5', util.calcBase === opt.val ? 'text-emerald-600' : 'text-slate-400')}>
+                      {opt.desc}
+                    </span>
+                  </label>
+                ))}
               </div>
             </div>
-          )}
 
+            {/* กรณีใช้งานต่ำกว่ากำหนด */}
+            <div>
+              <Label required>กรณีใช้งานต่ำกว่ากำหนด</Label>
+              <div className="grid grid-cols-2 gap-2 mt-1">
+                {UTIL_SIMPLE_ACTION_OPTIONS.map(opt => (
+                  <label key={opt.val} className={cn(
+                    'flex flex-col px-3 py-2 rounded-xl border cursor-pointer transition text-xs select-none',
+                    util.simpleAction === opt.val ? 'border-[#05a94f] bg-emerald-50' : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50',
+                    readOnly && 'pointer-events-none',
+                  )}>
+                    <input type="radio" className="sr-only"
+                      checked={util.simpleAction === opt.val}
+                      onChange={() => setUtil({
+                        simpleAction: opt.val,
+                        exceedAction: opt.val === 'FORFEIT_DEPOSIT' ? 'FORFEIT_DEPOSIT'
+                          : opt.val === 'PENALTY_FEE' ? 'PENALTY'
+                          : 'NO_PENALTY',
+                      })}
+                      disabled={readOnly} />
+                    <span className={cn('font-semibold', util.simpleAction === opt.val ? 'text-[#05a94f]' : 'text-slate-700')}>
+                      {opt.label}
+                    </span>
+                    <span className={cn('text-[10px] mt-0.5', util.simpleAction === opt.val ? 'text-emerald-600' : 'text-slate-400')}>
+                      {opt.desc}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* รายละเอียดเพิ่มเติม */}
+            <div>
+              <Label>รายละเอียดเพิ่มเติม</Label>
+              <FTextarea
+                value={util.remark}
+                onChange={v => setUtil({ remark: v })}
+                rows={3}
+                disabled={readOnly}
+                placeholder="เช่น เงื่อนไขจากสายการบิน หรือรายละเอียดเพิ่มเติมเกี่ยวกับการคำนวณ"
+              />
+            </div>
+
+          </div>
+        )}
+      </div>
+
+      {/* ── Card 3: Refund กรณีป่วย/เสียชีวิต ── */}
+      <MedicalRefundSection
+        value={rt.medicalRefund ?? defaultMedicalRefund()}
+        onChange={mr => setRt({ medicalRefund: mr })}
+        readOnly={readOnly}
+        currency={currency}
+      />
+
+      {/* ── Live Preview ── */}
+      {(post.enabled || util.enabled || rt.medicalRefund?.enabled) && (
+        <div className="rounded-2xl border border-sky-200 bg-sky-50 overflow-hidden">
+          <div className="flex items-center gap-2 px-4 py-2.5 bg-sky-100 border-b border-sky-200">
+            <Eye size={13} className="text-sky-600 shrink-0" />
+            <span className="text-xs font-semibold text-sky-800">ตัวอย่างจากข้อมูลที่ตั้งค่า</span>
+          </div>
+          <div className="px-4 py-3 space-y-1">
+            {previewLines.length === 0 ? (
+              <p className="text-sm text-slate-400 italic">ยังไม่มีข้อมูลสำหรับแสดงตัวอย่าง</p>
+            ) : (
+              previewLines.map((line, i) => (
+                <p key={i} className={cn('text-sm leading-relaxed', line.missing ? 'text-amber-600 italic' : 'text-slate-700')}>
+                  {line.text}
+                </p>
+              ))
+            )}
+          </div>
         </div>
       )}
+
     </div>
   )
 }

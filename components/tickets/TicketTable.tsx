@@ -579,10 +579,8 @@ export default function TicketTable({ tickets, filterType, filterGroupType, filt
     .filter(d => !filterType || d.ticket_type === filterType)
     .filter(d => !filterGroupType || d.group_type === filterGroupType).length
 
-  // Show Type column only on pages where multiple types can appear
-  const showTypeColumn = !filterType || (filterType === 'Group' && !filterGroupType)
   const showSupplierColumn = filterType === 'Ticket + Land'
-  const colCount = showTypeColumn ? 10 : showSupplierColumn ? 10 : 9
+  const colCount = showSupplierColumn ? 10 : 9
 
   // Derive column label config from current filter context
   const pageConfig = getStockTypeConfig(filterType ?? '', filterGroupType)
@@ -645,8 +643,7 @@ export default function TicketTable({ tickets, filterType, filterGroupType, filt
       <Table>
         <TableHead>
           <tr>
-            <Th>{codeColLabel}</Th>
-            {showTypeColumn && <Th className="hidden md:table-cell">Type</Th>}
+            <Th className="min-w-[190px]">{codeColLabel}</Th>
             <Th>{nameColLabel}</Th>
             <Th className="hidden sm:table-cell">Airline</Th>
             {showSupplierColumn && <Th className="hidden lg:table-cell">Supplier</Th>}
@@ -680,20 +677,20 @@ export default function TicketTable({ tickets, filterType, filterGroupType, filt
             displayTickets.map(t => (
               <TableRow key={t.id}>
                 <Td>
-                  <Link href={`/tickets/${t.id}`} className="font-mono text-xs font-semibold text-[#05a94f] hover:underline">
-                    {t.stock_code}
-                  </Link>
-                  {t.id.startsWith('STK-') && (
-                    <span className="ml-1 inline-flex items-center px-1 py-px text-[9px] font-bold bg-amber-100 text-amber-600 rounded">DEMO</span>
-                  )}
-                </Td>
-                {showTypeColumn && (
-                  <Td className="hidden md:table-cell">
+                  <div className="flex flex-col items-start gap-1">
+                    <div className="flex items-center gap-1.5">
+                      <Link href={`/tickets/${t.id}`} className="font-mono text-xs font-semibold text-[#05a94f] hover:underline whitespace-nowrap">
+                        {t.stock_code}
+                      </Link>
+                      {t.id.startsWith('STK-') && (
+                        <span className="inline-flex items-center px-1 py-px text-[9px] font-bold bg-amber-100 text-amber-600 rounded">DEMO</span>
+                      )}
+                    </div>
                     <TicketTypeBadge type={t.ticket_type} groupType={t.group_type} />
-                  </Td>
-                )}
+                  </div>
+                </Td>
                 <Td>
-                  <p className="text-sm font-medium text-slate-800 max-w-[160px] truncate">{t.group_name}</p>
+                  <p className="text-sm font-medium text-slate-800">{t.group_name}</p>
                   <p className="text-xs text-slate-400 hidden lg:block">{t.destination}</p>
                 </Td>
                 <Td className="hidden sm:table-cell">

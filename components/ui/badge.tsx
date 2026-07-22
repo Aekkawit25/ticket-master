@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils'
 interface BadgeProps {
   children: React.ReactNode
   className?: string
-  variant?: 'green' | 'orange' | 'red' | 'gray' | 'blue' | 'purple' | 'yellow'
+  variant?: 'green' | 'orange' | 'red' | 'gray' | 'blue' | 'purple' | 'yellow' | 'indigo'
 }
 
 export function Badge({ children, className, variant = 'gray' }: BadgeProps) {
@@ -49,7 +49,8 @@ export function PnrConfirmationStatusBadge({ status }: { status: string }) {
   return <Badge variant={confirmed ? 'green' : 'orange'} className="whitespace-nowrap">{confirmed ? 'ยืนยันแล้ว' : 'รอยืนยัน'}</Badge>
 }
 
-export function TicketTypeBadge({ type, groupType }: { type: string; groupType?: string }) {
+export function TicketTypeBadge({ type, groupType, sourceType }: { type: string; groupType?: string; sourceType?: string }) {
+  if (sourceType === 'AD_HOC') return <Badge variant="indigo">Ad Hoc ใน Series</Badge>
   if (type === 'Group') {
     if (groupType === 'ADHOC') return <Badge variant="orange">Ad Hoc</Badge>
     return <Badge variant="green">Series</Badge>

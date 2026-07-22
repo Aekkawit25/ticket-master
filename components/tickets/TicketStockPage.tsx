@@ -146,6 +146,51 @@ function SelectGroupTypeModal({ open, onClose }: { open: boolean; onClose: () =>
   )
 }
 
+// ── Ad Hoc Stat Card (combined Stock + PNR breakdown) ─────────────────────────
+
+function AdHocStatCard({
+  adhocStock, adhocPnr,
+  onCardClick, onStockClick, onPnrClick,
+}: {
+  adhocStock: number; adhocPnr: number
+  onCardClick: () => void; onStockClick: () => void; onPnrClick: () => void
+}) {
+  const total = adhocStock + adhocPnr
+  const color = '#f59e0b'
+  return (
+    <div
+      className="relative bg-white rounded-xl border border-slate-200 shadow-sm p-4 cursor-pointer hover:border-amber-300 hover:shadow-md transition-all"
+      onClick={onCardClick}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs text-slate-500 font-medium">Group Ad Hoc</p>
+          <p className="text-2xl font-bold mt-1" style={{ color }}>{total}</p>
+        </div>
+        <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 opacity-15" style={{ backgroundColor: color }}>
+          <span style={{ color }}><Users size={18} /></span>
+        </div>
+      </div>
+      <div className="mt-2 pt-2 border-t border-slate-100 space-y-0.5">
+        <button
+          className="flex items-center justify-between w-full text-xs text-slate-500 hover:text-amber-600 transition-colors group"
+          onClick={e => { e.stopPropagation(); onStockClick() }}
+        >
+          <span>Ad Hoc Stock</span>
+          <span className="font-semibold tabular-nums text-slate-700 group-hover:text-amber-600">{adhocStock}</span>
+        </button>
+        <button
+          className="flex items-center justify-between w-full text-xs text-slate-500 hover:text-amber-600 transition-colors group"
+          onClick={e => { e.stopPropagation(); onPnrClick() }}
+        >
+          <span>Ad Hoc ใน Series</span>
+          <span className="font-semibold tabular-nums text-slate-700 group-hover:text-amber-600">{adhocPnr} PNR</span>
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ── Main Component ─────────────────────────────────────────────────────────────
 
 export default function TicketStockPage({ fixedTicketType, fixedGroupType }: TicketStockPageProps) {
@@ -164,25 +209,31 @@ export default function TicketStockPage({ fixedTicketType, fixedGroupType }: Tic
   const [groupTypeModal, setGroupTypeModal] = useState(false)
   const [confirmClear,   setConfirmClear]   = useState(false)
   const [stockCount,     setStockCount]     = useState(0)
-  const [counts,         setCounts]         = useState({ group: 0, series: 0, adhoc: 0, fit: 0, land: 0 })
+  const [counts,         setCounts]         = useState({ group: 0, series: 0, adhoc: 0, adhocStock: 0, adhocPnr: 0, fit: 0, land: 0 })
 
   const refreshCounts = () => {
     const all = getDemoStocks()
+    const adhocStock = all.filter(s => s.ticketType === 'Group' && s.groupType === 'ADHOC').length
+    const adhocPnr   = all
+      .filter(s => s.ticketType === 'Group' && s.groupType === 'SERIES')
+      .flatMap(s => s.pnrs ?? [])
+      .filter(p => p.sourceType === 'AD_HOC')
+      .length
     if (isGroupSpecific) {
       setStockCount(all.filter(s => s.ticketType === 'Group' && s.groupType === fixedGroupType).length)
     } else if (isAllGroup) {
       setStockCount(all.filter(s => s.ticketType === 'Group').length)
       const series = all.filter(s => s.ticketType === 'Group' && s.groupType === 'SERIES').length
-      const adhoc  = all.filter(s => s.ticketType === 'Group' && s.groupType === 'ADHOC').length
-      setCounts(prev => ({ ...prev, series, adhoc, group: series + adhoc }))
+      const adhoc  = adhocStock + adhocPnr
+      setCounts(prev => ({ ...prev, series, adhoc, adhocStock, adhocPnr, group: series + adhocStock }))
     } else if (fixedTicketType) {
       setStockCount(all.filter(s => s.ticketType === fixedTicketType).length)
     } else {
       const series = all.filter(s => s.ticketType === 'Group' && s.groupType === 'SERIES').length
-      const adhoc  = all.filter(s => s.ticketType === 'Group' && s.groupType === 'ADHOC').length
+      const adhoc  = adhocStock + adhocPnr
       const fit    = all.filter(s => s.ticketType === 'FIT').length
       const land   = all.filter(s => s.ticketType === 'Ticket + Land').length
-      setCounts(prev => ({ ...prev, series, adhoc, group: series + adhoc, fit, land }))
+      setCounts(prev => ({ ...prev, series, adhoc, adhocStock, adhocPnr, group: series + adhocStock, fit, land }))
       setStockCount(all.length)
     }
   }
@@ -321,16 +372,26 @@ export default function TicketStockPage({ fixedTicketType, fixedGroupType }: Tic
       {/* ── Stat cards ── */}
       {isAll && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-          <StatCard title="Series"      value={counts.series} icon={<List   size={18} />} color="#05a94f" />
-          <StatCard title="Group Ad Hoc" value={counts.adhoc}  icon={<Users  size={18} />} color="#f59e0b" />
-          <StatCard title="FIT"         value={counts.fit}    icon={<Ticket size={18} />} color="#3b82f6" />
+          <StatCard title="Series"        value={counts.series} icon={<List   size={18} />} color="#05a94f" />
+          <AdHocStatCard
+            adhocStock={counts.adhocStock} adhocPnr={counts.adhocPnr}
+            onCardClick={() => router.push('/tickets/group/adhoc')}
+            onStockClick={() => router.push('/tickets/group/adhoc')}
+            onPnrClick={() => router.push('/tickets/group/series')}
+          />
+          <StatCard title="FIT"           value={counts.fit}    icon={<Ticket size={18} />} color="#3b82f6" />
           <StatCard title="Ticket (Land)" value={counts.land}   icon={<Globe  size={18} />} color="#8b5cf6" />
         </div>
       )}
       {isAllGroup && (
         <div className="grid grid-cols-2 gap-3 mb-4">
-          <StatCard title="Group Series" value={counts.series} icon={<List  size={18} />} color="#05a94f" />
-          <StatCard title="Group Ad Hoc"  value={counts.adhoc}  icon={<Users size={18} />} color="#f59e0b" />
+          <StatCard title="Group Series" value={counts.series} icon={<List size={18} />} color="#05a94f" />
+          <AdHocStatCard
+            adhocStock={counts.adhocStock} adhocPnr={counts.adhocPnr}
+            onCardClick={() => router.push('/tickets/group/adhoc')}
+            onStockClick={() => router.push('/tickets/group/adhoc')}
+            onPnrClick={() => router.push('/tickets/group/series')}
+          />
         </div>
       )}
 

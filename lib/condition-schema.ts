@@ -431,6 +431,11 @@ export type CondPostDeadlineType    = 'NONE' | 'BEFORE_TRAVEL' | 'AFTER_TRAVEL' 
 export type CondPostRefundApplyAfter =
   'AFTER_NAME_SUBMIT' | 'AFTER_TICKETING' | 'AFTER_DEPOSIT' | 'AFTER_DEADLINE' | 'AFTER_FULL_PAYMENT'
 
+export type CondRefundPhase = 'POST_NAME' | 'POST_TICKET' | 'BOTH'
+export type CondSimpleRefundResult =
+  | 'NON_REFUNDABLE' | 'PARTIAL_REFUND' | 'FULL_REFUND'
+  | 'TAX_ONLY' | 'TAX_FUEL_ONLY' | 'AIRLINE_POLICY'
+
 export type CondPostRefundMainPolicy =
   'UNSPECIFIED' | 'NON_REFUNDABLE' | 'PARTIAL_REFUND' | 'FULL_REFUND'
 
@@ -482,6 +487,10 @@ export type CondUtilizationAction      = 'NO_PENALTY' | 'PENALTY' | 'FORFEIT_DEP
 export type CondUtilizationPenaltyType = 'AMOUNT_PER_MISSING' | 'PERCENT_GROUP' | 'PERCENT_DEPOSIT' | 'FULL_FORFEIT'
 export type CondUtilizationForfeitType = 'FULL' | 'PER_MISSING_SEAT' | 'PAID_AMOUNT'
 
+export type CondUtilizationMethod = 'COUNT' | 'PERCENT'
+export type CondUtilizationSimpleAction =
+  | 'NON_REFUNDABLE' | 'FORFEIT_DEPOSIT' | 'PENALTY_FEE' | 'AIRLINE_POLICY'
+
 export interface CondUtilization {
   enabled: boolean
   requiredPercent: number | null
@@ -494,6 +503,9 @@ export interface CondUtilization {
   penaltyCurrency: string
   forfeitType: CondUtilizationForfeitType
   remark: string
+  utilizationMethod: CondUtilizationMethod | null
+  requiredCount: number | null
+  simpleAction: CondUtilizationSimpleAction | null
 }
 
 export const COND_PRE_MONEY_TYPE_LABELS: Record<CondPreMoneyType, string> = {
@@ -578,6 +590,8 @@ export interface CondPostTicketRefund {
   penaltySingleBase: string
   penaltyStepRules: CondRefundPenaltyStepRule[]
   nameChangePolicy: CondNameChangePolicy
+  refundPhase: CondRefundPhase | null
+  simpleResult: CondSimpleRefundResult | null
 }
 
 export interface CondRefundTerms {
@@ -589,6 +603,44 @@ export interface CondRefundTerms {
   postTicket: CondPostTicketRefund
   remark: string
   utilization: CondUtilization
+  medicalRefund: CondMedicalRefund
+}
+
+// ─── Medical Refund types (Refund กรณีป่วย/เสียชีวิต) ────────────────────────
+
+export type CondMedicalRefundCase =
+  | 'PASSENGER_SICK' | 'PASSENGER_DEATH'
+  | 'RELATIVE_SERIOUSLY_SICK' | 'RELATIVE_DEATH' | 'OTHER'
+
+export type CondMedicalRefundFormat =
+  | 'FULL_REFUND' | 'TAX_ONLY' | 'TAX_FUEL_ONLY'
+  | 'WITH_FEE' | 'AIRLINE_POLICY' | 'NON_REFUNDABLE'
+
+export type CondMedicalRefundFeeCalc = 'PER_PAX' | 'PERCENT' | 'PER_PNR' | 'PER_SERIES'
+
+export type CondMedicalRefundDoc =
+  | 'MEDICAL_CERT' | 'DEATH_CERT' | 'RELATIONSHIP_DOC'
+  | 'PASSPORT_COPY' | 'ID_COPY' | 'OTHER'
+
+export type CondMedicalRefundDeadlineBase =
+  | 'INCIDENT_DATE' | 'TRAVEL_DATE' | 'CANCEL_DATE' | 'AIRLINE_POLICY'
+
+export type CondMedicalRefundApproval = 'AUTO' | 'AIRLINE' | 'STAFF' | 'CASE_BY_CASE'
+
+export interface CondMedicalRefund {
+  enabled: boolean
+  cases: CondMedicalRefundCase[]
+  casesOtherText: string
+  refundFormat: CondMedicalRefundFormat | null
+  feeCalcType: CondMedicalRefundFeeCalc | null
+  feeValue: number | null
+  feeCurrency: string
+  docs: CondMedicalRefundDoc[]
+  docsOtherText: string
+  deadlineDays: number | null
+  deadlineBase: CondMedicalRefundDeadlineBase | null
+  approvalType: CondMedicalRefundApproval | null
+  remarks: string
 }
 
 // ─── § 1 Extended header types ───────────────────────────────────────────────
@@ -1157,6 +1209,7 @@ export function defaultUtilization(): CondUtilization {
     exceedAction: 'NO_PENALTY', penaltyType: 'AMOUNT_PER_MISSING',
     penaltyAmount: null, penaltyPercent: null, penaltyCurrency: '',
     forfeitType: 'FULL', remark: '',
+    utilizationMethod: null, requiredCount: null, simpleAction: null,
   }
 }
 
@@ -1192,6 +1245,16 @@ export function defaultPostTicketRefund(): CondPostTicketRefund {
     penaltyMode: 'NONE', penaltySingleType: 'PERCENT',
     penaltySingleValue: null, penaltySingleBase: 'GROUP_PRICE', penaltyStepRules: [],
     nameChangePolicy: 'UNSPECIFIED',
+    refundPhase: null, simpleResult: null,
+  }
+}
+
+export function defaultMedicalRefund(): CondMedicalRefund {
+  return {
+    enabled: false, cases: [], casesOtherText: '',
+    refundFormat: null, feeCalcType: null, feeValue: null, feeCurrency: '',
+    docs: [], docsOtherText: '', deadlineDays: null, deadlineBase: null,
+    approvalType: null, remarks: '',
   }
 }
 
@@ -1202,6 +1265,7 @@ export function defaultRefundTerms(): CondRefundTerms {
     preTicket: defaultPreTicketRefund(),
     postTicket: defaultPostTicketRefund(),
     remark: '', utilization: defaultUtilization(),
+    medicalRefund: defaultMedicalRefund(),
   }
 }
 
@@ -1213,6 +1277,7 @@ export function migrateRefundTerms(raw: any): CondRefundTerms {
     postTicket: { ...def.postTicket, ...(raw.postTicket ?? {}) },
     preTicket:  { ...def.preTicket,  ...(raw.preTicket  ?? {}) },
     utilization: { ...def.utilization, ...(raw.utilization ?? {}) },
+    medicalRefund: { ...def.medicalRefund, ...(raw.medicalRefund ?? {}) },
   } as CondRefundTerms
   if ((merged.postTicket.refundMainPolicy as string) === 'CHECK_WITH_AIRLINE')
     merged.postTicket.refundMainPolicy = 'UNSPECIFIED'
@@ -1254,7 +1319,7 @@ export function migrateRefundTerms(raw: any): CondRefundTerms {
 }
 
 export function formatRefundTermsSummary(rt: CondRefundTerms, currency = 'THB'): string {
-  if (!rt.enabled) return 'ยังไม่ตั้งค่า'
+  if (!rt.postTicket.enabled && !rt.utilization.enabled && !rt.medicalRefund?.enabled) return 'ยังไม่ตั้งค่า'
   const parts: string[] = []
   if (rt.postTicket.enabled) {
     const policyLabels: Record<CondPostRefundMainPolicy, string> = {
@@ -1281,6 +1346,8 @@ export function formatRefundTermsSummary(rt: CondRefundTerms, currency = 'THB'):
     }
     return labels[rt.mainPolicy]
   }
+  const mr = rt.medicalRefund
+  if (mr?.enabled) parts.push('รองรับกรณีป่วย/เสียชีวิต')
   return parts.join(' · ') || 'เปิดใช้งาน'
 }
 

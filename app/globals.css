@@ -79,6 +79,7 @@ body {
 .badge-blue { background: #dbeafe; color: #1d4ed8; }
 .badge-purple { background: #ede9fe; color: #7c3aed; }
 .badge-yellow { background: #fef9c3; color: #a16207; }
+.badge-indigo  { background: #e0e7ff; color: #4338ca; }
 
 /* Wizard steps */
 .step-active { color: #05a94f; border-color: #05a94f; background: #f0fdf4; }
