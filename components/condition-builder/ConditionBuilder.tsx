@@ -52,7 +52,7 @@ import {
   DAY_BASED_DUE_TYPES,
 } from '@/lib/condition-schema'
 import { MASTER_AIRLINES, MASTER_COUNTRIES, getAirlineName } from '@/lib/master-data'
-import { getCurrencyOptions } from '@/lib/currency-storage'
+import { getCurrencyOptions, getCurrencySelectOptions } from '@/lib/currency-storage'
 import { CurrencyCombobox } from '@/components/shared/CurrencyCombobox'
 import { AirlineCombobox } from '@/components/shared/AirlineCombobox'
 import RichTextEditor from '@/components/condition-builder/RichTextEditor'
@@ -1026,7 +1026,7 @@ function isAmountCalc(ct: CondCalcType) {
 }
 
 function buildPreview(stage: CondStage, currency: string): string {
-  const c = currency
+  const c = stage.currencyCode || currency
   const qty = COND_QUANTITY_BASIS_LABELS[stage.quantityBasis] ?? ''
   switch (stage.calcType) {
     case 'PER_SEAT':            return `${stage.amount.toLocaleString()} ${c} × ${qty}`
@@ -1263,9 +1263,9 @@ function StageCard({ stage, idx, total, currency, readOnly, open, onToggle, onCh
               />
             </div>
 
-            {/* Col 4: จำนวนเงิน หรือ เปอร์เซ็นต์ — label เปลี่ยน value ไม่ขยับ */}
+            {/* Col 4: จำนวนเงิน หรือ เปอร์เซ็นต์ */}
             <div>
-              <Label>{isPercent ? 'เปอร์เซ็นต์ (%)' : `จำนวน (${currency})`}</Label>
+              <Label>{isPercent ? 'เปอร์เซ็นต์ (%)' : 'จำนวนเงิน'}</Label>
               {isPercent ? (
                 <FInput type="number" min={0} max={100} value={stage.percent || ''} onChange={v => set('percent', Number(v))} disabled={readOnly} placeholder="0" />
               ) : (
@@ -1273,7 +1273,30 @@ function StageCard({ stage, idx, total, currency, readOnly, open, onToggle, onCh
               )}
             </div>
 
-            {/* Col 5: คำนวณจาก — dropdown เมื่อ %, disabled placeholder เมื่อคงที่ */}
+            {/* Col 5: สกุลเงิน (per-stage) — only when amount-based; disabled/ไม่ใช้ when percent */}
+            <div>
+              <Label>{isPercent ? 'สกุลเงิน' : 'สกุลเงิน *'}</Label>
+              {isPercent ? (
+                <div className="h-9 flex items-center px-3 rounded-xl border border-slate-200 bg-slate-50 text-[11px] text-slate-400 italic select-none">
+                  ไม่ใช้
+                </div>
+              ) : getCurrencySelectOptions().length === 0 ? (
+                <div className="h-9 flex items-center px-3 rounded-xl border border-amber-300 bg-amber-50 text-[11px] text-amber-700 select-none">
+                  ต้องเพิ่มข้อมูลใน Currency Master ก่อน
+                </div>
+              ) : (
+                <SearchableSelect
+                  options={getCurrencySelectOptions()}
+                  value={stage.currencyCode || currency}
+                  onChange={v => set('currencyCode', v)}
+                  placeholder={`ค่าเริ่มต้น (${currency})`}
+                  disabled={readOnly}
+                  usePortal
+                />
+              )}
+            </div>
+
+            {/* Col 6: คำนวณจาก — dropdown เมื่อ %, disabled placeholder เมื่อคงที่ */}
             <div>
               <Label>คำนวณจาก</Label>
               {isPercent ? (
@@ -1547,7 +1570,7 @@ export function PaymentSection({ value, onChange, readOnly, currency, errors = [
     setOpenStages(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
 
   const addStage = () => {
-    const s = defaultCondStage(stages.length + 1)
+    const s = defaultCondStage(stages.length + 1, effectiveCurrency)
     onChange({ ...value, stages: [...stages, s] })
     setOpenStages(prev => new Set([...prev, s.stageId]))
   }

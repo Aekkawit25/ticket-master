@@ -110,6 +110,7 @@ export interface CondStage {
   customPaymentName: string
   calcType: CondCalcType
   amount: number
+  currencyCode: string            // '' = inherit template currency
   percent: number
   calcBase: CondCalcBase | null
   quantityBasis: CondQuantityBasis
@@ -779,11 +780,11 @@ export function newTemplateId()   { return _id('CTMPL') }
 
 // ─── Default factories ────────────────────────────────────────────────────────
 
-export function defaultCondStage(stageNo = 1): CondStage {
+export function defaultCondStage(stageNo = 1, defaultCurrencyCode = ''): CondStage {
   return {
     stageId: newStageId(), stageNo,
     stageName: '', paymentType: '', customPaymentName: '',
-    calcType: 'PER_SEAT', amount: 0, percent: 0, calcBase: null,
+    calcType: 'PER_SEAT', amount: 0, currencyCode: defaultCurrencyCode, percent: 0, calcBase: null,
     quantityBasis: 'INITIAL_SEAT',
     dueType: 'TRAVEL_MINUS_DAYS', dueDays: 30, dueTime: '18:00', dueDate: '',
     creditTowardFare: false, refundable: 'UNSPECIFIED', nonRefundable: false,
@@ -1492,7 +1493,8 @@ export function calcStageAmount(
   }
 }
 
-export function formatStageAmount(stage: CondStage, currency = 'THB'): string {
+export function formatStageAmount(stage: CondStage, defaultCurrency = 'THB'): string {
+  const currency = stage.currencyCode || defaultCurrency
   switch (stage.calcType) {
     case 'PER_SEAT':            return `${stage.amount.toLocaleString()} ${currency}/Seat`
     case 'FIXED_PER_PNR':      return `${stage.amount.toLocaleString()} ${currency}/PNR`

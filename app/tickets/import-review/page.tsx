@@ -244,6 +244,7 @@ function ImportReviewInner() {
             return 'FIXED_PER_PNR' as const
           })(),
           amount: (st.amount as number) ?? 0,
+          currencyCode: (st.currencyCode as string) ?? '',
           percent: (st.amount as number) ?? 0,
           calcBase: null,
           dueType: (() => {
