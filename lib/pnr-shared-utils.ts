@@ -15,6 +15,8 @@ import type { DemoStock, DemoFlightSet, DemoPNR } from './demo-storage'
 import type { TtlType } from './ttl-utils'
 import { adjustDateForHolidays } from './holiday-utils'
 import { getActiveHolidays } from './holiday-storage'
+import { lockTtlOnPnrSave } from './pnr-applied-condition'
+import type { CondTtlRule } from './condition-schema'
 
 // ── Lightweight sector / flightSet types ──────────────────────────────────────
 // Compatible with DemoSector / DemoFlightSet — callers can pass either.
@@ -336,6 +338,8 @@ export function buildDemoPnrFromForm(
   let ttlHolidayAdjustReason: string | null = null
   const activeHolidays = getActiveHolidays()
 
+  let lockedTtlRule: CondTtlRule | null = null
+
   if (v.ttlType === 'FIXED_DATE' && v.ttlDate) {
     const adjustment = adjustDateForHolidays(v.ttlDate, activeHolidays)
     ttlDate = adjustment.adjustedDate; ttlTimeStr = v.ttlTime || null
@@ -343,6 +347,10 @@ export function buildDemoPnrFromForm(
     ttlHolidayAdjusted = adjustment.adjusted
     ttlHolidayAdjustReason = adjustment.reason
     ttlDateTime = ttlTimeStr ? `${ttlDate}T${ttlTimeStr}:00` : `${ttlDate}T00:00:00`
+    lockedTtlRule = {
+      calcType: 'MANUAL_DATE', daysBefore: 0, time: ttlTimeStr ?? '', fixedDate: v.ttlDate, remark: '',
+      holidayOriginalDate: ttlDateOriginal, holidayAdjustedDate: ttlDate, holidayAdjusted: ttlHolidayAdjusted, holidayAdjustReason: ttlHolidayAdjustReason,
+    }
   } else if (v.ttlType === 'DAYS_BEFORE' && v.ttlDaysBefore && v.travelStart) {
     const days = parseInt(v.ttlDaysBefore, 10)
     if (!isNaN(days) && days >= 0) {
@@ -356,10 +364,20 @@ export function buildDemoPnrFromForm(
           ttlHolidayAdjusted = adjustment.adjusted
           ttlHolidayAdjustReason = adjustment.reason
           ttlDateTime = ttlTimeStr ? `${ttlDate}T${ttlTimeStr}:00` : `${ttlDate}T00:00:00`
+          lockedTtlRule = {
+            calcType: 'TRAVEL_MINUS_DAYS', daysBefore: days, time: ttlTimeStr ?? '', fixedDate: '', remark: '',
+            holidayOriginalDate: ttlDateOriginal, holidayAdjustedDate: ttlDate, holidayAdjusted: ttlHolidayAdjusted, holidayAdjustReason: ttlHolidayAdjustReason,
+          }
         }
       } catch { /* ignore */ }
     }
   }
+
+  // NAME DL locks into this PNR's own Applied Condition the moment it's set — independent of
+  // (and protected from) whatever Template Condition gets chosen for this PNR afterward.
+  const appliedCondition = lockedTtlRule
+    ? lockTtlOnPnrSave(existingPnr?.appliedCondition, lockedTtlRule, 'System')
+    : (existingPnr?.appliedCondition ?? null)
 
   const seatTotal   = Number(v.seatTotal) || 0
   const taxStatus: 'completed' | 'included' | 'pending' =
@@ -397,6 +415,7 @@ export function buildDemoPnrFromForm(
     ttlDateOriginal,
     ttlHolidayAdjusted,
     ttlHolidayAdjustReason,
+    appliedCondition,
     status:             existingPnr?.status ?? 'Pending',
     pnrStatus:          existingPnr?.pnrStatus ?? 'PENDING',
     confirmationStatus: existingPnr?.confirmationStatus ?? 'PENDING_CONFIRMATION',

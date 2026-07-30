@@ -14,6 +14,7 @@ import type { DemoStock, DemoPNR, DemoLog } from '@/lib/demo-storage'
 import { calcTtlDateFromTravelAdjusted } from '@/lib/ttl-utils'
 import { adjustDateForHolidays } from '@/lib/holiday-utils'
 import { getActiveHolidays } from '@/lib/holiday-storage'
+import { TtlTemplateConflictModal, type TtlTemplateConflictDecision } from '@/components/shared/TtlTemplateConflictModal'
 import { PNRSeatsTable } from '@/components/shared/PNRSeatsTable'
 import type { PNRRecord, PNRSectorRecord, ScheduleTemplate } from '@/lib/pnr-record'
 
@@ -538,7 +539,9 @@ export function BulkPnrBuilder({
   const [rows,    setRows]    = useState<InternalRow[]>([])
   const [saving,  setSaving]  = useState(false)
   const [formErr, setFormErr] = useState('')
-  const [condTtlConfirm, setCondTtlConfirm] = useState<{ pendingCode: string } | null>(null)
+  const [condTtlConfirm, setCondTtlConfirm] = useState<{
+    pendingCode: string; condName: string; currentIso: string | null; candidateIso: string | null
+  } | null>(null)
   const [fsChangeConfirm, setFsChangeConfirm] = useState<{ toFsId: string } | null>(null)
 
   // Bulk toolbar
@@ -651,6 +654,35 @@ export function BulkPnrBuilder({
   const fsFieldShown = mode === 'add_to_existing' || !!flightSets?.length
   const fsOk         = !fsFieldShown || !flightSets?.length || !!shared.flightSetId
   const canPreview   = hasDateInput && shared.seatTotal > 0 && fsOk
+
+  const resolveSharedTtlIso = (): string | null => {
+    if (shared.ttlType === 'FIXED_DATE' && shared.ttlDate) {
+      const adj = adjustDateForHolidays(shared.ttlDate, getActiveHolidays())
+      return `${adj.adjustedDate}T${shared.ttlTime || '00:00'}:00`
+    }
+    if (shared.ttlType === 'DAYS_BEFORE' && shared.ttlDaysBefore && firstTravelDate) {
+      const n = parseInt(shared.ttlDaysBefore, 10)
+      if (!isNaN(n) && n >= 0) {
+        const { date } = calcTtlDateFromTravelAdjusted(firstTravelDate, n, getActiveHolidays())
+        return date ? `${date}T${shared.ttlTime || '00:00'}:00` : null
+      }
+    }
+    return null
+  }
+
+  const resolveCondTtlIso = (cond?: BulkPnrCondition): string | null => {
+    if (!cond?.ttlRule) return null
+    const { calcType, daysBefore, date, time } = cond.ttlRule
+    if (calcType === 'MANUAL_DATE' && date) {
+      const adj = adjustDateForHolidays(date, getActiveHolidays())
+      return `${adj.adjustedDate}T${time || '00:00'}:00`
+    }
+    if (calcType === 'TRAVEL_MINUS_DAYS' && daysBefore != null && firstTravelDate) {
+      const { date: d } = calcTtlDateFromTravelAdjusted(firstTravelDate, daysBefore, getActiveHolidays())
+      return d ? `${d}T${time || '00:00'}:00` : null
+    }
+    return null
+  }
 
   const applyConditionCode = (code: string, cond?: BulkPnrCondition) => {
     const patch: Partial<SharedCfg> = { conditionCode: code, ttlUserModified: false }
@@ -1474,13 +1506,15 @@ export function BulkPnrBuilder({
                         onChange={e => {
                           const newCode = e.target.value
                           const cond = conditions.find(c => c.code === newCode)
-                          const ttlCalc = cond?.ttlRule?.calcType
-                          const hasNewTtl = ttlCalc === 'TRAVEL_MINUS_DAYS' || ttlCalc === 'MANUAL_DATE'
-                          if (shared.ttlUserModified && shared.ttlType !== 'NONE' && hasNewTtl) {
-                            setCondTtlConfirm({ pendingCode: newCode })
-                          } else {
-                            applyConditionCode(newCode, cond)
+                          if (shared.ttlUserModified && shared.ttlType !== 'NONE') {
+                            const currentIso = resolveSharedTtlIso()
+                            const candidateIso = resolveCondTtlIso(cond)
+                            if (candidateIso && candidateIso !== currentIso) {
+                              setCondTtlConfirm({ pendingCode: newCode, condName: cond?.name ?? newCode, currentIso, candidateIso })
+                              return
+                            }
                           }
+                          applyConditionCode(newCode, cond)
                         }}
                         className={iCls}>
                         <option value="">ไม่ระบุ</option>
@@ -1720,32 +1754,24 @@ export function BulkPnrBuilder({
           </div>
         )}
 
-        {/* Condition–TTL confirmation dialog */}
+        {/* Condition–TTL confirmation dialog — NAME DL default is always "keep", never silently overwritten */}
         {condTtlConfirm && (
-          <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/40 rounded-2xl">
-            <div className="bg-white rounded-2xl shadow-2xl w-80 p-6 mx-4">
-              <h3 className="text-sm font-semibold text-slate-900 mb-2">เงื่อนไขที่เลือกมีการกำหนด NAME DL (Deadline)</h3>
-              <p className="text-xs text-slate-600 mb-5">ต้องการอัปเดตค่า NAME DL ตามเงื่อนไขใหม่หรือไม่?</p>
-              <div className="flex justify-end gap-3">
-                <button type="button"
-                  onClick={() => {
-                    setShared(s => ({ ...s, conditionCode: condTtlConfirm.pendingCode }))
-                    setCondTtlConfirm(null)
-                  }}
-                  className="px-4 py-2 text-sm text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">
-                  ยกเลิก
-                </button>
-                <button type="button"
-                  onClick={() => {
-                    const cond = conditions.find(c => c.code === condTtlConfirm.pendingCode)
-                    applyConditionCode(condTtlConfirm.pendingCode, cond)
-                  }}
-                  className="px-4 py-2 text-sm font-semibold bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors">
-                  อัปเดตทั้งหมด
-                </button>
-              </div>
-            </div>
-          </div>
+          <TtlTemplateConflictModal
+            open
+            templateName={condTtlConfirm.condName}
+            currentIso={condTtlConfirm.currentIso}
+            templateIso={condTtlConfirm.candidateIso}
+            onCancel={() => setCondTtlConfirm(null)}
+            onDecide={(decision: TtlTemplateConflictDecision) => {
+              if (decision === 'KEEP') {
+                setShared(s => ({ ...s, conditionCode: condTtlConfirm.pendingCode }))
+              } else {
+                const cond = conditions.find(c => c.code === condTtlConfirm.pendingCode)
+                applyConditionCode(condTtlConfirm.pendingCode, cond)
+              }
+              setCondTtlConfirm(null)
+            }}
+          />
         )}
 
         {/* ══ FOOTER ══════════════════════════════════════════════════════ */}

@@ -12,6 +12,7 @@ import type { PnrFormValues, PnrModalFlightSet, PnrModalCondition, PnrSectorRow 
 import { EMPTY_PNR_FORM, validatePnrFormValues, buildSectorRows } from '@/lib/pnr-shared-utils'
 import { TimeInput } from '@/components/ui/time-input'
 import type { DemoStock } from '@/lib/demo-storage'
+import { TtlTemplateConflictModal, type TtlTemplateConflictDecision } from '@/components/shared/TtlTemplateConflictModal'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -146,6 +147,11 @@ export function SinglePnrModal({
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
+  // NAME DL must never be silently overwritten once the user has touched it — see lib/pnr-applied-condition.ts
+  const [ttlUserModified, setTtlUserModified] = useState(false)
+  const [pendingCondConflict, setPendingCondConflict] = useState<{
+    newCode: string; condName: string; currentIso: string | null; candidateIso: string | null; cond?: PnrModalCondition
+  } | null>(null)
 
   const fs0 = flightSets[0]
 
@@ -166,6 +172,8 @@ export function SinglePnrModal({
     setErrors({})
     setSaveError('')
     setSaving(false)
+    setTtlUserModified(false)
+    setPendingCondConflict(null)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
@@ -179,9 +187,10 @@ export function SinglePnrModal({
     setSaveError('')
   }, [])
 
-  // Auto-fill TTL when condition changes (only if condition has a TTL rule)
+  // Auto-fill TTL when condition changes — only while the user hasn't touched NAME DL themselves.
+  // Once ttlUserModified, a conditionCode change goes through the conflict-check in the <select> handler instead.
   useEffect(() => {
-    if (!values.conditionCode) return
+    if (!values.conditionCode || ttlUserModified) return
     const cond = conditions.find(c => c.code === values.conditionCode)
     if (!cond?.ttlRule) return
     const { calcType, daysBefore, fixedDate, time } = cond.ttlRule
@@ -231,6 +240,37 @@ export function SinglePnrModal({
     }
     return { ttlDisplayDate: null, ttlHolidayReason: null }
   })()
+
+  const resolveFormTtlIso = (): string | null => {
+    if (!ttlDisplayDate) return null
+    return `${ttlDisplayDate}T${values.ttlTime || '00:00'}:00`
+  }
+
+  const resolveConditionTtlIso = (cond: PnrModalCondition | undefined): string | null => {
+    if (!cond?.ttlRule) return null
+    const { calcType, daysBefore, fixedDate, time } = cond.ttlRule
+    if (calcType === 'FIXED_DATE' && fixedDate) {
+      const adj = adjustDateForHolidays(fixedDate, activeHolidays)
+      return `${adj.adjustedDate}T${time || '00:00'}:00`
+    }
+    if (calcType === 'TRAVEL_MINUS_DAYS' && daysBefore != null && values.travelStart) {
+      const { date } = calcTtlDateFromTravelAdjusted(values.travelStart, daysBefore, activeHolidays)
+      return date ? `${date}T${time || '00:00'}:00` : null
+    }
+    return null
+  }
+
+  const handleConditionCodeChange = (newCode: string) => {
+    if (!ttlUserModified) { patch({ conditionCode: newCode }); return }
+    const cond = conditions.find(c => c.code === newCode)
+    const candidateIso = resolveConditionTtlIso(cond)
+    const currentIso = resolveFormTtlIso()
+    if (candidateIso && candidateIso !== currentIso) {
+      setPendingCondConflict({ newCode, condName: cond?.name ?? newCode, currentIso, candidateIso, cond })
+      return
+    }
+    patch({ conditionCode: newCode })
+  }
 
   const handleConfirm = async () => {
     const errs = validatePnrFormValues(values, { stock })
@@ -417,7 +457,7 @@ export function SinglePnrModal({
         <Field label="เงื่อนไข (Condition)">
           <select
             value={values.conditionCode}
-            onChange={e => patch({ conditionCode: e.target.value })}
+            onChange={e => handleConditionCodeChange(e.target.value)}
             className={cls('conditionCode')}
           >
             <option value="">— ไม่ระบุ —</option>
@@ -435,7 +475,7 @@ export function SinglePnrModal({
               <button
                 key={t}
                 type="button"
-                onClick={() => patch({ ttlType: t, ttlDaysBefore: '', ttlDate: '', ttlTime: '' })}
+                onClick={() => { setTtlUserModified(true); patch({ ttlType: t, ttlDaysBefore: '', ttlDate: '', ttlTime: '' }) }}
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
                   values.ttlType === t
                     ? 'bg-slate-700 text-white border-slate-700'
@@ -454,13 +494,13 @@ export function SinglePnrModal({
                   <input
                     type="number" min={0}
                     value={values.ttlDaysBefore}
-                    onChange={e => patch({ ttlDaysBefore: e.target.value })}
+                    onChange={e => { setTtlUserModified(true); patch({ ttlDaysBefore: e.target.value }) }}
                     placeholder="7"
                     className={cls('ttlDaysBefore')}
                   />
                 </Field>
                 <Field label="เวลา (ไม่บังคับ)">
-                  <TimeInput value={values.ttlTime} onChange={v => patch({ ttlTime: v })} className="border-slate-300 rounded-lg" />
+                  <TimeInput value={values.ttlTime} onChange={v => { setTtlUserModified(true); patch({ ttlTime: v }) }} className="border-slate-300 rounded-lg" />
                 </Field>
               </div>
               {ttlDisplayDate && (
@@ -480,14 +520,38 @@ export function SinglePnrModal({
           {values.ttlType === 'FIXED_DATE' && (
             <div className="grid grid-cols-2 gap-3">
               <Field label="วันที่ NAME DL" required error={errors.ttlDate}>
-                <input type="date" value={values.ttlDate} onChange={e => patch({ ttlDate: e.target.value })} className={cls('ttlDate')} />
+                <input type="date" value={values.ttlDate} onChange={e => { setTtlUserModified(true); patch({ ttlDate: e.target.value }) }} className={cls('ttlDate')} />
               </Field>
               <Field label="เวลา (ไม่บังคับ)">
-                <TimeInput value={values.ttlTime} onChange={v => patch({ ttlTime: v })} className={cls('ttlTime')} />
+                <TimeInput value={values.ttlTime} onChange={v => { setTtlUserModified(true); patch({ ttlTime: v }) }} className={cls('ttlTime')} />
               </Field>
             </div>
           )}
         </div>
+
+        {pendingCondConflict && (
+          <TtlTemplateConflictModal
+            open
+            templateName={pendingCondConflict.condName}
+            currentIso={pendingCondConflict.currentIso}
+            templateIso={pendingCondConflict.candidateIso}
+            onCancel={() => setPendingCondConflict(null)}
+            onDecide={(decision: TtlTemplateConflictDecision) => {
+              const { newCode, cond } = pendingCondConflict
+              if (decision === 'KEEP') {
+                patch({ conditionCode: newCode })
+              } else if (cond?.ttlRule) {
+                const { calcType, daysBefore, fixedDate, time } = cond.ttlRule
+                if (calcType === 'TRAVEL_MINUS_DAYS' && daysBefore != null) {
+                  patch({ conditionCode: newCode, ttlType: 'DAYS_BEFORE', ttlDaysBefore: String(daysBefore), ttlTime: time || '' })
+                } else if (calcType === 'FIXED_DATE' && fixedDate) {
+                  patch({ conditionCode: newCode, ttlType: 'FIXED_DATE', ttlDate: fixedDate, ttlTime: time || '' })
+                }
+              }
+              setPendingCondConflict(null)
+            }}
+          />
+        )}
 
         {/* Remark */}
         <Field label="หมายเหตุ">
