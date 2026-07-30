@@ -6,7 +6,7 @@
  * Uses the unified ConditionBuilder for creating / editing each condition.
  */
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Modal } from '@/components/ui/modal'
@@ -30,7 +30,7 @@ import {
   COND_TEMPLATE_TYPE_SHORT,
   COND_TEMPLATE_TYPE_COLORS,
 } from '@/lib/condition-schema'
-import { getConditionTemplates, saveConditionTemplate, snapshotTemplateToCondition, seedTemplatesIfEmpty } from '@/lib/condition-storage'
+import { getConditionTemplates, saveConditionTemplate, snapshotTemplateToCondition, seedTemplatesIfEmpty, filterActiveTemplatesForStock } from '@/lib/condition-storage'
 import ConditionEditorModal from '@/components/condition-builder/ConditionEditorModal'
 import type { SeriesInfo } from '@/components/condition-builder/ConditionBuilder'
 import { cn } from '@/lib/utils'
@@ -43,6 +43,8 @@ export interface Step3ConditionsProps {
   currency: string
   conditionMode?: import('@/components/condition-builder/ConditionBuilder').ConditionMode
   seriesInfo?: SeriesInfo
+  /** Stock's ticket type, from getStockTypeConfigSafe(...).ticketType — filters the Template Picker to compatible templates. */
+  stockTicketType?: 'Group' | 'FIT' | 'Ticket + Land'
   /** Example travel start for TTL/due-date previews */
   previewTravelStart?: string
 }
@@ -50,28 +52,46 @@ export interface Step3ConditionsProps {
 // ─── Template Picker ──────────────────────────────────────────────────────────
 
 function TemplatePicker({
-  open, onClose, onPick, seriesAirline,
+  open, onClose, onPick, seriesAirline, stockTicketType,
 }: {
   open: boolean
   onClose: () => void
   onPick: (t: AppConditionTemplate) => void
   seriesAirline?: string
+  stockTicketType?: 'Group' | 'FIT' | 'Ticket + Land'
 }) {
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<string | null>(null)
   const [templates, setTemplates] = useState<AppConditionTemplate[]>([])
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
 
   const load = useCallback(() => {
-    seedTemplatesIfEmpty()
-    setTemplates(getConditionTemplates())
+    setLoading(true)
+    setLoadError(null)
+    try {
+      seedTemplatesIfEmpty()
+      setTemplates(getConditionTemplates())
+    } catch {
+      setLoadError('โหลด Template ไม่สำเร็จ')
+    } finally {
+      setLoading(false)
+    }
     setSearch('')
     setSelected(null)
   }, [])
 
-  const filtered = templates.filter(t => {
-    if (t.condition.status === 'Draft') return false
-    // If in series mode, filter to matching airline (or universal templates)
-    if (seriesAirline && t.airlineCode && t.airlineCode !== seriesAirline) return false
+  // Fetch fresh from storage every time the picker opens — never stale/cached.
+  useEffect(() => {
+    if (open) load()
+  }, [open, load])
+
+  const eligible = filterActiveTemplatesForStock(templates, {
+    airlineCode: seriesAirline,
+    ticketType: stockTicketType,
+  })
+
+  const filtered = eligible.filter(t => {
     if (!search.trim()) return true
     const q = search.toLowerCase()
     return (
@@ -114,10 +134,18 @@ function TemplatePicker({
       </div>
       {/* List */}
       <div className="max-h-64 overflow-y-auto space-y-1.5">
-        {filtered.length === 0 ? (
+        {loading ? (
+          <p className="text-center text-sm text-slate-400 py-8">กำลังโหลด Template...</p>
+        ) : loadError ? (
+          <div className="text-center py-8 space-y-2">
+            <p className="text-sm text-red-500">{loadError}</p>
+            <Button size="sm" variant="outline" onClick={load}>ลองใหม่</Button>
+          </div>
+        ) : filtered.length === 0 ? (
           <p className="text-center text-sm text-slate-400 py-8">
-            {templates.length === 0 ? 'ยังไม่มี Template — ไปสร้างได้ที่ Settings → Condition Templates'
-              : seriesAirline ? `ไม่พบ Template สำหรับ Airline ${seriesAirline}`
+            {templates.length === 0 ? 'ยังไม่มี Template — ไปสร้างได้ที่ Ticket Stock → Template Condition'
+              : search.trim() ? 'ไม่พบ Template ที่ตรงกัน'
+              : seriesAirline ? `ไม่พบ Template ที่ตรงกับสายการบิน ${seriesAirline}`
               : 'ไม่พบ Template ที่ตรงกัน'}
           </p>
         ) : filtered.map(t => (
@@ -250,6 +278,7 @@ export default function Step3Conditions({
   currency,
   conditionMode = 'series',
   seriesInfo,
+  stockTicketType,
   previewTravelStart = '2026-06-18',
 }: Step3ConditionsProps) {
   const [expandedIds, setExpandedIds]       = useState<Set<string>>(new Set())
@@ -413,6 +442,7 @@ export default function Step3Conditions({
         onClose={() => setShowPicker(false)}
         onPick={handlePickTemplate}
         seriesAirline={conditionMode === 'series' ? seriesInfo?.airlineCode : undefined}
+        stockTicketType={stockTicketType}
       />
 
       {/* Condition Editor Modal */}

@@ -20,7 +20,8 @@ import {
   type PaymentBankAccount, type PaymentChequeDetail,
   type PaymentCashDetail, type PaymentTopUpDetail, type PaymentOtherChannelDetail,
 } from '@/lib/demo-storage'
-import { getConditionTemplates, type DemoConditionTemplate } from '@/lib/template-storage'
+import { getConditionTemplates } from '@/lib/condition-storage'
+import type { AppConditionTemplate } from '@/lib/condition-schema'
 
 // ─── Static airline data ──────────────────────────────────────────────────────
 
@@ -434,7 +435,7 @@ export default function AirlineDetailPage() {
   const [tab, setTab] = useState<Tab>('info')
   const [methods, setMethods] = useState<DemoAirlinePaymentMethod[]>([])
   const [suppliers, setSuppliers] = useState<DemoSupplier[]>([])
-  const [templates, setTemplates] = useState<DemoConditionTemplate[]>([])
+  const [templates, setTemplates] = useState<AppConditionTemplate[]>([])
 
   const [modal, setModal] = useState(false)
   const [form, setForm] = useState<DemoAirlinePaymentMethod>(emptyMethod(airlineCode, airlineName))
@@ -576,10 +577,12 @@ export default function AirlineDetailPage() {
   const activeSuppliers = suppliers.filter(s => s.status === 'Active')
   const isEditing = methods.some(m => m.paymentMethodId === form.paymentMethodId)
 
-  const airlineTemplates = templates.filter(t =>
-    !t.airlineCode || t.airlineCode === airlineCode ||
-    (t.airlines && t.airlines.includes(airlineCode))
-  )
+  const airlineTemplates = templates.filter(t => {
+    const code = airlineCode.trim().toUpperCase()
+    if (!t.airlineCode && !t.airlines?.length) return true
+    if (t.airlineCode && t.airlineCode.trim().toUpperCase() === code) return true
+    return !!t.airlines?.some(a => a.trim().toUpperCase() === code)
+  })
 
   const selectableChannels = form.allowedPaymentChannels.map(v => ({
     value: v,
@@ -784,7 +787,7 @@ export default function AirlineDetailPage() {
               Condition Templates สำหรับ <span className="font-medium text-slate-700">{airline.airline_name}</span>
             </p>
             <Button size="sm" variant="outline" icon={<FileSpreadsheet size={14} />}
-              onClick={() => router.push('/settings/condition-templates')}>
+              onClick={() => router.push('/tickets/condition-templates')}>
               จัดการ Templates
             </Button>
           </div>
@@ -802,12 +805,12 @@ export default function AirlineDetailPage() {
                     <EmptyRow cols={6} message="ไม่มี Condition Templates สำหรับสายการบินนี้" />
                   ) : airlineTemplates.map(t => (
                     <TableRow key={t.templateId}>
-                      <Td className="font-mono text-sm font-semibold text-slate-700">{t.templateCode}</Td>
-                      <Td className="font-medium">{t.templateName}</Td>
+                      <Td className="font-mono text-sm font-semibold text-slate-700">{t.condition.conditionCode}</Td>
+                      <Td className="font-medium">{t.condition.conditionName}</Td>
                       <Td className="text-sm text-slate-600">{t.ticketType}</Td>
-                      <Td className="text-sm text-slate-600">{t.stages.length} Stages</Td>
+                      <Td className="text-sm text-slate-600">{t.condition.stages.length} Stages</Td>
                       <Td className="text-sm text-slate-500">v{t.version}</Td>
-                      <Td><Badge variant={t.status === 'Active' ? 'green' : 'gray'}>{t.status}</Badge></Td>
+                      <Td><Badge variant={t.condition.status === 'Active' ? 'green' : 'gray'}>{t.condition.status}</Badge></Td>
                     </TableRow>
                   ))}
                 </TableBody>

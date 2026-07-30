@@ -641,6 +641,7 @@ function EditStockPageInner() {
                 currency:    state.stockInfo.currency,
                 routes,
               }}
+              stockTicketType={getStockTypeConfig(state.stockInfo.ticket_type, state.stockInfo.group_type)?.ticketType}
             />
           )
         })()}

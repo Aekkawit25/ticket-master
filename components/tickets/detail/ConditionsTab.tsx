@@ -31,7 +31,9 @@ import {
 import {
   getConditionTemplates,
   snapshotTemplateToCondition,
+  filterActiveTemplatesForStock,
 } from '@/lib/condition-storage'
+import { getStockTypeConfig } from '@/lib/stock-type-config'
 import {
   getSeriesConditionRelationship,
   computeConditionDiff,
@@ -170,11 +172,10 @@ function TemplatePickerModal({
 
   useEffect(() => {
     if (!open) { setSearch(''); setSelected(null); return }
-    const all = getConditionTemplates().filter(t =>
-      !t.isArchived &&
-      t.condition.status === 'Active' &&
-      (!t.airlineCode || !stock?.airlineCode || t.airlineCode === stock.airlineCode)
-    )
+    const all = filterActiveTemplatesForStock(getConditionTemplates(), {
+      airlineCode: stock?.airlineCode,
+      ticketType:  stock ? getStockTypeConfig(stock.ticketType, stock.groupType)?.ticketType : undefined,
+    })
     setTemplates(all)
   }, [open, stock])
 

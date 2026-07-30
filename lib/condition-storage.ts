@@ -5,7 +5,7 @@
  */
 
 import {
-  type AppConditionTemplate, type AppCondition, type CondCalcType, type CondDueType, type CondTtlCalcType, type CondRefundableType, type CondCancelGroupTerms,
+  type AppConditionTemplate, type AppCondition, type CondCalcType, type CondDueType, type CondTtlCalcType, type CondRefundableType, type CondCancelGroupTerms, type CondTemplateTicketType,
   defaultTemplate,
   newTemplateId,
   generateTemplateCode,
@@ -115,6 +115,51 @@ export function getConditionTemplates(): AppConditionTemplate[] {
 
 export function getConditionTemplateById(id: string): AppConditionTemplate | null {
   return getConditionTemplates().find(t => t.templateId === id) ?? null
+}
+
+// ─── Shared filter — single source of truth for every "เลือก Template Condition" picker ──
+
+function normalizeAirlineCode(code: string | null | undefined): string {
+  return (code ?? '').trim().toUpperCase()
+}
+
+/** Stock-side ticket type shape, as produced by StockTypeConfig.ticketType ('Series'/'Group Ad Hoc' both report 'Group'). */
+type StockTicketType = 'Group' | 'FIT' | 'Ticket + Land'
+
+function templateTicketTypeMatchesStock(
+  templateTicketType: CondTemplateTicketType,
+  stockTicketType?: StockTicketType | null,
+): boolean {
+  if (!stockTicketType) return true
+  if (templateTicketType === 'All') return true
+  const normalizedStockType = stockTicketType === 'Ticket + Land' ? 'Ticket+Land' : stockTicketType
+  return templateTicketType === normalizedStockType
+}
+
+export interface TemplateFilterContext {
+  /** Stock's airline code — templates with no airlineCode set (universal) always match. */
+  airlineCode?: string | null
+  /** Stock's ticket type, from getStockTypeConfigSafe(...).ticketType — omit to skip ticket-type filtering. */
+  ticketType?: StockTicketType | null
+}
+
+/**
+ * Templates eligible for assignment to a stock: not archived, status Active,
+ * airline matches (or template is universal), and ticket type is compatible
+ * (Series and Group Ad Hoc stocks both match 'Group' templates — never compared
+ * against the raw StockType key, which would wrongly exclude them).
+ */
+export function filterActiveTemplatesForStock(
+  templates: AppConditionTemplate[],
+  ctx: TemplateFilterContext = {},
+): AppConditionTemplate[] {
+  return templates.filter(t => {
+    if (t.isArchived) return false
+    if (t.condition.status !== 'Active') return false
+    if (ctx.airlineCode && t.airlineCode && normalizeAirlineCode(t.airlineCode) !== normalizeAirlineCode(ctx.airlineCode)) return false
+    if (!templateTicketTypeMatchesStock(t.ticketType, ctx.ticketType)) return false
+    return true
+  })
 }
 
 export function saveConditionTemplate(template: AppConditionTemplate): void {
