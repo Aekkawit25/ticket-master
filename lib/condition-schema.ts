@@ -3,6 +3,9 @@
  * Single source of truth for both template and stock conditions.
  */
 
+import type { HolidayData } from '@/lib/holiday-storage'
+import { adjustIsoDateTimeForHolidays } from '@/lib/holiday-utils'
+
 // ─── Payment Stage ─────────────────────────────────────────────────────────────
 
 export type CondPaymentType = 'RSVN_FEE' | 'DEPOSIT' | 'BALANCE' | 'FULL_PAYMENT' | 'TICKET_ISSUE_DATE' | 'FEE' | 'OTHER'
@@ -135,6 +138,14 @@ export interface CondTtlRule {
   time: string
   fixedDate: string
   remark: string
+  // ── Holiday-avoidance adjustment (recomputed whenever this rule resolves to a concrete date —
+  // see calcCondTtlDateAdjusted). Populated at Series/PNR level where a travelStart/fixedDate
+  // gives a real calendar date; left null at Template level for TRAVEL_MINUS_DAYS rules, which
+  // have no concrete date until applied to an actual travel date. ────────────────────────────
+  holidayOriginalDate?: string | null    // date before holiday adjustment (YYYY-MM-DD)
+  holidayAdjustedDate?: string | null    // final date after shifting off holidays (YYYY-MM-DD)
+  holidayAdjusted?: boolean              // true when adjustedDate !== originalDate
+  holidayAdjustReason?: string | null    // Thai description of the shift chain
 }
 
 /** How name submission and ticket issuance are timed relative to each other */
@@ -1466,6 +1477,43 @@ export function calcCondTtlDate(rule: CondTtlRule, travelStart: string): string 
   if (!travelStart) return null
   const d = new Date(travelStart)
   d.setDate(d.getDate() - rule.daysBefore); applyTime(d); return d.toISOString()
+}
+
+/**
+ * Holiday-aware NAME DL / TICKET DL resolution.
+ *
+ * Computes the date exactly as calcCondTtlDate does, then — if it lands on a
+ * Sat/Sun or an active holiday — shifts it backward day by day until it
+ * lands on a business day (never forward, never onto another holiday).
+ * The time-of-day from the rule is preserved. Returns both the resolved
+ * ISO datetime and an updated copy of `rule` carrying the adjustment
+ * metadata (holidayOriginalDate/holidayAdjustedDate/holidayAdjusted/
+ * holidayAdjustReason) so callers can persist it on the Template/Series
+ * condition snapshot the rule lives on.
+ */
+export function calcCondTtlDateAdjusted(
+  rule: CondTtlRule,
+  travelStart: string,
+  holidays: HolidayData[],
+): { isoDateTime: string | null; rule: CondTtlRule } {
+  const raw = calcCondTtlDate(rule, travelStart)
+  if (!raw) {
+    return {
+      isoDateTime: null,
+      rule: { ...rule, holidayOriginalDate: null, holidayAdjustedDate: null, holidayAdjusted: false, holidayAdjustReason: null },
+    }
+  }
+  const { isoDateTime, adjustment } = adjustIsoDateTimeForHolidays(raw, holidays)
+  return {
+    isoDateTime,
+    rule: {
+      ...rule,
+      holidayOriginalDate: adjustment.originalDate,
+      holidayAdjustedDate: adjustment.adjustedDate,
+      holidayAdjusted: adjustment.adjusted,
+      holidayAdjustReason: adjustment.reason,
+    },
+  }
 }
 
 export function calcStageAmount(

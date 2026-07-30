@@ -1,9 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { cn, formatDateThai, formatDateTimeThai } from '@/lib/utils'
 import { TimeInput } from '@/components/ui/time-input'
-import { calcTtlDateFromTravel, type TtlType } from '@/lib/ttl-utils'
+import { calcTtlDateFromTravelAdjusted, type TtlType } from '@/lib/ttl-utils'
+import { adjustDateForHolidays } from '@/lib/holiday-utils'
+import { getActiveHolidays } from '@/lib/holiday-storage'
 
 // ─── Props ─────────────────────────────────────────────────────────────────────
 interface TtlEditorProps {
@@ -33,21 +35,25 @@ export function TtlEditor({ pnrCode, travelDate, ttlType, ttlDaysBefore, ttlDate
   const [date, setDate] = useState(ttlDate ?? '')
   const [time, setTime] = useState(ttlTime ?? '')
   const [error, setError] = useState<string | null>(null)
+  const holidays = useMemo(() => getActiveHolidays(), [])
 
   // ── derived ──
   const daysNum = parseInt(daysBefore, 10)
   const daysValid = daysBefore !== '' && !isNaN(daysNum) && daysNum >= 0
 
-  const computedDate = type === 'DAYS_BEFORE' && travelDate && daysValid
-    ? calcTtlDateFromTravel(travelDate, daysNum)
+  const daysBeforeResult = type === 'DAYS_BEFORE' && travelDate && daysValid
+    ? calcTtlDateFromTravelAdjusted(travelDate, daysNum, holidays)
     : null
+  const computedDate = daysBeforeResult?.date ?? null
 
   // For FIXED_DATE: validate that ttl date is not after travel date
   const fixedDateAfterTravel = type === 'FIXED_DATE' && date && travelDate && date > travelDate
+  const fixedDateAdjustment = type === 'FIXED_DATE' && date ? adjustDateForHolidays(date, holidays) : null
 
   // Result shown for DAYS_BEFORE or FIXED_DATE
-  const resultDate = type === 'DAYS_BEFORE' ? computedDate : (type === 'FIXED_DATE' ? (date || null) : null)
+  const resultDate = type === 'DAYS_BEFORE' ? computedDate : (type === 'FIXED_DATE' ? (fixedDateAdjustment?.adjustedDate ?? null) : null)
   const resultDisplay = resultDate ? formatDateTimeThai(resultDate, time || null) : null
+  const holidayReason = type === 'DAYS_BEFORE' ? (daysBeforeResult?.adjustment?.reason ?? null) : (fixedDateAdjustment?.reason ?? null)
 
   // ── save ──
   const handleSave = () => {
@@ -66,7 +72,7 @@ export function TtlEditor({ pnrCode, travelDate, ttlType, ttlDaysBefore, ttlDate
     if (type === 'FIXED_DATE') {
       if (!date) { setError('กรุณาระบุวันที่กำหนดส่ง'); return }
       if (fixedDateAfterTravel) { setError('วันที่กำหนดส่งต้องไม่เกินวันเดินทางแรก'); return }
-      onSave({ ttlType: 'FIXED_DATE', ttlDaysBefore: null, ttlDate: date, ttlTime: time || null })
+      onSave({ ttlType: 'FIXED_DATE', ttlDaysBefore: null, ttlDate: fixedDateAdjustment?.adjustedDate ?? date, ttlTime: time || null })
       return
     }
   }
@@ -206,6 +212,11 @@ export function TtlEditor({ pnrCode, travelDate, ttlType, ttlDaysBefore, ttlDate
                 )}
                 {type === 'FIXED_DATE' && (
                   <p className="text-[10px] text-emerald-600 mt-0.5">วันที่กำหนดเอง</p>
+                )}
+                {holidayReason && (
+                  <p className="text-[10px] text-amber-600 mt-1.5 pt-1.5 border-t border-emerald-100">
+                    ⓘ {holidayReason}
+                  </p>
                 )}
               </div>
             ) : (

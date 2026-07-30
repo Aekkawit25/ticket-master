@@ -13,6 +13,11 @@
 import { addDays, parseISO, format, isValid } from 'date-fns'
 import type { DemoStock, DemoFlightSet, DemoPNR } from './demo-storage'
 import type { TtlType } from './ttl-utils'
+import { adjustDateForHolidays } from './holiday-utils'
+import { getActiveHolidays } from './holiday-storage'
+import { lockTtlOnPnrSave } from './pnr-applied-condition'
+import { validatePnrRowFields } from './pnr-validation'
+import type { CondTtlRule } from './condition-schema'
 
 // ── Lightweight sector / flightSet types ──────────────────────────────────────
 // Compatible with DemoSector / DemoFlightSet — callers can pass either.
@@ -241,24 +246,28 @@ export function validatePnrFormValues(
 ): Record<string, string> {
   const e: Record<string, string> = {}
 
-  if (!v.travelStart) e.travelStart = 'กรุณากรอก Travel Start'
-
-  const seats = Number(v.seatTotal)
-  if (!v.seatTotal || isNaN(seats) || seats <= 0) e.seatTotal = 'กรุณากรอก Seat (มากกว่า 0)'
-
-  if (v.priceFormat === 'ALL_IN') {
-    const n = Number(v.allIn)
-    if (!v.allIn || isNaN(n) || n <= 0) e.allIn = 'กรุณากรอก All In (มากกว่า 0)'
-  } else {
-    const n = Number(v.fare)
-    if (!v.fare || isNaN(n) || n <= 0) e.fare = 'กรุณากรอก Fare (มากกว่า 0)'
+  // Field-level rules (required-ness by priceFormat, NAME DL, etc.) come from the single
+  // shared validator so this modal can never accept a row the wizard/table would reject.
+  const fieldErrors = validatePnrRowFields({
+    pnrCode: v.pnrCode,
+    travelStart: v.travelStart,
+    seatTotal: v.seatTotal === '' ? null : Number(v.seatTotal),
+    priceFormat: v.priceFormat,
+    fare: v.fare === '' ? null : Number(v.fare),
+    yq: v.yq === '' || v.yq == null ? null : Number(v.yq),
+    allInAmount: v.allIn === '' ? null : Number(v.allIn),
+    ttlType: v.ttlType,
+    ttlDaysBefore: v.ttlDaysBefore,
+    ttlDate: v.ttlDate,
+  })
+  const fieldToFormKey: Record<string, keyof PnrFormValues> = {
+    travelStart: 'travelStart', seatTotal: 'seatTotal', fare: 'fare',
+    allInAmount: 'allIn', yq: 'yq', ttlDaysBefore: 'ttlDaysBefore', ttlDate: 'ttlDate',
   }
-
-  if (v.ttlType === 'DAYS_BEFORE') {
-    const d = parseInt(v.ttlDaysBefore, 10)
-    if (v.ttlDaysBefore === '' || isNaN(d) || d < 0) e.ttlDaysBefore = 'กรุณากรอกจำนวนวัน (≥ 0)'
-  }
-  if (v.ttlType === 'FIXED_DATE' && !v.ttlDate) e.ttlDate = 'กรุณากรอกวันที่ NAME DL'
+  fieldErrors.forEach(issue => {
+    const key = fieldToFormKey[issue.field]
+    if (key) e[key] = issue.message
+  })
 
   if (v.pnrCode.trim() && ctx.stock) {
     const dup = ctx.stock.pnrs.find(p =>
@@ -325,26 +334,55 @@ export function buildDemoPnrFromForm(
     sourceType:         'calculated' as const,
   }))
 
-  // TTL
+  // TTL — resolve raw date, then shift off Sat/Sun and active holidays (NAME DL must always land on a business day)
   let ttlDate: string | null = null
   let ttlTimeStr: string | null = null
   let ttlDateTime: string | null = null
+  let ttlDateOriginal: string | null = null
+  let ttlHolidayAdjusted = false
+  let ttlHolidayAdjustReason: string | null = null
+  const activeHolidays = getActiveHolidays()
+
+  let lockedTtlRule: CondTtlRule | null = null
 
   if (v.ttlType === 'FIXED_DATE' && v.ttlDate) {
-    ttlDate = v.ttlDate; ttlTimeStr = v.ttlTime || null
+    const adjustment = adjustDateForHolidays(v.ttlDate, activeHolidays)
+    ttlDate = adjustment.adjustedDate; ttlTimeStr = v.ttlTime || null
+    ttlDateOriginal = adjustment.originalDate
+    ttlHolidayAdjusted = adjustment.adjusted
+    ttlHolidayAdjustReason = adjustment.reason
     ttlDateTime = ttlTimeStr ? `${ttlDate}T${ttlTimeStr}:00` : `${ttlDate}T00:00:00`
+    lockedTtlRule = {
+      calcType: 'MANUAL_DATE', daysBefore: 0, time: ttlTimeStr ?? '', fixedDate: v.ttlDate, remark: '',
+      holidayOriginalDate: ttlDateOriginal, holidayAdjustedDate: ttlDate, holidayAdjusted: ttlHolidayAdjusted, holidayAdjustReason: ttlHolidayAdjustReason,
+    }
   } else if (v.ttlType === 'DAYS_BEFORE' && v.ttlDaysBefore && v.travelStart) {
     const days = parseInt(v.ttlDaysBefore, 10)
     if (!isNaN(days) && days >= 0) {
       try {
         const d = addDays(parseISO(v.travelStart), -days)
         if (isValid(d)) {
-          ttlDate = format(d, 'yyyy-MM-dd'); ttlTimeStr = v.ttlTime || null
+          const raw = format(d, 'yyyy-MM-dd')
+          const adjustment = adjustDateForHolidays(raw, activeHolidays)
+          ttlDate = adjustment.adjustedDate; ttlTimeStr = v.ttlTime || null
+          ttlDateOriginal = adjustment.originalDate
+          ttlHolidayAdjusted = adjustment.adjusted
+          ttlHolidayAdjustReason = adjustment.reason
           ttlDateTime = ttlTimeStr ? `${ttlDate}T${ttlTimeStr}:00` : `${ttlDate}T00:00:00`
+          lockedTtlRule = {
+            calcType: 'TRAVEL_MINUS_DAYS', daysBefore: days, time: ttlTimeStr ?? '', fixedDate: '', remark: '',
+            holidayOriginalDate: ttlDateOriginal, holidayAdjustedDate: ttlDate, holidayAdjusted: ttlHolidayAdjusted, holidayAdjustReason: ttlHolidayAdjustReason,
+          }
         }
       } catch { /* ignore */ }
     }
   }
+
+  // NAME DL locks into this PNR's own Applied Condition the moment it's set — independent of
+  // (and protected from) whatever Template Condition gets chosen for this PNR afterward.
+  const appliedCondition = lockedTtlRule
+    ? lockTtlOnPnrSave(existingPnr?.appliedCondition, lockedTtlRule, 'System')
+    : (existingPnr?.appliedCondition ?? null)
 
   const seatTotal   = Number(v.seatTotal) || 0
   const taxStatus: 'completed' | 'included' | 'pending' =
@@ -379,6 +417,10 @@ export function buildDemoPnrFromForm(
     ttlDate,
     ttlTime:            ttlTimeStr,
     ttlDateTime,
+    ttlDateOriginal,
+    ttlHolidayAdjusted,
+    ttlHolidayAdjustReason,
+    appliedCondition,
     status:             existingPnr?.status ?? 'Pending',
     pnrStatus:          existingPnr?.pnrStatus ?? 'PENDING',
     confirmationStatus: existingPnr?.confirmationStatus ?? 'PENDING_CONFIRMATION',

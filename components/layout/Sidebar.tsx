@@ -20,6 +20,7 @@ import {
   FileText,
   Package,
   DollarSign,
+  CalendarOff,
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -73,6 +74,7 @@ const navItems: NavItem[] = [
       { label: 'Airports',   href: '/settings/airports',   icon: <Building2 size={16} /> },
       { label: 'Countries',  href: '/settings/countries',  icon: <Globe size={16} /> },
       { label: 'Currencies', href: '/settings/currencies', icon: <DollarSign size={16} /> },
+      { label: 'Holidays',   href: '/settings/holidays',   icon: <CalendarOff size={16} /> },
       { label: 'Users',      href: '/settings/users',      icon: <Users size={16} /> },
     ],
   },

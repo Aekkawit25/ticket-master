@@ -29,6 +29,12 @@ import type { PnrFormValues, PnrModalCondition } from '@/lib/pnr-shared-utils'
 import { getConditionTemplates } from '@/lib/condition-storage'
 import { getEffectiveConditionForPnr, computeTemplateReadiness } from '@/lib/condition-relationship'
 import type { AppConditionTemplate } from '@/lib/condition-schema'
+import { getActiveHolidays } from '@/lib/holiday-storage'
+import {
+  previewTemplateMergeForPnr, scalarsFromAppliedCondition,
+  type PnrAppliedCondition, type TemplateMergePreview,
+} from '@/lib/pnr-applied-condition'
+import { TtlTemplateConflictModal, type TtlTemplateConflictDecision } from '@/components/shared/TtlTemplateConflictModal'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -58,6 +64,8 @@ interface PNRRow {
   ttl_days_before: number | null
   ttl_date: string | null
   ttl_time: string | null
+  ttl_holiday_adjusted?: boolean
+  ttl_holiday_adjust_reason?: string | null
   status: string
 }
 
@@ -151,6 +159,9 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
   const [bulkCancelReason, setBulkCancelReason] = useState('')
   const [bulkCancelReasonError, setBulkCancelReasonError] = useState('')
   const [allTemplates] = useState<AppConditionTemplate[]>(() => getConditionTemplates())
+  const [ttlConflict, setTtlConflict] = useState<{
+    pnrId: string; pnrLabel: string; template: AppConditionTemplate; preview: TemplateMergePreview
+  } | null>(null)
   const [sourceFilter, setSourceFilter] = useState<PnrSourceFilter>('ALL')
   const [showAddAdhocModal, setShowAddAdhocModal] = useState(false)
 
@@ -467,6 +478,8 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
         ttl_days_before: p.ttlDaysBefore ?? null,
         ttl_date: p.ttlDate,
         ttl_time: p.ttlTime,
+        ttl_holiday_adjusted: p.ttlHolidayAdjusted ?? false,
+        ttl_holiday_adjust_reason: p.ttlHolidayAdjustReason ?? null,
         status: p.status,
       }))
     : mockPNRs
@@ -516,15 +529,27 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
     newTemplateId: string | null,
     newCondName: string,
     newSource: 'SERIES' | 'DIRECT',
+    /** Per-PNR Applied Condition merge result (NAME DL stays locked/protected — see lib/pnr-applied-condition.ts). */
+    mergedApplied?: Record<string, PnrAppliedCondition>,
+    /** Extra log lines describing keep/change decisions made for NAME DL conflicts. */
+    ttlDecisionNotes?: string[],
   ) => {
     if (!liveStock) return
     const now = new Date().toISOString()
+    const activeHolidays = getActiveHolidays()
     const updatedPnrs = liveStock.pnrs.map(p => {
       if (!pnrIds.includes(p.pnrId)) return p
       if (newSource === 'SERIES') {
         return { ...p, conditionTemplateId: null as string | null, conditionOverride: false, conditionCode: '' }
       }
-      return { ...p, conditionTemplateId: newTemplateId, conditionOverride: true, conditionCode: '' }
+      const merged = mergedApplied?.[p.pnrId]
+      const scalars = merged ? scalarsFromAppliedCondition(merged, p.travelStart, activeHolidays) : null
+      return {
+        ...p,
+        conditionTemplateId: newTemplateId, conditionOverride: true, conditionCode: '',
+        ...(merged ? { appliedCondition: merged } : {}),
+        ...(scalars ?? {}),
+      }
     })
     const logMsg = pnrIds.length === 1
       ? (newSource === 'SERIES'
@@ -536,7 +561,7 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
     const log: DemoLog = {
       logId: newId('LOG'),
       action: 'เปลี่ยน Condition',
-      message: logMsg,
+      message: ttlDecisionNotes?.length ? `${logMsg} — ${ttlDecisionNotes.join('; ')}` : logMsg,
       createdAt: now,
       createdBy: 'System',
       pnrDisplay: pnrIds.length === 1 ? pnrDisplays[0] : undefined,
@@ -950,6 +975,14 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                                       {p.ttl_date && (
                                         <span className="text-[11px] font-semibold text-slate-700 whitespace-nowrap">{formatTtlDisplay(p.ttl_date, p.ttl_time)}</span>
                                       )}
+                                      {p.ttl_holiday_adjusted && (
+                                        <span
+                                          className="inline-flex w-fit items-center gap-0.5 px-1 py-px rounded text-[9px] font-medium bg-amber-50 text-amber-600 border border-amber-100 whitespace-nowrap cursor-help"
+                                          title={p.ttl_holiday_adjust_reason ?? 'เลื่อนหลีกเลี่ยงวันหยุด'}
+                                        >
+                                          เลื่อนหลีกเลี่ยงวันหยุด
+                                        </span>
+                                      )}
                                       {!p.ttl_date && p.next_ttl && (
                                         <span className="text-[11px] font-semibold text-slate-700 whitespace-nowrap">{formatDateTime(p.next_ttl)}</span>
                                       )}
@@ -1042,9 +1075,19 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
           if (eff?.templateId === t.templateId) { showToast('PNR ใช้ Condition นี้อยู่แล้ว'); return }
           if (seriesTemplateId === t.templateId && hasSeriesCond) {
             applyConditionChangeDirect([activeDemoPnr.pnrId], [pnrLabel], null, t.condition.conditionName, 'SERIES')
-          } else {
-            applyConditionChangeDirect([activeDemoPnr.pnrId], [pnrLabel], t.templateId, t.condition.conditionName, 'DIRECT')
+            return
           }
+          const preview = previewTemplateMergeForPnr(
+            activeDemoPnr.appliedCondition, t, activeDemoPnr.travelStart, getActiveHolidays(), 'System',
+          )
+          if (preview.hasConflict) {
+            setTtlConflict({ pnrId: activeDemoPnr.pnrId, pnrLabel, template: t, preview })
+            return
+          }
+          applyConditionChangeDirect(
+            [activeDemoPnr.pnrId], [pnrLabel], t.templateId, t.condition.conditionName, 'DIRECT',
+            { [activeDemoPnr.pnrId]: preview.keepResult },
+          )
         }
         return createPortal(
           <div
@@ -1270,13 +1313,39 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
           footer={
             <>
               <Button variant="ghost" onClick={() => setCondChangeConfirm(null)}>ยกเลิก</Button>
-              <Button onClick={() => applyConditionChangeDirect(
-                condChangeConfirm.pnrIds,
-                condChangeConfirm.pnrDisplays,
-                condChangeConfirm.newTemplateId,
-                condChangeConfirm.newCondName,
-                condChangeConfirm.newSource,
-              )}>ยืนยันการเปลี่ยน</Button>
+              <Button onClick={() => {
+                let mergedApplied: Record<string, PnrAppliedCondition> | undefined
+                let notes: string[] | undefined
+                if (condChangeConfirm.newSource === 'DIRECT' && liveStock) {
+                  const tmpl = allTemplates.find(t => t.templateId === condChangeConfirm.newTemplateId)
+                  if (tmpl) {
+                    const activeHolidays = getActiveHolidays()
+                    mergedApplied = {}
+                    let conflictCount = 0
+                    for (const pnrId of condChangeConfirm.pnrIds) {
+                      const pnr = liveStock.pnrs.find(p => p.pnrId === pnrId)
+                      if (!pnr) continue
+                      const preview = previewTemplateMergeForPnr(pnr.appliedCondition, tmpl, pnr.travelStart, activeHolidays, 'System')
+                      if (preview.hasConflict) conflictCount++
+                      // Bulk assignment always defaults to keeping each PNR's locked NAME DL on conflict —
+                      // never silently overwritten; use the single-PNR flow for a keep/change choice per PNR.
+                      mergedApplied[pnrId] = preview.keepResult
+                    }
+                    if (conflictCount > 0) {
+                      notes = [`เก็บ NAME DL เดิมไว้สำหรับ ${conflictCount} PNR ที่ค่าไม่ตรงกับ Template`]
+                    }
+                  }
+                }
+                applyConditionChangeDirect(
+                  condChangeConfirm.pnrIds,
+                  condChangeConfirm.pnrDisplays,
+                  condChangeConfirm.newTemplateId,
+                  condChangeConfirm.newCondName,
+                  condChangeConfirm.newSource,
+                  mergedApplied,
+                  notes,
+                )
+              }}>ยืนยันการเปลี่ยน</Button>
             </>
           }
         >
@@ -1335,6 +1404,29 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
             )}
           </div>
         </Modal>
+      )}
+
+      {/* NAME DL conflict — Template Condition selected has a different NAME DL than the PNR's locked value */}
+      {ttlConflict && (
+        <TtlTemplateConflictModal
+          open={!!ttlConflict}
+          templateName={ttlConflict.template.condition.conditionName}
+          currentIso={ttlConflict.preview.currentIso}
+          templateIso={ttlConflict.preview.templateIso}
+          onCancel={() => setTtlConflict(null)}
+          onDecide={(decision: TtlTemplateConflictDecision) => {
+            const { pnrId, pnrLabel, template, preview } = ttlConflict
+            const result = decision === 'KEEP' ? preview.keepResult : preview.changeResult
+            const note = decision === 'KEEP'
+              ? 'เก็บ NAME DL เดิมไว้ (ไม่ตรงกับ Template)'
+              : 'เปลี่ยน NAME DL ตามค่าจาก Template'
+            applyConditionChangeDirect(
+              [pnrId], [pnrLabel], template.templateId, template.condition.conditionName, 'DIRECT',
+              { [pnrId]: result }, [note],
+            )
+            setTtlConflict(null)
+          }}
+        />
       )}
 
       {/* Bulk Condition Change Modal */}

@@ -1,10 +1,13 @@
 import { format, parseISO, isValid } from 'date-fns'
 import { buildRouteText, formatDate } from '@/lib/utils'
 import type { WizardState, FlightSeries, TicketType, TripType, PnrOperationalStatus, PnrConfirmationStatus } from '@/types'
-import { calcTtlDateFromTravel, condTtlTypeToTtlType, type TtlType } from '@/lib/ttl-utils'
+import { calcTtlDateFromTravelAdjusted, condTtlTypeToTtlType, type TtlType } from '@/lib/ttl-utils'
+import { adjustDateForHolidays } from '@/lib/holiday-utils'
+import { getActiveHolidays } from '@/lib/holiday-storage'
+import { lockTtlOnPnrSave, type PnrAppliedCondition } from '@/lib/pnr-applied-condition'
 import {
-  type AppStockCondition, type AppCondition, type CondCalcType, type CondDueType, type CondTtlCalcType, type CondRefundableType,
-  calcCondTtlDate,
+  type AppStockCondition, type AppCondition, type CondCalcType, type CondDueType, type CondTtlCalcType, type CondRefundableType, type CondTtlRule,
+  calcCondTtlDateAdjusted,
   defaultBaggagePolicy, migrateBaggagePolicy,
   defaultSeatReductionPolicy, migrateSeatReductionPolicy, defaultSeatReturnPolicy, defaultRefundPolicy, defaultTtlRule,
   migrateRefundTerms, defaultRefundTerms, defaultCancelGroupTerms, defaultChangeTerms,
@@ -385,6 +388,12 @@ export interface DemoPNR {
   ttlDate: string | null
   ttlTime: string | null
   ttlDateTime: string | null
+  /** NAME DL holiday avoidance (see lib/holiday-utils.ts) — ttlDate above is always the adjusted one. */
+  ttlDateOriginal?: string | null
+  ttlHolidayAdjusted?: boolean
+  ttlHolidayAdjustReason?: string | null
+  /** PNR-level Applied Condition — locks NAME DL at creation, independent of Template Condition (see lib/pnr-applied-condition.ts). */
+  appliedCondition?: PnrAppliedCondition | null
   status: string
   pnrStatus?: PnrOperationalStatus
   confirmationStatus?: PnrConfirmationStatus
@@ -678,16 +687,23 @@ export function getStockFlightSets(stock: DemoStock): DemoFlightSet[] {
     : [{ flightSetId: 'fset-default', flightSetName: 'Default', sectors: stock.sectors }]
 }
 
-export function saveDemoStock(stock: DemoStock): void {
-  if (typeof window === 'undefined') return
+/**
+ * Persists a stock to localStorage. Returns true on success, false on
+ * failure (e.g. storage quota exceeded) — callers that need to surface a
+ * "save failed, try again" message to the user MUST check this return
+ * value; earlier versions swallowed write failures silently.
+ */
+export function saveDemoStock(stock: DemoStock): boolean {
+  if (typeof window === 'undefined') return false
   try {
     const stocks = getDemoStocks()
     // prepend (newest first), replace if same stockId already exists
     const filtered = stocks.filter(s => s.stockId !== stock.stockId)
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify([stock, ...filtered]))
     window.dispatchEvent(new CustomEvent('demo_stock_updated', { detail: { stockId: stock.stockId } }))
+    return true
   } catch {
-    // silently ignore quota errors
+    return false
   }
 }
 
@@ -1062,6 +1078,7 @@ export function demoStockToWizardState(stock: DemoStock): WizardState {
 export function wizardStateToDemoStock(state: WizardState): DemoStock {
   const { stockInfo, schedules, conditions, pnrs } = state
   const now = new Date().toISOString()
+  const activeHolidays = getActiveHolidays()
 
   const stockId = genId('STK')
 
@@ -1148,24 +1165,53 @@ export function wizardStateToDemoStock(state: WizardState): DemoStock {
     let ttlDateTime: string | null = null
     let ttlType: TtlType | null = null
     let ttlDaysBefore: number | null = null
+    let ttlDateOriginal: string | null = null
+    let ttlHolidayAdjusted = false
+    let ttlHolidayAdjustReason: string | null = null
+    let appliedCondition: PnrAppliedCondition | null = null
 
     if (p.ttl_type && p.ttl_type !== 'NONE') {
       // User set explicit per-PNR TTL in the wizard
       ttlType = p.ttl_type
+      let lockedRule: CondTtlRule | null = null
       if (p.ttl_type === 'DAYS_BEFORE') {
         const days = p.ttl_days_before ?? null
         ttlDaysBefore = days
         if (days != null && days >= 0 && p.travel_start) {
-          ttlDate = calcTtlDateFromTravel(p.travel_start, days)
+          const { date, adjustment } = calcTtlDateFromTravelAdjusted(p.travel_start, days, activeHolidays)
+          ttlDate = date
           ttlTimeStr = p.ttl_time || null
+          if (adjustment) {
+            ttlDateOriginal = adjustment.originalDate
+            ttlHolidayAdjusted = adjustment.adjusted
+            ttlHolidayAdjustReason = adjustment.reason
+          }
+          lockedRule = {
+            calcType: 'TRAVEL_MINUS_DAYS', daysBefore: days, time: ttlTimeStr ?? '', fixedDate: '', remark: '',
+            holidayOriginalDate: ttlDateOriginal, holidayAdjustedDate: ttlDate, holidayAdjusted: ttlHolidayAdjusted, holidayAdjustReason: ttlHolidayAdjustReason,
+          }
         }
       } else if (p.ttl_type === 'FIXED_DATE') {
-        ttlDate = p.ttl_date || null
+        if (p.ttl_date) {
+          const adjustment = adjustDateForHolidays(p.ttl_date, activeHolidays)
+          ttlDate = adjustment.adjustedDate
+          ttlDateOriginal = adjustment.originalDate
+          ttlHolidayAdjusted = adjustment.adjusted
+          ttlHolidayAdjustReason = adjustment.reason
+        }
         ttlTimeStr = p.ttl_time || null
+        lockedRule = {
+          calcType: 'MANUAL_DATE', daysBefore: 0, time: ttlTimeStr ?? '', fixedDate: p.ttl_date ?? '', remark: '',
+          holidayOriginalDate: ttlDateOriginal, holidayAdjustedDate: ttlDate, holidayAdjusted: ttlHolidayAdjusted, holidayAdjustReason: ttlHolidayAdjustReason,
+        }
+      }
+      if (lockedRule) {
+        appliedCondition = lockTtlOnPnrSave(null, lockedRule, 'System')
       }
     } else if (linkedSC && p.travel_start) {
       // Fall back to condition-derived TTL
-      const condTtlDt = calcCondTtlDate(linkedSC.condition.ttlRule, p.travel_start)
+      const { isoDateTime: condTtlDt, rule: adjustedRule } = calcCondTtlDateAdjusted(linkedSC.condition.ttlRule, p.travel_start, activeHolidays)
+      linkedSC.condition.ttlRule = adjustedRule   // persist adjustment metadata on the Series condition snapshot
       if (condTtlDt) {
         try {
           const d = parseISO(condTtlDt)
@@ -1176,6 +1222,9 @@ export function wizardStateToDemoStock(state: WizardState): DemoStock {
             ttlDaysBefore = linkedSC.condition.ttlRule.calcType === 'TRAVEL_MINUS_DAYS'
               ? (linkedSC.condition.ttlRule.daysBefore ?? null)
               : null
+            ttlDateOriginal = adjustedRule.holidayOriginalDate ?? null
+            ttlHolidayAdjusted = adjustedRule.holidayAdjusted ?? false
+            ttlHolidayAdjustReason = adjustedRule.holidayAdjustReason ?? null
           }
         } catch {
           // keep null
@@ -1282,6 +1331,10 @@ export function wizardStateToDemoStock(state: WizardState): DemoStock {
       ttlDate,
       ttlTime: ttlTimeStr,
       ttlDateTime,
+      ttlDateOriginal,
+      ttlHolidayAdjusted,
+      ttlHolidayAdjustReason,
+      appliedCondition,
       status: p.status ?? 'Pending',
       pnrStatus: p.pnr_status ?? 'PENDING',
       confirmationStatus: p.confirmation_status ?? (p.status === 'Confirmed' ? 'CONFIRMED' : 'PENDING_CONFIRMATION'),

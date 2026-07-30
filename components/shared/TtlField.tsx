@@ -3,7 +3,9 @@
 import { useMemo } from 'react'
 import { cn } from '@/lib/utils'
 import { TimeInput } from '@/components/ui/time-input'
-import { calcTtlDateFromTravel, formatTtlDisplay, type TtlType } from '@/lib/ttl-utils'
+import { calcTtlDateFromTravelAdjusted, formatTtlDisplay, type TtlType } from '@/lib/ttl-utils'
+import { adjustDateForHolidays } from '@/lib/holiday-utils'
+import { getActiveHolidays } from '@/lib/holiday-storage'
 import { formatTravelDate } from '@/lib/utils'
 import { RefreshCw } from 'lucide-react'
 
@@ -40,17 +42,22 @@ const inCls = 'h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm text
 // ─── Component ─────────────────────────────────────────────────────────────────
 
 export function TtlField({ ttlType, ttlDaysBefore, ttlDate, ttlTime, travelDate, conditionInfo, error, onChange, onApplyCondition }: TtlFieldProps) {
+  const holidays = useMemo(() => getActiveHolidays(), [])
 
-  // Computed preview date for DAYS_BEFORE
-  const computedDate = useMemo(() => {
-    if (ttlType !== 'DAYS_BEFORE' || !travelDate || ttlDaysBefore === '') return null
+  // Computed preview date for DAYS_BEFORE — holiday-adjusted (never lands on Sat/Sun or an active holiday)
+  const { computedDate, holidayReason } = useMemo(() => {
+    if (ttlType !== 'DAYS_BEFORE' || !travelDate || ttlDaysBefore === '') return { computedDate: null, holidayReason: null }
     const n = parseInt(ttlDaysBefore, 10)
-    if (isNaN(n) || n < 0) return null
-    return calcTtlDateFromTravel(travelDate, n)
-  }, [ttlType, travelDate, ttlDaysBefore])
+    if (isNaN(n) || n < 0) return { computedDate: null, holidayReason: null }
+    const { date, adjustment } = calcTtlDateFromTravelAdjusted(travelDate, n, holidays)
+    return { computedDate: date, holidayReason: adjustment?.reason ?? null }
+  }, [ttlType, travelDate, ttlDaysBefore, holidays])
 
-  const previewDate = ttlType === 'DAYS_BEFORE' ? computedDate : ttlType === 'FIXED_DATE' ? (ttlDate || null) : null
+  const fixedDateAdjustment = ttlType === 'FIXED_DATE' && ttlDate ? adjustDateForHolidays(ttlDate, holidays) : null
+
+  const previewDate = ttlType === 'DAYS_BEFORE' ? computedDate : ttlType === 'FIXED_DATE' ? (fixedDateAdjustment?.adjustedDate ?? null) : null
   const previewText = previewDate ? formatTtlDisplay(previewDate, ttlTime || null) : null
+  const previewHolidayReason = ttlType === 'DAYS_BEFORE' ? holidayReason : (fixedDateAdjustment?.reason ?? null)
 
   // Condition TTL summary text
   const condTtlLabel = conditionInfo ? (() => {
@@ -131,9 +138,10 @@ export function TtlField({ ttlType, ttlDaysBefore, ttlDate, ttlTime, travelDate,
             <p className="text-[11px] text-amber-600">กรุณาระบุวันเดินทางก่อนกำหนด NAME DL</p>
           )}
           {travelDate && previewDate && (
-            <p className="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-2.5 py-1.5">
-              วันที่ NAME DL {formatTravelDate(previewDate)}{ttlTime ? ` เวลา ${ttlTime}` : ''}
-            </p>
+            <div className="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-2.5 py-1.5">
+              <p>วันที่ NAME DL {formatTravelDate(previewDate)}{ttlTime ? ` เวลา ${ttlTime}` : ''}</p>
+              {previewHolidayReason && <p className="text-amber-600 mt-1">ⓘ {previewHolidayReason}</p>}
+            </div>
           )}
           {travelDate && ttlDaysBefore !== '' && !previewDate && (
             <p className="text-[11px] text-slate-400 italic">ไม่สามารถคำนวณวันที่ได้</p>
@@ -164,9 +172,10 @@ export function TtlField({ ttlType, ttlDaysBefore, ttlDate, ttlTime, travelDate,
             />
           </div>
           {previewText && (
-            <p className="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-2.5 py-1.5">
-              วันที่ NAME DL {formatTravelDate(ttlDate)}{ttlTime ? ` เวลา ${ttlTime}` : ''}
-            </p>
+            <div className="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-2.5 py-1.5">
+              <p>วันที่ NAME DL {formatTravelDate(previewDate)}{ttlTime ? ` เวลา ${ttlTime}` : ''}</p>
+              {previewHolidayReason && <p className="text-amber-600 mt-1">ⓘ {previewHolidayReason}</p>}
+            </div>
           )}
           <p className="text-[10px] text-slate-400">ไม่ระบุเวลาได้ ระบบจะบันทึกเฉพาะวันที่ NAME DL</p>
         </div>

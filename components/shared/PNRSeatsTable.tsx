@@ -22,6 +22,7 @@ import {
   recalcSectorDates,
 } from '@/lib/pnr-record'
 import { getCurrencyOptions } from '@/lib/currency-storage'
+import { validatePnrRowFields, pnrFieldElementId, type NormalizedPnrRow } from '@/lib/pnr-validation'
 
 // ─── Column definitions — single source of truth ─────────────────────────────
 export const PNR_COLS = [
@@ -53,10 +54,10 @@ export const PNR_FIXED_WIDTH = PNR_COLS.filter(c => c.key !== 'action' && c.key 
 // ─── PriceInput ───────────────────────────────────────────────────────────────
 function PriceInput({
   value, nullable = false, disabled = false, hasError = false,
-  onChange, onBlur, compact = false,
+  onChange, onBlur, compact = false, id,
 }: {
   value: number | null; nullable?: boolean; disabled?: boolean
-  hasError?: boolean; compact?: boolean
+  hasError?: boolean; compact?: boolean; id?: string
   onChange: (v: number | null) => void; onBlur?: () => void
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
@@ -81,7 +82,7 @@ function PriceInput({
   }
 
   return (
-    <input ref={inputRef} type="text" inputMode="decimal"
+    <input ref={inputRef} id={id} type="text" inputMode="decimal"
       value={focused ? raw : fmtDisplay(value)}
       placeholder={focused ? (nullable ? '—' : '0.00') : (value == null ? 'ยังไม่ระบุ' : '')}
       className={cn(
@@ -502,13 +503,29 @@ export function PNRSeatsTable({
               const touched = touchedRows.has(pnrIdx) || showValidation
               const fmt = r.priceFormat
               const isDupPnr = !!r.pnrCode.trim() && records.some((o, oi) => oi !== pnrIdx && o.pnrCode.trim() === r.pnrCode.trim())
+
+              // Single source of truth for field-level rules (lib/pnr-validation.ts) — kept in
+              // sync with the wizard's Next/Save gate, Single/Bulk PNR modals, and Review & Save.
+              const normalizedRow: NormalizedPnrRow = {
+                pnrCode: r.pnrCode,
+                travelStart: r.sectors[0]?.depDate || '',
+                seatTotal: r.seatTotal,
+                priceFormat: fmt,
+                fare: r.fare,
+                yq: r.yq,
+                allInAmount: r.allInAmount,
+                ttlType: r.ttlType,
+                ttlDaysBefore: r.ttlDaysBefore,
+                ttlDate: r.ttlDate,
+              }
+              const fieldIssueMap = new Map(validatePnrRowFields(normalizedRow).map(i => [i.field, i]))
+              const rowHasError = isDupPnr || fieldIssueMap.size > 0
               const pnrErr = touched && isDupPnr
-              const missingSeat = touched && (!r.seatTotal || r.seatTotal <= 0)
-              const fareErr = touched && (
-                fmt === 'ALL_IN' ? !((r.allInAmount ?? 0) > 0) : !(r.fare > 0)
-              )
-              const taxErr  = touched && fmt === 'FARE' && r.tax == null
-              const yqErr   = touched && (fmt === 'FARE' || fmt === 'FARE_YQ') && r.yq == null
+              const missingSeat = touched && fieldIssueMap.has('seatTotal')
+              const fareErr = touched && (fmt === 'ALL_IN' ? fieldIssueMap.has('allInAmount') : fieldIssueMap.has('fare'))
+              const taxErr  = false   // Tax is never required — optional additional charge, defaults to 0
+              const yqErr   = touched && fieldIssueMap.has('yq')
+              const yqErrMsg = fieldIssueMap.get('yq')?.message ?? 'ยังไม่ได้ระบุ YQ'
               const isNewlyAdded = newHighlight !== null && newHighlight !== undefined && pnrIdx >= newHighlight.start && pnrIdx < newHighlight.start + newHighlight.count
               const hvBg  = isHovered ? '#F0F7FF' : isNewlyAdded ? '#f0fdf4' : '#FFFFFF'
               const hvSec = isHovered ? '#EBF4FF' : isNewlyAdded ? '#dcfce7' : '#F8FAFC'
@@ -565,9 +582,14 @@ export function PNRSeatsTable({
                         {/* # */}
                         {isFirstRow && (
                           <td rowSpan={sectorCount}
-                            className={cn('border-r border-[#E5EAF0] text-center align-middle overflow-hidden', pnrBorderB)}
-                            style={{ backgroundColor: hvBg }}>
-                            <span className="text-[11px] text-slate-400 select-none">{pnrIdx + 1}</span>
+                            className={cn('border-r border-[#E5EAF0] text-center align-middle overflow-hidden', pnrBorderB, touched && rowHasError ? 'bg-red-50' : '')}
+                            style={{ backgroundColor: touched && rowHasError ? undefined : hvBg }}>
+                            <span className={cn(
+                              'text-[11px] select-none',
+                              touched && rowHasError ? 'text-red-600 font-bold' : 'text-slate-400'
+                            )}>
+                              {pnrIdx + 1}
+                            </span>
                           </td>
                         )}
 
@@ -587,6 +609,7 @@ export function PNRSeatsTable({
                               ) : (
                                 <>
                                   <input
+                                    id={pnrFieldElementId(pnrIdx, 'pnrCode')}
                                     value={r.pnrCode}
                                     maxLength={7}
                                     onChange={e => update(pnrIdx, { pnrCode: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '') })}
@@ -660,6 +683,7 @@ export function PNRSeatsTable({
                           ) : (
                             <div className="flex items-center h-7 group/dep">
                               <input type="date" value={displayDep}
+                                id={sIdx === 0 ? pnrFieldElementId(pnrIdx, 'travelStart') : undefined}
                                 onChange={e => handleDepChange(pnrIdx, sIdx, e.target.value)}
                                 onBlur={() => markTouched(pnrIdx)}
                                 className={cn('flex-1 min-w-0 h-7 text-[12px] bg-transparent border-0 focus:outline-none tabular-nums',
@@ -752,12 +776,16 @@ export function PNRSeatsTable({
                               {readOnly ? (
                                 <span className="text-[12px] font-medium text-slate-800 tabular-nums">{r.seatTotal || '—'}</span>
                               ) : (
-                                <input type="number" min={1} value={r.seatTotal || ''}
-                                  onChange={e => update(pnrIdx, { seatTotal: parseInt(e.target.value) || 0 })}
-                                  onBlur={() => markTouched(pnrIdx)}
-                                  className={cn('w-full min-w-0 h-7 text-center text-[12px] font-medium bg-transparent border-0 focus:outline-none',
-                                    missingSeat ? 'text-red-500' : 'text-slate-800')}
-                                />
+                                <div className="px-0.5">
+                                  <input type="number" min={1} value={r.seatTotal || ''}
+                                    id={pnrFieldElementId(pnrIdx, 'seatTotal')}
+                                    onChange={e => update(pnrIdx, { seatTotal: parseInt(e.target.value) || 0 })}
+                                    onBlur={() => markTouched(pnrIdx)}
+                                    className={cn('w-full min-w-0 h-7 text-center text-[12px] font-medium bg-transparent border-0 focus:outline-none',
+                                      missingSeat ? 'text-red-500' : 'text-slate-800')}
+                                  />
+                                  {missingSeat && <p className="text-[9px] text-red-500 leading-none -mt-0.5 truncate text-center">ยังไม่ได้ระบุ Seat</p>}
+                                </div>
                               )}
                             </td>
 
@@ -801,13 +829,21 @@ export function PNRSeatsTable({
                                     : (r.fare > 0 ? r.fare.toLocaleString() : r.fare === 0 ? '0' : '—')}
                                 </span>
                               ) : fmt === 'ALL_IN' ? (
-                                <PriceInput value={(r.allInAmount ?? 0) > 0 ? r.allInAmount! : null} compact hasError={fareErr}
-                                  onChange={v => { const a = v ?? 0; update(pnrIdx, { allInAmount: a, totalAmount: calcPnrTotal(fmt, r.fare, r.tax ?? null, r.yq ?? null, a) }) }}
-                                  onBlur={() => markTouched(pnrIdx)} />
+                                <>
+                                  <PriceInput value={(r.allInAmount ?? 0) > 0 ? r.allInAmount! : null} compact hasError={fareErr}
+                                    id={pnrFieldElementId(pnrIdx, 'allInAmount')}
+                                    onChange={v => { const a = v ?? 0; update(pnrIdx, { allInAmount: a, totalAmount: calcPnrTotal(fmt, r.fare, r.tax ?? null, r.yq ?? null, a) }) }}
+                                    onBlur={() => markTouched(pnrIdx)} />
+                                  {fareErr && <p className="text-[9px] text-red-500 leading-none mt-0.5 truncate">ราคาต้องมากกว่า 0</p>}
+                                </>
                               ) : (
-                                <PriceInput value={r.fare > 0 ? r.fare : null} compact hasError={fareErr}
-                                  onChange={v => { const f = v ?? 0; update(pnrIdx, { fare: f, totalAmount: calcPnrTotal(r.priceFormat, f, r.tax ?? null, r.yq ?? null, r.allInAmount) }) }}
-                                  onBlur={() => markTouched(pnrIdx)} />
+                                <>
+                                  <PriceInput value={r.fare > 0 ? r.fare : null} compact hasError={fareErr}
+                                    id={pnrFieldElementId(pnrIdx, 'fare')}
+                                    onChange={v => { const f = v ?? 0; update(pnrIdx, { fare: f, totalAmount: calcPnrTotal(r.priceFormat, f, r.tax ?? null, r.yq ?? null, r.allInAmount) }) }}
+                                    onBlur={() => markTouched(pnrIdx)} />
+                                  {fareErr && <p className="text-[9px] text-red-500 leading-none mt-0.5 truncate">Fare ต้องมากกว่า 0</p>}
+                                </>
                               )}
                             </td>
 
@@ -823,6 +859,7 @@ export function PNRSeatsTable({
                                 </span>
                               ) : (
                                 <PriceInput value={r.tax ?? null} compact nullable hasError={taxErr}
+                                  id={pnrFieldElementId(pnrIdx, 'tax')}
                                   onChange={v => update(pnrIdx, { tax: v, totalAmount: calcPnrTotal(fmt, r.fare, v, r.yq ?? null, r.allInAmount) })}
                                   onBlur={() => markTouched(pnrIdx)} />
                               )}
@@ -839,9 +876,13 @@ export function PNRSeatsTable({
                                   {r.yq != null ? r.yq.toLocaleString() : '—'}
                                 </span>
                               ) : (
-                                <PriceInput value={r.yq ?? null} compact nullable hasError={yqErr}
-                                  onChange={v => update(pnrIdx, { yq: v, totalAmount: calcPnrTotal(fmt, r.fare, r.tax, v, r.allInAmount) })}
-                                  onBlur={() => markTouched(pnrIdx)} />
+                                <>
+                                  <PriceInput value={r.yq ?? null} compact nullable hasError={yqErr}
+                                    id={pnrFieldElementId(pnrIdx, 'yq')}
+                                    onChange={v => update(pnrIdx, { yq: v, totalAmount: calcPnrTotal(fmt, r.fare, r.tax, v, r.allInAmount) })}
+                                    onBlur={() => markTouched(pnrIdx)} />
+                                  {yqErr && <p className="text-[9px] text-red-500 leading-none mt-0.5 truncate">{yqErrMsg}</p>}
+                                </>
                               )}
                             </td>
 

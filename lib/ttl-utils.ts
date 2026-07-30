@@ -1,4 +1,6 @@
 import { formatDate } from '@/lib/utils'
+import { adjustDateForHolidays, type HolidayAdjustment } from '@/lib/holiday-utils'
+import type { HolidayData } from '@/lib/holiday-storage'
 
 export type TtlType = 'NONE' | 'DAYS_BEFORE' | 'FIXED_DATE'
 
@@ -17,6 +19,23 @@ export function calcTtlDateFromTravel(travelStart: string, daysBefore: number): 
     d.setDate(d.getDate() - daysBefore)
     return d.toISOString().split('T')[0]
   } catch { return null }
+}
+
+/**
+ * Same as calcTtlDateFromTravel, but shifts the result backward off any
+ * Sat/Sun or active holiday until it lands on a business day. Used for the
+ * final resolved NAME DL — calcTtlDateFromTravel itself stays pure (raw
+ * calendar-day subtraction) so existing callers/tests are unaffected.
+ */
+export function calcTtlDateFromTravelAdjusted(
+  travelStart: string,
+  daysBefore: number,
+  holidays: HolidayData[],
+): { date: string | null; adjustment: HolidayAdjustment | null } {
+  const raw = calcTtlDateFromTravel(travelStart, daysBefore)
+  if (!raw) return { date: null, adjustment: null }
+  const adjustment = adjustDateForHolidays(raw, holidays)
+  return { date: adjustment.adjustedDate, adjustment }
 }
 
 /** Format TTL date+time for display: "DD MMM YY · HH:mm" or "DD MMM YY" */

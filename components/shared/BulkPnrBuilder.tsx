@@ -11,6 +11,11 @@ import { TimeInput } from '@/components/ui/time-input'
 import { calculateStockSummary, saveDemoStock, checkPNRDuplicatesInSystem } from '@/lib/demo-storage'
 import { generateDummyPnrCode, calcTravelEndFromFlightSet } from '@/lib/pnr-shared-utils'
 import type { DemoStock, DemoPNR, DemoLog } from '@/lib/demo-storage'
+import { calcTtlDateFromTravelAdjusted } from '@/lib/ttl-utils'
+import { adjustDateForHolidays } from '@/lib/holiday-utils'
+import { getActiveHolidays } from '@/lib/holiday-storage'
+import { TtlTemplateConflictModal, type TtlTemplateConflictDecision } from '@/components/shared/TtlTemplateConflictModal'
+import { validatePnrRowFields } from '@/lib/pnr-validation'
 import { PNRSeatsTable } from '@/components/shared/PNRSeatsTable'
 import type { PNRRecord, PNRSectorRecord, ScheduleTemplate } from '@/lib/pnr-record'
 
@@ -134,6 +139,9 @@ interface InternalRow {
   ttlDate: string | null
   ttlTime: string | null
   ttlDaysBefore: number | null
+  ttlDateOriginal: string | null
+  ttlHolidayAdjusted: boolean
+  ttlHolidayAdjustReason: string | null
   errors: string[]; selected: boolean
 }
 
@@ -151,15 +159,6 @@ const INIT_COUNT: CountCfg = { startDate: '', count: 1, intervalDays: 1 }
 const INIT_WD: WdCfg = { startDate: '', endDate: '', weekdays: new Set() }
 
 const newId = (p: string) => `${p}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
-
-function calcTtlDateFromTravel(travelStart: string, daysBefore: number): string | null {
-  if (!travelStart || daysBefore < 0) return null
-  try {
-    const d = new Date(travelStart + 'T12:00:00')
-    d.setDate(d.getDate() - daysBefore)
-    return d.toISOString().split('T')[0]
-  } catch { return null }
-}
 
 // ─── Internal Helpers ─────────────────────────────────────────────────────────
 
@@ -248,11 +247,40 @@ function buildInternalRows(
   }
   const cond    = conditions.find(c => c.code === shared.conditionCode)
   const usedSet = new Set<string>()
+  const activeHolidays = getActiveHolidays()
 
   return starts.map((s, i) => {
     const travelEnd = calcTravelEndFromFlightSet(s, sectors)
     const dummy     = stock ? generateDummyPnrCode(s, stock, usedSet) : ''
     if (dummy) usedSet.add(dummy)
+
+    // NAME DL — resolve raw date, then shift off Sat/Sun and active holidays
+    let ttlType: 'NONE' | 'DAYS_BEFORE' | 'FIXED_DATE' = 'NONE'
+    let ttlDate: string | null = null
+    let ttlDateOriginal: string | null = null
+    let ttlHolidayAdjusted = false
+    let ttlHolidayAdjustReason: string | null = null
+    if (shared.ttlType === 'DAYS_BEFORE') {
+      const d = parseInt(shared.ttlDaysBefore, 10)
+      if (!isNaN(d) && d >= 0) {
+        const { date, adjustment } = calcTtlDateFromTravelAdjusted(s, d, activeHolidays)
+        if (date) {
+          ttlType = 'DAYS_BEFORE'; ttlDate = date
+          if (adjustment) {
+            ttlDateOriginal = adjustment.originalDate
+            ttlHolidayAdjusted = adjustment.adjusted
+            ttlHolidayAdjustReason = adjustment.reason
+          }
+        }
+      }
+    } else if (shared.ttlType === 'FIXED_DATE' && shared.ttlDate) {
+      const adjustment = adjustDateForHolidays(shared.ttlDate, activeHolidays)
+      ttlType = 'FIXED_DATE'; ttlDate = adjustment.adjustedDate
+      ttlDateOriginal = adjustment.originalDate
+      ttlHolidayAdjusted = adjustment.adjusted
+      ttlHolidayAdjustReason = adjustment.reason
+    }
+
     return {
       rowId: newId('R'), seq: i + 1,
       travelStart: s, travelEnd,
@@ -263,24 +291,13 @@ function buildInternalRows(
       conditionCode: shared.conditionCode, status: shared.status, remark: shared.remark,
       paymentDueDate: calcPaymentDue(s, travelEnd, cond),
       ttlDateTime: null,
-      ttlType: (() => {
-        if (shared.ttlType === 'DAYS_BEFORE') {
-          const d = parseInt(shared.ttlDaysBefore, 10)
-          return (!isNaN(d) && d >= 0 && calcTtlDateFromTravel(s, d)) ? 'DAYS_BEFORE' : 'NONE'
-        }
-        if (shared.ttlType === 'FIXED_DATE' && shared.ttlDate) return 'FIXED_DATE'
-        return 'NONE'
-      })(),
-      ttlDate: (() => {
-        if (shared.ttlType === 'DAYS_BEFORE') {
-          const d = parseInt(shared.ttlDaysBefore, 10)
-          return (!isNaN(d) && d >= 0) ? calcTtlDateFromTravel(s, d) : null
-        }
-        if (shared.ttlType === 'FIXED_DATE') return shared.ttlDate || null
-        return null
-      })(),
-      ttlTime: shared.ttlType !== 'NONE' ? (shared.ttlTime || null) : null,
-      ttlDaysBefore: shared.ttlType === 'DAYS_BEFORE' ? (parseInt(shared.ttlDaysBefore, 10) || null) : null,
+      ttlType,
+      ttlDate,
+      ttlTime: ttlType !== 'NONE' ? (shared.ttlTime || null) : null,
+      ttlDaysBefore: ttlType === 'DAYS_BEFORE' ? (parseInt(shared.ttlDaysBefore, 10) || null) : null,
+      ttlDateOriginal,
+      ttlHolidayAdjusted,
+      ttlHolidayAdjustReason,
       errors: [], selected: false,
     }
   })
@@ -294,10 +311,21 @@ function validateInternalRows(
   const seenStart = new Map<string, number>()
 
   return rows.map((row, idx) => {
-    const errors: string[] = []
-    if (row.seatTotal <= 0)  errors.push('ที่นั่ง / PNR ต้องมากกว่า 0')
-    if (row.total <= 0)      errors.push('ยอดสุทธิต้องมากกว่า 0')
-    if (row.fare < 0)        errors.push('Fare ต้องไม่ติดลบ')
+    // Field-level rules (seat/price-by-format/NAME DL) come from the single shared validator —
+    // kept in sync with the wizard's Next/Save gate, Single PNR modal, and the PNR & Seats table.
+    const fieldIssues = validatePnrRowFields({
+      pnrCode: row.pnrCode,
+      travelStart: row.travelStart,
+      seatTotal: row.seatTotal,
+      priceFormat: row.priceFormat,
+      fare: row.fare,
+      yq: row.yq,
+      allInAmount: row.priceFormat === 'ALL_IN' ? row.total : null,
+      ttlType: row.ttlType,
+      ttlDaysBefore: row.ttlDaysBefore,
+      ttlDate: row.ttlDate,
+    })
+    const errors: string[] = fieldIssues.map(i => i.message)
     if (row.taxType === 'separate' && row.tax < 0) errors.push('Tax ต้องไม่ติดลบ')
 
     if (seenStart.has(row.travelStart)) {
@@ -523,7 +551,9 @@ export function BulkPnrBuilder({
   const [rows,    setRows]    = useState<InternalRow[]>([])
   const [saving,  setSaving]  = useState(false)
   const [formErr, setFormErr] = useState('')
-  const [condTtlConfirm, setCondTtlConfirm] = useState<{ pendingCode: string } | null>(null)
+  const [condTtlConfirm, setCondTtlConfirm] = useState<{
+    pendingCode: string; condName: string; currentIso: string | null; candidateIso: string | null
+  } | null>(null)
   const [fsChangeConfirm, setFsChangeConfirm] = useState<{ toFsId: string } | null>(null)
 
   // Bulk toolbar
@@ -621,9 +651,9 @@ export function BulkPnrBuilder({
   const previewTtlDate = useMemo(() => {
     if (shared.ttlType === 'DAYS_BEFORE' && firstTravelDate && shared.ttlDaysBefore !== '') {
       const d = parseInt(shared.ttlDaysBefore, 10)
-      if (!isNaN(d) && d >= 0) return calcTtlDateFromTravel(firstTravelDate, d)
+      if (!isNaN(d) && d >= 0) return calcTtlDateFromTravelAdjusted(firstTravelDate, d, getActiveHolidays()).date
     }
-    if (shared.ttlType === 'FIXED_DATE' && shared.ttlDate) return shared.ttlDate
+    if (shared.ttlType === 'FIXED_DATE' && shared.ttlDate) return adjustDateForHolidays(shared.ttlDate, getActiveHolidays()).adjustedDate
     return null
   }, [shared.ttlType, shared.ttlDaysBefore, shared.ttlDate, firstTravelDate])
 
@@ -636,6 +666,35 @@ export function BulkPnrBuilder({
   const fsFieldShown = mode === 'add_to_existing' || !!flightSets?.length
   const fsOk         = !fsFieldShown || !flightSets?.length || !!shared.flightSetId
   const canPreview   = hasDateInput && shared.seatTotal > 0 && fsOk
+
+  const resolveSharedTtlIso = (): string | null => {
+    if (shared.ttlType === 'FIXED_DATE' && shared.ttlDate) {
+      const adj = adjustDateForHolidays(shared.ttlDate, getActiveHolidays())
+      return `${adj.adjustedDate}T${shared.ttlTime || '00:00'}:00`
+    }
+    if (shared.ttlType === 'DAYS_BEFORE' && shared.ttlDaysBefore && firstTravelDate) {
+      const n = parseInt(shared.ttlDaysBefore, 10)
+      if (!isNaN(n) && n >= 0) {
+        const { date } = calcTtlDateFromTravelAdjusted(firstTravelDate, n, getActiveHolidays())
+        return date ? `${date}T${shared.ttlTime || '00:00'}:00` : null
+      }
+    }
+    return null
+  }
+
+  const resolveCondTtlIso = (cond?: BulkPnrCondition): string | null => {
+    if (!cond?.ttlRule) return null
+    const { calcType, daysBefore, date, time } = cond.ttlRule
+    if (calcType === 'MANUAL_DATE' && date) {
+      const adj = adjustDateForHolidays(date, getActiveHolidays())
+      return `${adj.adjustedDate}T${time || '00:00'}:00`
+    }
+    if (calcType === 'TRAVEL_MINUS_DAYS' && daysBefore != null && firstTravelDate) {
+      const { date: d } = calcTtlDateFromTravelAdjusted(firstTravelDate, daysBefore, getActiveHolidays())
+      return d ? `${d}T${time || '00:00'}:00` : null
+    }
+    return null
+  }
 
   const applyConditionCode = (code: string, cond?: BulkPnrCondition) => {
     const patch: Partial<SharedCfg> = { conditionCode: code, ttlUserModified: false }
@@ -960,9 +1019,14 @@ export function BulkPnrBuilder({
         taxStatus:      r.taxType === 'included' ? 'included' : r.taxType === 'pending' ? 'pending' : 'completed',
         total:          r.total,
         conditionCode:       r.conditionCode,
+        ttlType:             r.ttlType === 'NONE' ? null : r.ttlType,
+        ttlDaysBefore:       r.ttlDaysBefore,
         ttlDate,
         ttlTime,
         ttlDateTime,
+        ttlDateOriginal:        r.ttlDateOriginal,
+        ttlHolidayAdjusted:     r.ttlHolidayAdjusted,
+        ttlHolidayAdjustReason: r.ttlHolidayAdjustReason,
         status:              r.status,
         pnrStatus:           'PENDING' as const,
         confirmationStatus:  'PENDING_CONFIRMATION' as const,
@@ -1454,13 +1518,15 @@ export function BulkPnrBuilder({
                         onChange={e => {
                           const newCode = e.target.value
                           const cond = conditions.find(c => c.code === newCode)
-                          const ttlCalc = cond?.ttlRule?.calcType
-                          const hasNewTtl = ttlCalc === 'TRAVEL_MINUS_DAYS' || ttlCalc === 'MANUAL_DATE'
-                          if (shared.ttlUserModified && shared.ttlType !== 'NONE' && hasNewTtl) {
-                            setCondTtlConfirm({ pendingCode: newCode })
-                          } else {
-                            applyConditionCode(newCode, cond)
+                          if (shared.ttlUserModified && shared.ttlType !== 'NONE') {
+                            const currentIso = resolveSharedTtlIso()
+                            const candidateIso = resolveCondTtlIso(cond)
+                            if (candidateIso && candidateIso !== currentIso) {
+                              setCondTtlConfirm({ pendingCode: newCode, condName: cond?.name ?? newCode, currentIso, candidateIso })
+                              return
+                            }
                           }
+                          applyConditionCode(newCode, cond)
                         }}
                         className={iCls}>
                         <option value="">ไม่ระบุ</option>
@@ -1700,32 +1766,24 @@ export function BulkPnrBuilder({
           </div>
         )}
 
-        {/* Condition–TTL confirmation dialog */}
+        {/* Condition–TTL confirmation dialog — NAME DL default is always "keep", never silently overwritten */}
         {condTtlConfirm && (
-          <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/40 rounded-2xl">
-            <div className="bg-white rounded-2xl shadow-2xl w-80 p-6 mx-4">
-              <h3 className="text-sm font-semibold text-slate-900 mb-2">เงื่อนไขที่เลือกมีการกำหนด NAME DL (Deadline)</h3>
-              <p className="text-xs text-slate-600 mb-5">ต้องการอัปเดตค่า NAME DL ตามเงื่อนไขใหม่หรือไม่?</p>
-              <div className="flex justify-end gap-3">
-                <button type="button"
-                  onClick={() => {
-                    setShared(s => ({ ...s, conditionCode: condTtlConfirm.pendingCode }))
-                    setCondTtlConfirm(null)
-                  }}
-                  className="px-4 py-2 text-sm text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">
-                  ยกเลิก
-                </button>
-                <button type="button"
-                  onClick={() => {
-                    const cond = conditions.find(c => c.code === condTtlConfirm.pendingCode)
-                    applyConditionCode(condTtlConfirm.pendingCode, cond)
-                  }}
-                  className="px-4 py-2 text-sm font-semibold bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors">
-                  อัปเดตทั้งหมด
-                </button>
-              </div>
-            </div>
-          </div>
+          <TtlTemplateConflictModal
+            open
+            templateName={condTtlConfirm.condName}
+            currentIso={condTtlConfirm.currentIso}
+            templateIso={condTtlConfirm.candidateIso}
+            onCancel={() => setCondTtlConfirm(null)}
+            onDecide={(decision: TtlTemplateConflictDecision) => {
+              if (decision === 'KEEP') {
+                setShared(s => ({ ...s, conditionCode: condTtlConfirm.pendingCode }))
+              } else {
+                const cond = conditions.find(c => c.code === condTtlConfirm.pendingCode)
+                applyConditionCode(condTtlConfirm.pendingCode, cond)
+              }
+              setCondTtlConfirm(null)
+            }}
+          />
         )}
 
         {/* ══ FOOTER ══════════════════════════════════════════════════════ */}
