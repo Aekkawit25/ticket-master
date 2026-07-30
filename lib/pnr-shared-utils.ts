@@ -16,6 +16,7 @@ import type { TtlType } from './ttl-utils'
 import { adjustDateForHolidays } from './holiday-utils'
 import { getActiveHolidays } from './holiday-storage'
 import { lockTtlOnPnrSave } from './pnr-applied-condition'
+import { validatePnrRowFields } from './pnr-validation'
 import type { CondTtlRule } from './condition-schema'
 
 // ── Lightweight sector / flightSet types ──────────────────────────────────────
@@ -245,24 +246,28 @@ export function validatePnrFormValues(
 ): Record<string, string> {
   const e: Record<string, string> = {}
 
-  if (!v.travelStart) e.travelStart = 'กรุณากรอก Travel Start'
-
-  const seats = Number(v.seatTotal)
-  if (!v.seatTotal || isNaN(seats) || seats <= 0) e.seatTotal = 'กรุณากรอก Seat (มากกว่า 0)'
-
-  if (v.priceFormat === 'ALL_IN') {
-    const n = Number(v.allIn)
-    if (!v.allIn || isNaN(n) || n <= 0) e.allIn = 'กรุณากรอก All In (มากกว่า 0)'
-  } else {
-    const n = Number(v.fare)
-    if (!v.fare || isNaN(n) || n <= 0) e.fare = 'กรุณากรอก Fare (มากกว่า 0)'
+  // Field-level rules (required-ness by priceFormat, NAME DL, etc.) come from the single
+  // shared validator so this modal can never accept a row the wizard/table would reject.
+  const fieldErrors = validatePnrRowFields({
+    pnrCode: v.pnrCode,
+    travelStart: v.travelStart,
+    seatTotal: v.seatTotal === '' ? null : Number(v.seatTotal),
+    priceFormat: v.priceFormat,
+    fare: v.fare === '' ? null : Number(v.fare),
+    yq: v.yq === '' || v.yq == null ? null : Number(v.yq),
+    allInAmount: v.allIn === '' ? null : Number(v.allIn),
+    ttlType: v.ttlType,
+    ttlDaysBefore: v.ttlDaysBefore,
+    ttlDate: v.ttlDate,
+  })
+  const fieldToFormKey: Record<string, keyof PnrFormValues> = {
+    travelStart: 'travelStart', seatTotal: 'seatTotal', fare: 'fare',
+    allInAmount: 'allIn', yq: 'yq', ttlDaysBefore: 'ttlDaysBefore', ttlDate: 'ttlDate',
   }
-
-  if (v.ttlType === 'DAYS_BEFORE') {
-    const d = parseInt(v.ttlDaysBefore, 10)
-    if (v.ttlDaysBefore === '' || isNaN(d) || d < 0) e.ttlDaysBefore = 'กรุณากรอกจำนวนวัน (≥ 0)'
-  }
-  if (v.ttlType === 'FIXED_DATE' && !v.ttlDate) e.ttlDate = 'กรุณากรอกวันที่ NAME DL'
+  fieldErrors.forEach(issue => {
+    const key = fieldToFormKey[issue.field]
+    if (key) e[key] = issue.message
+  })
 
   if (v.pnrCode.trim() && ctx.stock) {
     const dup = ctx.stock.pnrs.find(p =>

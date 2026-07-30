@@ -15,6 +15,10 @@ import { isValidHHmm, sameAirport } from '@/lib/time-utils'
 import { MASTER_AIRLINE_CODE_SET } from '@/lib/master-data'
 import { getStockTypeConfig, getStockTypeConfigSafe, getStockTypeKey, STOCK_TYPE_CONFIG, type StockType } from '@/lib/stock-type-config'
 import { wizardStateToDemoStock, saveDemoStock, getDemoStocks, checkPNRDuplicatesInSystem, formatPNRConflictMessage } from '@/lib/demo-storage'
+import {
+  validatePnrRows, buildPnrValidationSummary, scrollToFirstPnrError, hasAnyPnrError,
+  type NormalizedPnrRow, type PnrValidationSummaryItem,
+} from '@/lib/pnr-validation'
 import { getDefaultCurrencyCode } from '@/lib/currency-storage'
 import type { WizardState, FlightSeriesFormData, FlightSectorFormData, FlightScheduleFormData, TicketType, GroupType, TripType } from '@/types'
 import PNRImpactModal, { computePNRImpact, computeSectorChanges, type ImpactedPNRItem, type SectorChange } from '@/components/wizard/PNRImpactModal'
@@ -219,7 +223,9 @@ function AddStockPageInner() {
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [saveMsg, setSaveMsg] = useState('')
   const [saveError, setSaveError] = useState('')
+  const [saveErrorRetryable, setSaveErrorRetryable] = useState(false)
   const [pnrValidationShown, setPnrValidationShown] = useState(false)
+  const [pnrValidationSummary, setPnrValidationSummary] = useState<PnrValidationSummaryItem[]>([])
   const [currencyChangeConfirm, setCurrencyChangeConfirm] = useState<{
     oldCurrency: string
     newCurrency: string
@@ -280,13 +286,20 @@ function AddStockPageInner() {
 
   const nextDisabled = step === 3 && state.pnrs.length === 0
 
-  const pnrHasErrors = (p: (typeof state.pnrs)[0]): boolean => {
-    if (!p.travel_start || (p.seat_total ?? 0) <= 0) return true
-    if (!(p.fare > 0)) return true
-    const fmt = p.price_format ?? 'FARE'
-    if (fmt === 'FARE_YQ' && p.yq == null) return true
-    return false
-  }
+  const normalizePnrForValidation = (p: (typeof state.pnrs)[0]): NormalizedPnrRow => ({
+    pnrCode: p.pnr_code ?? '',
+    travelStart: p.travel_start ?? '',
+    seatTotal: p.seat_total ?? null,
+    priceFormat: p.price_format ?? 'FARE',
+    fare: p.fare ?? null,
+    yq: p.yq ?? null,
+    allInAmount: p.all_in_amount ?? null,
+    ttlType: p.ttl_type ?? 'NONE',
+    ttlDaysBefore: p.ttl_days_before ?? null,
+    ttlDate: p.ttl_date ?? null,
+  })
+
+  const validatePnrStep = () => validatePnrRows(state.pnrs.map(normalizePnrForValidation))
 
   const updateStockInfo = useCallback((patch: Partial<FlightSeriesFormData>) => {
     setState(prev => {
@@ -580,12 +593,19 @@ function AddStockPageInner() {
     }
 
     if (step === 3) {
-      if (state.pnrs.some(pnrHasErrors)) {
+      const rowValidations = validatePnrStep()
+      if (hasAnyPnrError(rowValidations)) {
+        const summary = buildPnrValidationSummary(rowValidations)
+        const errorCount = summary.filter(s => s.severity === 'error').length
         setPnrValidationShown(true)
-        setErrors({ _: 'กรุณากรอกข้อมูล PNR ที่ขาดหายให้ครบก่อนดำเนินการต่อ' })
+        setPnrValidationSummary(summary)
+        // The rich clickable summary below fully covers this — no need to duplicate it in the plain banner.
+        setErrors({})
+        scrollToFirstPnrError(summary)
         return
       }
       setPnrValidationShown(false)
+      setPnrValidationSummary([])
       // Normalize PNR derived fields then auto-generate Series Name (if not manually edited).
       // Both must happen in one updater so name generation sees normalized sector_dates.
       const capturedSource = seriesNameSource
@@ -604,6 +624,7 @@ function AddStockPageInner() {
   const goBack = () => {
     setErrors({})
     setPnrValidationShown(false)
+    setPnrValidationSummary([])
     // Going back from PNR step (3) to Sectors step (2): snapshot current sectors
     // so we can detect changes on the next Next click.
     if (step === 3) {
@@ -690,6 +711,19 @@ function AddStockPageInner() {
       setTimeout(() => setSaveError(''), 5000)
       return
     }
+    // Re-validate PNR rows here too — same rules as Step 3 — so Review & Save can never
+    // persist data that would have been rejected earlier; jump back to Step 3 if it would.
+    const rowValidations = validatePnrStep()
+    if (hasAnyPnrError(rowValidations)) {
+      const summary = buildPnrValidationSummary(rowValidations)
+      setPnrValidationShown(true)
+      setPnrValidationSummary(summary)
+      // Rich clickable summary (rendered on Step 3) fully covers this — no need to duplicate it in the plain banner.
+      setErrors({})
+      setStep(3)
+      setTimeout(() => scrollToFirstPnrError(summary), 50)
+      return
+    }
     const pnrsToCheck = state.pnrs.map(p => ({ pnr_code: p.pnr_code, dummy_pnr: p.dummy_pnr }))
     const dupCheck = checkPNRDuplicatesInSystem(pnrsToCheck)
     if (dupCheck.hasConflicts) {
@@ -698,10 +732,17 @@ function AddStockPageInner() {
       return
     }
     setSaving(true)
+    setSaveError('')
+    setSaveErrorRetryable(false)
     try {
       const demoStock = wizardStateToDemoStock(state)
-      saveDemoStock(demoStock)
+      const ok = saveDemoStock(demoStock)
       setSaving(false)
+      if (!ok) {
+        setSaveError('บันทึกไม่สำเร็จ: ไม่สามารถเชื่อมต่อฐานข้อมูล')
+        setSaveErrorRetryable(true)
+        return
+      }
       setSaveMsg('บันทึกข้อมูล Demo สำเร็จ')
       const redirectTarget = (() => {
         const cfg = getStockTypeConfig(state.stockInfo.ticket_type, state.stockInfo.group_type)
@@ -714,7 +755,8 @@ function AddStockPageInner() {
       setTimeout(() => router.push(redirectTarget), 800)
     } catch {
       setSaving(false)
-      setSaveMsg('เกิดข้อผิดพลาดในการบันทึก')
+      setSaveError('บันทึกไม่สำเร็จ: เกิดข้อผิดพลาดที่ไม่คาดคิด')
+      setSaveErrorRetryable(true)
     }
   }
 
@@ -747,7 +789,43 @@ function AddStockPageInner() {
         {saveError && (
           <div className="fixed bottom-6 right-6 z-50 max-w-sm px-4 py-3 rounded-xl bg-red-600 text-white text-sm font-medium shadow-lg flex items-start gap-2">
             <AlertTriangle size={16} className="mt-0.5 shrink-0" />
-            <span className="whitespace-pre-line">{saveError}</span>
+            <div className="flex-1">
+              <span className="whitespace-pre-line">{saveError}</span>
+              {saveErrorRetryable && (
+                <button
+                  type="button"
+                  onClick={confirmSave}
+                  className="block mt-2 px-3 py-1 text-xs font-semibold bg-white text-red-600 rounded-lg hover:bg-red-50 transition-colors"
+                >
+                  ลองอีกครั้ง
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+        {step === 3 && pnrValidationSummary.length > 0 && (
+          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 overflow-hidden">
+            <div className="px-4 py-2.5 border-b border-red-200 flex items-center gap-2">
+              <AlertTriangle size={14} className="text-red-500 shrink-0" />
+              <p className="text-xs font-semibold text-red-700">
+                พบข้อมูลไม่ครบ {pnrValidationSummary.filter(s => s.severity === 'error').length} รายการ — คลิกเพื่อไปยังจุดที่ต้องแก้ไข
+              </p>
+            </div>
+            <ul className="max-h-40 overflow-y-auto divide-y divide-red-100">
+              {pnrValidationSummary.map((item, i) => (
+                <li key={i}>
+                  <button
+                    type="button"
+                    onClick={() => scrollToFirstPnrError([item])}
+                    className={`w-full text-left px-4 py-1.5 text-xs transition-colors hover:bg-red-100 ${
+                      item.severity === 'error' ? 'text-red-700' : item.severity === 'warning' ? 'text-amber-700' : 'text-slate-600'
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                </li>
+              ))}
+            </ul>
           </div>
         )}
         {step === 1 && (

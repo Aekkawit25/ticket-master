@@ -15,6 +15,7 @@ import { calcTtlDateFromTravelAdjusted } from '@/lib/ttl-utils'
 import { adjustDateForHolidays } from '@/lib/holiday-utils'
 import { getActiveHolidays } from '@/lib/holiday-storage'
 import { TtlTemplateConflictModal, type TtlTemplateConflictDecision } from '@/components/shared/TtlTemplateConflictModal'
+import { validatePnrRowFields } from '@/lib/pnr-validation'
 import { PNRSeatsTable } from '@/components/shared/PNRSeatsTable'
 import type { PNRRecord, PNRSectorRecord, ScheduleTemplate } from '@/lib/pnr-record'
 
@@ -310,10 +311,21 @@ function validateInternalRows(
   const seenStart = new Map<string, number>()
 
   return rows.map((row, idx) => {
-    const errors: string[] = []
-    if (row.seatTotal <= 0)  errors.push('ที่นั่ง / PNR ต้องมากกว่า 0')
-    if (row.total <= 0)      errors.push('ยอดสุทธิต้องมากกว่า 0')
-    if (row.fare < 0)        errors.push('Fare ต้องไม่ติดลบ')
+    // Field-level rules (seat/price-by-format/NAME DL) come from the single shared validator —
+    // kept in sync with the wizard's Next/Save gate, Single PNR modal, and the PNR & Seats table.
+    const fieldIssues = validatePnrRowFields({
+      pnrCode: row.pnrCode,
+      travelStart: row.travelStart,
+      seatTotal: row.seatTotal,
+      priceFormat: row.priceFormat,
+      fare: row.fare,
+      yq: row.yq,
+      allInAmount: row.priceFormat === 'ALL_IN' ? row.total : null,
+      ttlType: row.ttlType,
+      ttlDaysBefore: row.ttlDaysBefore,
+      ttlDate: row.ttlDate,
+    })
+    const errors: string[] = fieldIssues.map(i => i.message)
     if (row.taxType === 'separate' && row.tax < 0) errors.push('Tax ต้องไม่ติดลบ')
 
     if (seenStart.has(row.travelStart)) {

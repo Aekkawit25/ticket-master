@@ -687,16 +687,23 @@ export function getStockFlightSets(stock: DemoStock): DemoFlightSet[] {
     : [{ flightSetId: 'fset-default', flightSetName: 'Default', sectors: stock.sectors }]
 }
 
-export function saveDemoStock(stock: DemoStock): void {
-  if (typeof window === 'undefined') return
+/**
+ * Persists a stock to localStorage. Returns true on success, false on
+ * failure (e.g. storage quota exceeded) — callers that need to surface a
+ * "save failed, try again" message to the user MUST check this return
+ * value; earlier versions swallowed write failures silently.
+ */
+export function saveDemoStock(stock: DemoStock): boolean {
+  if (typeof window === 'undefined') return false
   try {
     const stocks = getDemoStocks()
     // prepend (newest first), replace if same stockId already exists
     const filtered = stocks.filter(s => s.stockId !== stock.stockId)
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify([stock, ...filtered]))
     window.dispatchEvent(new CustomEvent('demo_stock_updated', { detail: { stockId: stock.stockId } }))
+    return true
   } catch {
-    // silently ignore quota errors
+    return false
   }
 }
 
