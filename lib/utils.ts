@@ -396,18 +396,73 @@ export function calcSeatStatus(seatTotal: number, seatBalance: number): 'availab
 // Route Text from Sectors
 // ============================================================
 
+// Accepts both naming conventions used across the codebase (snake_case in
+// wizard/import-review data, camelCase in PNR/Flight-Set records) so every
+// screen can call this directly on its native sector shape.
+type RouteSector = {
+  dep_airport_code?: string | null
+  arr_airport_code?: string | null
+  depAirportCode?: string | null
+  arrAirportCode?: string | null
+}
+
 export function buildRouteText(
-  sectors: { dep_airport_code: string; arr_airport_code: string }[],
+  sectors: RouteSector[],
   separator = '-'
 ): string {
   if (!sectors || sectors.length === 0) return ''
   const airports: string[] = []
   sectors.forEach((s, i) => {
-    if (i === 0 && s.dep_airport_code) airports.push(s.dep_airport_code)
-    if (s.arr_airport_code) airports.push(s.arr_airport_code)
+    const dep = s.dep_airport_code ?? s.depAirportCode
+    const arr = s.arr_airport_code ?? s.arrAirportCode
+    if (i === 0 && dep) airports.push(dep)
+    if (arr) airports.push(arr)
   })
   // ห้ามมีค่าซ้ำติดกัน เช่น BKK > BKK
   return airports.filter((code, i) => code && code !== airports[i - 1]).join(separator)
+}
+
+// ============================================================
+// Flight Set Travel Days — same rule used everywhere a Flight Set's
+// duration badge is shown: Dep Date of the first sector to Arr Date of the
+// last (Arrival, or last overall) sector, inclusive of both end days.
+// ============================================================
+
+type DurationSector = {
+  day_offset?: number | null
+  dayOffset?: number | null
+  arr_day_offset?: number | null
+  arrDayOffset?: number | null
+  sector_type?: string | null
+  sectorType?: string | null
+}
+
+export function calcFlightSetTravelDays(sectors: DurationSector[]): number {
+  if (!sectors || sectors.length === 0) return 1
+  const norm = sectors.map(s => ({
+    day_offset: s.day_offset ?? s.dayOffset ?? 1,
+    arr_day_offset: s.arr_day_offset ?? s.arrDayOffset ?? 0,
+    sector_type: s.sector_type ?? s.sectorType ?? '',
+  }))
+  const firstOffset = norm[0].day_offset
+  const returns = norm.filter(s => s.sector_type === 'Arrival')
+  const target = returns.length ? returns[returns.length - 1] : norm[norm.length - 1]
+  const endOffset = target.day_offset + target.arr_day_offset
+  return Math.max(1, endOffset - firstOffset + 1)
+}
+
+/**
+ * Compares a stored/preset day count against the value computed from the
+ * Flight Set's own sectors. The computed value is always authoritative —
+ * callers should display `days` and surface `mismatch` as a warning rather
+ * than trusting the preset value.
+ */
+export function resolveFlightSetTravelDays(
+  sectors: DurationSector[],
+  presetDays?: number | null
+): { days: number; mismatch: boolean } {
+  const days = calcFlightSetTravelDays(sectors)
+  return { days, mismatch: presetDays != null && presetDays !== days }
 }
 
 // ============================================================

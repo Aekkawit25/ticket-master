@@ -3,8 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
-import { parseISO, isValid } from 'date-fns'
-import { formatDate, buildRouteText } from '@/lib/utils'
+import { formatDate, buildRouteText, calcFlightSetTravelDays } from '@/lib/utils'
 import { calcTtlDateFromTravelAdjusted, type TtlType } from '@/lib/ttl-utils'
 import { adjustDateForHolidays } from '@/lib/holiday-utils'
 import { getActiveHolidays } from '@/lib/holiday-storage'
@@ -212,18 +211,7 @@ export function SinglePnrModal({
       })))
     : ''
 
-  const totalDays = (() => {
-    if (!sectorRows.length) return null
-    const firstDep = sectorRows[0].depDate
-    const lastArr  = sectorRows[sectorRows.length - 1].arrDate
-    if (!firstDep || !lastArr) return null
-    try {
-      const d0 = parseISO(firstDep)
-      const dN = parseISO(lastArr)
-      if (isValid(d0) && isValid(dN)) return Math.round((dN.getTime() - d0.getTime()) / 86400000) + 1
-    } catch { /* ignore */ }
-    return null
-  })()
+  const totalDays = selectedFS ? calcFlightSetTravelDays(selectedFS.sectors) : null
 
   const activeHolidays = getActiveHolidays()
   const { ttlDisplayDate, ttlHolidayReason } = (() => {

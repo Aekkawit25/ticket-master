@@ -6,7 +6,7 @@ import {
   startOfMonth, endOfMonth, eachDayOfInterval, getDay,
 } from 'date-fns'
 import { ChevronLeft, ChevronRight, X, Trash2, AlertTriangle, Info, CheckCircle2 } from 'lucide-react'
-import { cn, formatDate, formatDateTime, formatDateThai, formatDateTimeThai, calculatePlusDay, calcTTLDatetime } from '@/lib/utils'
+import { cn, formatDate, formatDateTime, formatDateThai, formatDateTimeThai, calculatePlusDay, calcTTLDatetime, buildRouteText, calcFlightSetTravelDays } from '@/lib/utils'
 import { TimeInput } from '@/components/ui/time-input'
 import { calculateStockSummary, saveDemoStock, checkPNRDuplicatesInSystem } from '@/lib/demo-storage'
 import { generateDummyPnrCode, calcTravelEndFromFlightSet } from '@/lib/pnr-shared-utils'
@@ -452,18 +452,13 @@ function MultiDateCalendar({
 // ─── Flight Set helpers ───────────────────────────────────────────────────────
 
 function buildFsRoute(sectors: BulkPnrSector[]): string {
-  const first = sectors[0]
-  const last  = sectors[sectors.length - 1]
-  if (!first || !last) return ''
-  const dep = first.depAirportCode || ''
-  const arr = last.arrAirportCode  || ''
-  return dep && arr ? `${dep} – ${arr}` : ''
+  return buildRouteText(sectors, ' – ')
 }
 
 function buildFsLabel(fs: BulkPnrFlightSet): string {
   const route = buildFsRoute(fs.sectors)
   const n     = fs.sectors.length
-  const days  = fs.sectors.length ? Math.max(...fs.sectors.map(s => s.dayOffset), 1) : 1
+  const days  = calcFlightSetTravelDays(fs.sectors)
   const parts = [fs.flightSetName]
   if (route) parts.push(route)
   if (n)     parts.push(`${n} Sectors`)
@@ -591,12 +586,7 @@ export function BulkPnrBuilder({
     return sectorsProp ?? []
   }, [flightSets, sectorsProp, shared.flightSetId])
 
-  const travelDays = useMemo(() => {
-    if (!effectiveSectors.length) return 1
-    const returns = effectiveSectors.filter(s => s.sectorType === 'Arrival')
-    const target  = returns.length ? returns[returns.length - 1] : effectiveSectors[effectiveSectors.length - 1]
-    return target.dayOffset
-  }, [effectiveSectors])
+  const travelDays = useMemo(() => calcFlightSetTravelDays(effectiveSectors), [effectiveSectors])
 
   const sharedFare  = Number(shared.fare)  || 0
   const sharedYq    = Number(shared.yq)    || 0
@@ -773,9 +763,18 @@ export function BulkPnrBuilder({
 
   // ── Preview adapters ─────────────────────────────────────────────────────
 
+  // Always the real Flight Set name the user selected — never a placeholder —
+  // so it matches the FS info bar and the Flight Set column exactly.
+  const effectiveFsName = useMemo(() => {
+    if (flightSets?.length) {
+      return flightSets.find(fs => fs.flightSetId === shared.flightSetId)?.flightSetName ?? 'ชุดเที่ยวบินหลัก'
+    }
+    return 'ชุดเที่ยวบินหลัก'
+  }, [flightSets, shared.flightSetId])
+
   const scheduleTemplateForPreview = useMemo((): ScheduleTemplate => ({
     scheduleId:   'bulk-preview',
-    scheduleName: 'Preview',
+    scheduleName: effectiveFsName,
     isMain:       true,
     sectors:      effectiveSectors.map(s => ({
       sectorType:     s.sectorType,
@@ -786,7 +785,7 @@ export function BulkPnrBuilder({
       depTime:        s.depTime ?? '',
       arrTime:        s.arrTime ?? '',
     })),
-  }), [effectiveSectors])
+  }), [effectiveSectors, effectiveFsName])
 
   const conditionsForPreview = useMemo(() =>
     conditions.map(c => ({ conditionId: c.code, conditionName: c.name }))

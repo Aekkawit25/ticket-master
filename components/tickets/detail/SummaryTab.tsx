@@ -6,7 +6,7 @@ import { TicketTypeBadge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input, Select, Textarea } from '@/components/ui/input'
 import { Lock, Pencil, X, ArrowRight } from 'lucide-react'
-import { formatDate, formatDateTime, formatNumber } from '@/lib/utils'
+import { formatDate, formatDateTime, formatNumber, buildRouteText, calcFlightSetTravelDays } from '@/lib/utils'
 
 import { getStockTypeConfigSafe } from '@/lib/stock-type-config'
 import type { DemoStock, DemoFlightSet, PaymentScheduleItem } from '@/lib/demo-storage'
@@ -158,17 +158,13 @@ export function SummaryTab({
     const usedCount = Object.keys(fsPnrCount).length
     const items = flightSets.map(fs => {
       const secs = fs.sectors
-      const airports: string[] = []
-      secs.forEach(s => {
-        if (!airports.length) airports.push(s.depAirportCode)
-        airports.push(s.arrAirportCode)
-      })
       return {
         flightSetId:   fs.flightSetId,
         flightSetName: fs.flightSetName,
         isCustom:      !!fs.isCustom,
         segmentCount:  secs.length,
-        route:         airports.length ? airports.join('–') : '—',
+        route:         buildRouteText(secs, '–') || '—',
+        travelDays:    calcFlightSetTravelDays(secs),
         pnrCount:      fsPnrCount[fs.flightSetId] ?? 0,
       }
     })
@@ -418,6 +414,8 @@ export function SummaryTab({
                   <span className="font-mono text-slate-600">{fs.route}</span>
                   <span className="text-slate-200">·</span>
                   <span>{fs.segmentCount} seg</span>
+                  <span className="text-slate-200">·</span>
+                  <span>{fs.travelDays} วัน</span>
                   {fs.pnrCount > 0 && (
                     <>
                       <span className="text-slate-200">·</span>

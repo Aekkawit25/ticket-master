@@ -8,6 +8,7 @@ import { TimeInput } from '@/components/ui/time-input'
 import { saveDemoStock, getStockFlightSets } from '@/lib/demo-storage'
 import type { DemoStock, DemoSector, DemoFlightSet, DemoLog } from '@/lib/demo-storage'
 import { MASTER_AIRLINE_CODE_SET } from '@/lib/master-data'
+import { buildRouteText } from '@/lib/utils'
 import { AirlineCell } from '@/components/shared/AirlineCell'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -51,15 +52,6 @@ function getArrDayOffset(arrDayOffset: number | undefined | null, depTime: strin
 
 function formatArrDay(value: number): string {
   return value === 0 ? '0' : `+${value}`
-}
-
-function buildRouteTextFromSectors(sectors: { depAirportCode?: string; arrAirportCode?: string }[]): string {
-  if (!sectors.length) return ''
-  const points: string[] = []
-  sectors.forEach((s, i) => { if (i === 0) points.push(s.depAirportCode ?? ''); points.push(s.arrAirportCode ?? '') })
-  const deduped: string[] = []
-  points.forEach(p => { if (p && deduped[deduped.length - 1] !== p) deduped.push(p) })
-  return deduped.join('-')
 }
 
 const newId = (p: string) => `${p}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
@@ -373,7 +365,7 @@ export function SegmentsTab({ liveStock, mockSectors, ticketType, canEdit, jumpT
       arrAirportCode: s.arrAirportCode, depTime: s.depTime, arrTime: s.arrTime,
       arrDayOffset: s.arrDayOffset, dayOffset: s.dayOffset, remark: s.remark,
     }))
-    const newRoute = buildRouteTextFromSectors(newSectors)
+    const newRoute = buildRouteText(newSectors)
     const updatedSets: DemoFlightSet[] = flightSets.map(fs =>
       fs.flightSetId === activeEditSetId ? { ...fs, sectors: newSectors } : fs
     )
@@ -463,7 +455,7 @@ export function SegmentsTab({ liveStock, mockSectors, ticketType, canEdit, jumpT
       ...liveStock,
       flightSets: updatedSets,
       sectors: updatedSets[0]?.sectors ?? liveStock.sectors,
-      routeText: buildRouteTextFromSectors(updatedSets[0]?.sectors ?? liveStock.sectors),
+      routeText: buildRouteText(updatedSets[0]?.sectors ?? liveStock.sectors),
       updatedAt: now,
       logs: [log, ...liveStock.logs],
     }
@@ -565,7 +557,7 @@ export function SegmentsTab({ liveStock, mockSectors, ticketType, canEdit, jumpT
       {/* Flight Set Cards */}
       <div className="space-y-4">
         {flightSets.map((fs, fsIdx) => {
-          const fsRoute    = buildRouteTextFromSectors(fs.sectors)
+          const fsRoute    = buildRouteText(fs.sectors)
           const isEditing  = activeEditSetId === fs.flightSetId
           const pnrCount   = (liveStock.pnrs ?? []).filter(p => p.flightSetId === fs.flightSetId).length
           const canDelete  = canEdit && flightSets.length > 1 && pnrCount === 0

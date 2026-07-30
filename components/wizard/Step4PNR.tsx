@@ -254,7 +254,7 @@ export default function Step4PNR({
   const pnrFlightSets: PnrModalFlightSet[] = useMemo(() =>
     schedules.map(s => ({
       flightSetId: s.scheduleId,
-      flightSetName: s.scheduleName || (s.isMain ? 'Main' : s.scheduleId),
+      flightSetName: s.scheduleName || (s.isMain ? 'ชุดเที่ยวบินหลัก' : s.scheduleId),
       sectors: s.sectors.map((sec, i) => ({
         sectorId: sec.id || `S${i}`,
         seq: sec.seq,
@@ -440,7 +440,7 @@ export default function Step4PNR({
   // Build FlightSets from schedules so BulkPnrBuilder shows FS selector
   const builderFlightSets: BulkPnrFlightSet[] = schedules.map(sch => ({
     flightSetId:   sch.scheduleId,
-    flightSetName: sch.scheduleName || (sch.isMain ? 'Main Schedule' : sch.scheduleId),
+    flightSetName: sch.scheduleName || (sch.isMain ? 'ชุดเที่ยวบินหลัก' : sch.scheduleId),
     sectors: sch.sectors.map(s => ({
       sectorType:     s.sector_type,
       dayOffset:      s.day_offset,
