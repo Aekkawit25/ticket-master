@@ -1,0 +1,458 @@
+'use client'
+
+import { useState, useEffect, useMemo, useRef } from 'react'
+import type { ReactNode } from 'react'
+import { Lock, Check, AlertTriangle, ListChecks, Users, User, Globe, ChevronDown, Search } from 'lucide-react'
+import { Input, Textarea } from '@/components/ui/input'
+import { AirlineCombobox } from '@/components/shared/AirlineCombobox'
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
+import type { FlightSeriesFormData, TicketType, GroupType } from '@/types'
+import { CurrencyCombobox } from '@/components/shared/CurrencyCombobox'
+import { getStockTypeConfigSafe, STOCK_TYPE_CONFIG } from '@/lib/stock-type-config'
+import { getDemoSuppliers, type DemoSupplier } from '@/lib/demo-storage'
+
+// ─── Type options definition ──────────────────────────────────────────────────
+
+interface TypeOption {
+  key: string
+  label: string
+  ticketType: TicketType
+  groupType: GroupType | undefined
+  description: string
+  icon: ReactNode
+  selectedCls: string
+  hoverCls: string
+  iconCls: string
+  disabled?: boolean
+}
+
+// Visual metadata per StockType (icons + colors; selected state is always green)
+const TYPE_VISUAL = {
+  SERIES: {
+    icon: <ListChecks size={18} />,
+    selectedCls: 'border-emerald-400 bg-emerald-50 ring-2 ring-emerald-300',
+    hoverCls: 'hover:border-emerald-300 hover:bg-emerald-50/60',
+    iconCls: 'text-emerald-600',
+  },
+  AD_HOC: {
+    icon: <Users size={18} />,
+    selectedCls: 'border-emerald-400 bg-emerald-50 ring-2 ring-emerald-300',
+    hoverCls: 'hover:border-emerald-300 hover:bg-emerald-50/60',
+    iconCls: 'text-amber-600',
+  },
+  FIT: {
+    icon: <User size={18} />,
+    selectedCls: 'border-emerald-400 bg-emerald-50 ring-2 ring-emerald-300',
+    hoverCls: 'hover:border-emerald-300 hover:bg-emerald-50/60',
+    iconCls: 'text-sky-600',
+  },
+  TICKET_ONLY: {
+    icon: <Globe size={18} />,
+    selectedCls: 'border-emerald-400 bg-emerald-50 ring-2 ring-emerald-300',
+    hoverCls: 'hover:border-emerald-300 hover:bg-emerald-50/60',
+    iconCls: 'text-violet-600',
+  },
+} as const
+
+const TYPE_OPTIONS: TypeOption[] = [
+  {
+    key: 'series',
+    label: STOCK_TYPE_CONFIG.SERIES.displayName,
+    ticketType: 'Group',
+    groupType: 'SERIES',
+    description: STOCK_TYPE_CONFIG.SERIES.description,
+    ...TYPE_VISUAL.SERIES,
+  },
+  {
+    key: 'ad-hoc',
+    label: STOCK_TYPE_CONFIG.AD_HOC.displayName,
+    ticketType: 'Group',
+    groupType: 'ADHOC',
+    description: STOCK_TYPE_CONFIG.AD_HOC.description,
+    ...TYPE_VISUAL.AD_HOC,
+  },
+  {
+    key: 'fit',
+    label: STOCK_TYPE_CONFIG.FIT.displayName,
+    ticketType: 'FIT',
+    groupType: undefined,
+    description: STOCK_TYPE_CONFIG.FIT.description,
+    ...TYPE_VISUAL.FIT,
+  },
+  {
+    key: 'ticket-only',
+    label: STOCK_TYPE_CONFIG.TICKET_ONLY.displayName,
+    ticketType: 'Ticket + Land',
+    groupType: undefined,
+    description: STOCK_TYPE_CONFIG.TICKET_ONLY.description,
+    ...TYPE_VISUAL.TICKET_ONLY,
+  },
+]
+
+// ─── Component ────────────────────────────────────────────────────────────────
+
+interface Step1Props {
+  data: FlightSeriesFormData
+  onChange: (data: Partial<FlightSeriesFormData>) => void
+  errors?: Partial<Record<keyof FlightSeriesFormData, string>>
+  isTypeLocked?: boolean
+  typeConfirmed?: boolean
+  onTypeConfirm?: () => void
+}
+
+export default function Step1StockInfo({
+  data,
+  onChange,
+  errors = {},
+  isTypeLocked = false,
+  typeConfirmed = false,
+  onTypeConfirm,
+}: Step1Props) {
+  const [pendingType, setPendingType] = useState<{ ticketType: TicketType; groupType?: GroupType } | null>(null)
+  const [suppliers, setSuppliers] = useState<DemoSupplier[]>([])
+  const [supplierOpen, setSupplierOpen] = useState(false)
+  const [supplierQuery, setSupplierQuery] = useState('')
+  const supplierRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    setSuppliers(getDemoSuppliers().filter(s => s.status === 'Active'))
+    const handler = () => setSuppliers(getDemoSuppliers().filter(s => s.status === 'Active'))
+    window.addEventListener('suppliers_updated', handler)
+    return () => window.removeEventListener('suppliers_updated', handler)
+  }, [])
+
+  useEffect(() => {
+    if (!supplierOpen) return
+    const close = (e: MouseEvent) => {
+      if (supplierRef.current && !supplierRef.current.contains(e.target as Node)) {
+        setSupplierOpen(false)
+        setSupplierQuery('')
+      }
+    }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [supplierOpen])
+
+  const filteredSuppliers = useMemo(() => {
+    const q = supplierQuery.trim().toLowerCase()
+    if (!q) return suppliers
+    return suppliers.filter(s =>
+      s.supplierCode.toLowerCase().includes(q) ||
+      s.supplierName.toLowerCase().includes(q)
+    )
+  }, [supplierQuery, suppliers])
+
+  const isCurrentType = (opt: TypeOption) => {
+    if (!typeConfirmed) return false
+    if (data.ticket_type !== opt.ticketType) return false
+    if (opt.groupType !== undefined) return data.group_type === opt.groupType
+    return !data.group_type
+  }
+
+  const hasData = !!(data.group_name || data.airline_code)
+
+  const applyType = (ticketType: TicketType, groupType?: GroupType) => {
+    const clearSupplier = ticketType !== 'Ticket + Land'
+    onChange({
+      ticket_type: ticketType,
+      group_type: groupType,
+      ...(clearSupplier ? { supplierId: null, supplierCode: '', supplierName: '' } : {}),
+    })
+    if (!typeConfirmed) onTypeConfirm?.()
+  }
+
+  const handleTypeClick = (opt: TypeOption) => {
+    if (opt.disabled) return
+    if (isCurrentType(opt)) return
+    if (typeConfirmed && hasData) {
+      setPendingType({ ticketType: opt.ticketType, groupType: opt.groupType })
+      return
+    }
+    applyType(opt.ticketType, opt.groupType)
+  }
+
+  const applyPendingType = () => {
+    if (!pendingType) return
+    applyType(pendingType.ticketType, pendingType.groupType)
+    setPendingType(null)
+  }
+
+  const lockedOpt = TYPE_OPTIONS.find(
+    o => o.ticketType === data.ticket_type && o.groupType === data.group_type,
+  )
+
+  // Derive all labels/prefix from central config
+  const typeConfig = getStockTypeConfigSafe(data.ticket_type, data.group_type)
+  const codePrefix    = typeConfig.prefix
+  const codeLabel     = typeConfig.codeLabel
+  const runningNumber = data.stock_code.startsWith(codePrefix)
+    ? data.stock_code.slice(codePrefix.length)
+    : data.stock_code
+
+  const pendingLabel = pendingType
+    ? (pendingType.ticketType === 'Group' && pendingType.groupType === 'SERIES' ? 'Series'
+      : pendingType.ticketType === 'Group' && pendingType.groupType === 'ADHOC' ? 'Ad Hoc'
+      : pendingType.ticketType === 'Ticket + Land' ? 'Ticket (Land)'
+      : pendingType.ticketType)
+    : ''
+
+  return (
+    <div className="space-y-4">
+      {/* ───── ประเภท Stock ───── */}
+      <Card>
+        <CardHeader>
+          <CardTitle>ประเภท Stock</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {isTypeLocked ? (
+            /* Read-only locked card — always renders from config, never empty */
+            (() => {
+              const visual = TYPE_VISUAL[typeConfig.key as keyof typeof TYPE_VISUAL]
+              return (
+                <div className={`relative p-4 rounded-xl border-2 ${visual.selectedCls}`}>
+                  <span className="absolute top-2.5 right-3 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-white/80 text-slate-500 border border-slate-200 shadow-sm">
+                    <Lock size={9} />ล็อค
+                  </span>
+                  <div className="flex items-start gap-3 pr-16">
+                    <div className={`mt-0.5 ${visual.iconCls}`}>{visual.icon}</div>
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm font-semibold text-slate-900">{typeConfig.displayName}</span>
+                      <p className="text-xs text-slate-500 mt-0.5">{typeConfig.description}</p>
+                    </div>
+                  </div>
+                </div>
+              )
+            })()
+          ) : (
+            /* Interactive 4-column type selector (1 col mobile → 2 col tablet → 4 col desktop) */
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {TYPE_OPTIONS.map(opt => {
+                const selected = isCurrentType(opt)
+                return (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    onClick={() => handleTypeClick(opt)}
+                    className={`text-left p-4 rounded-xl border-2 transition-all ${
+                      selected
+                        ? opt.selectedCls
+                        : `border-slate-200 bg-white ${opt.hoverCls} cursor-pointer`
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className={`mt-0.5 ${selected ? opt.iconCls : 'text-slate-400'}`}>
+                        {opt.icon}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className={`text-sm font-semibold ${selected ? 'text-slate-900' : 'text-slate-600'}`}>
+                            {opt.label}
+                          </span>
+                          {selected && <Check size={13} className="text-emerald-600" />}
+                        </div>
+                        <p className={`text-xs mt-0.5 ${selected ? 'text-slate-600' : 'text-slate-400'}`}>
+                          {opt.description}
+                        </p>
+                      </div>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ───── ข้อมูลหลักของ Stock ───── */}
+      <Card>
+        <CardHeader>
+          <CardTitle>ข้อมูลหลักของ Stock</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-[3fr_4fr_3fr] gap-4">
+            {/* ── Stock Code: prefix badge (locked) + running number (auto) ── */}
+            <div className="space-y-1">
+              <label className="block text-xs font-medium text-slate-700">
+                {codeLabel}<span className="text-red-500 ml-0.5">*</span>
+              </label>
+              <div className={`flex items-stretch rounded-lg border overflow-hidden ${errors.stock_code ? 'border-red-400' : 'border-slate-300'}`}>
+                <span className="flex items-center px-3 bg-slate-100 border-r border-slate-200 text-sm font-bold text-slate-500 select-none whitespace-nowrap tracking-wide">
+                  {codePrefix}
+                </span>
+                <input
+                  type="text"
+                  readOnly
+                  value={runningNumber}
+                  className="flex-1 px-3 py-2 text-sm bg-slate-50 text-slate-600 cursor-not-allowed outline-none font-mono"
+                />
+              </div>
+              {errors.stock_code
+                ? <p className="text-xs text-red-500">{errors.stock_code}</p>
+                : <p className="text-xs text-slate-400">Prefix ตามประเภท Stock ไม่สามารถแก้ไขได้</p>
+              }
+            </div>
+
+            <AirlineCombobox
+              label="Airline"
+              required
+              showAllOption={false}
+              value={data.airline_code ?? ''}
+              onChange={v => onChange({ airline_code: v })}
+              error={errors.airline_code}
+            />
+            <CurrencyCombobox
+              label="Currency"
+              required
+              value={data.currency}
+              onChange={v => onChange({ currency: v })}
+              placeholder="ค้นหารหัสหรือชื่อสกุลเงิน"
+              error={errors.currency}
+            />
+          </div>
+
+          {/* Supplier — only for Ticket (Land) */}
+          {data.ticket_type === 'Ticket + Land' && (
+            <div className="mt-4 pt-4 border-t border-slate-100">
+              <div className="max-w-sm">
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  Supplier<span className="text-red-500 ml-0.5">*</span>
+                </label>
+                <div ref={supplierRef} className="relative">
+                  <button
+                    type="button"
+                    onClick={() => { setSupplierOpen(o => !o); setSupplierQuery('') }}
+                    className={`w-full flex items-center justify-between gap-2 px-3 py-2 text-sm rounded-lg border transition-colors outline-none ${
+                      errors.supplierId
+                        ? 'border-red-400 focus:border-red-500'
+                        : 'border-slate-300 hover:border-slate-400 focus:border-[#05a94f]'
+                    } bg-white`}
+                  >
+                    {data.supplierId ? (
+                      <span className="flex items-center gap-1.5 truncate">
+                        <span className="font-mono text-xs font-bold text-slate-600">{data.supplierCode}</span>
+                        <span className="text-slate-700 truncate">{data.supplierName}</span>
+                      </span>
+                    ) : (
+                      <span className="text-slate-400">เลือก Supplier...</span>
+                    )}
+                    <ChevronDown size={14} className="text-slate-400 flex-shrink-0" />
+                  </button>
+
+                  {supplierOpen && (
+                    <div className="absolute left-0 top-full mt-1 z-30 w-full min-w-[280px] bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden">
+                      <div className="p-2 border-b border-slate-100">
+                        <div className="relative">
+                          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                          <input
+                            autoFocus
+                            type="text"
+                            value={supplierQuery}
+                            onChange={e => setSupplierQuery(e.target.value)}
+                            placeholder="ค้นหา Code หรือชื่อ Supplier"
+                            className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg outline-none focus:border-[#05a94f]"
+                          />
+                        </div>
+                      </div>
+                      <div className="max-h-48 overflow-y-auto">
+                        {filteredSuppliers.length === 0 ? (
+                          <div className="px-3 py-4 text-xs text-slate-400 text-center">ไม่พบ Supplier</div>
+                        ) : (
+                          filteredSuppliers.map(s => (
+                            <button
+                              key={s.supplierId}
+                              type="button"
+                              onClick={() => {
+                                onChange({ supplierId: s.supplierId, supplierCode: s.supplierCode, supplierName: s.supplierName })
+                                setSupplierOpen(false)
+                                setSupplierQuery('')
+                              }}
+                              className={`w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 transition-colors ${
+                                data.supplierId === s.supplierId ? 'bg-emerald-50' : ''
+                              }`}
+                            >
+                              <span className="font-mono text-[11px] font-bold text-slate-500 w-16 flex-shrink-0">{s.supplierCode}</span>
+                              <span className="text-xs text-slate-800 truncate">{s.supplierName}</span>
+                              {data.supplierId === s.supplierId && <Check size={12} className="text-[#05a94f] ml-auto flex-shrink-0" />}
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                {errors.supplierId ? (
+                  <p className="text-xs text-red-500 mt-0.5">{errors.supplierId}</p>
+                ) : (
+                  <p className="text-xs text-slate-400 mt-0.5">เลือก Supplier สำหรับ Ticket (Land) (เฉพาะ Active เท่านั้น)</p>
+                )}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ───── Remark ───── */}
+      <Card>
+        <CardContent>
+          <Textarea
+            label="Remark"
+            value={data.remark}
+            onChange={e => onChange({ remark: e.target.value })}
+            placeholder="หมายเหตุเพิ่มเติม..."
+            rows={2}
+          />
+        </CardContent>
+      </Card>
+
+      {/* Info box */}
+      <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-700">
+        <p className="font-medium mb-1">หมายเหตุ:</p>
+        <ul className="space-y-0.5 list-disc list-inside">
+          <li>Route จะสร้างอัตโนมัติจาก Sector ใน Step 2</li>
+          <li>Period จะคำนวณอัตโนมัติจาก PNR ใน Step 4</li>
+          <li>Trip Type (One-way / Round-trip / Multi-city) กำหนดได้ใน Step 2 Flight Segments</li>
+          <li>Currency แสดงเฉพาะสกุลเงินที่ ACTIVE จาก Currencies Master (ISO 4217)</li>
+          <li><strong>ชื่อ {typeConfig.displayName}</strong> จะกำหนดใน Step 4 Review &amp; Save — ระบบจะสร้างชื่อแนะนำจาก Airline, Route และช่วงเดินทางให้อัตโนมัติ</li>
+          {(typeConfig.key === 'SERIES' || typeConfig.key === 'AD_HOC' || typeConfig.key === 'TICKET_ONLY') && (
+            <li>ต้องมี Sector ขั้นต่ำ 2 รายการ (Departure + Return)</li>
+          )}
+          {typeConfig.key === 'FIT' && (
+            <li>FIT รองรับ One-way (1 Sector), Round-trip และ Multi-city (≥ 2 Sector)</li>
+          )}
+        </ul>
+      </div>
+
+      {/* Confirm type change dialog */}
+      {pendingType && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-xl p-6 max-w-sm w-full mx-4">
+            <div className="flex items-center gap-3 mb-3">
+              <AlertTriangle size={20} className="text-amber-500 shrink-0" />
+              <h3 className="font-semibold text-slate-900">เปลี่ยนประเภท Stock?</h3>
+            </div>
+            <p className="text-sm text-slate-600 mb-4">
+              ข้อมูล Sectors จะถูก reset เนื่องจากประเภทที่เลือกใหม่มีรูปแบบแตกต่างกัน
+              ต้องการเปลี่ยนเป็น <strong>{pendingLabel}</strong> หรือไม่?
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setPendingType(null)}
+                className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={applyPendingType}
+                className="px-4 py-2 text-sm font-medium text-white bg-amber-500 rounded-lg hover:bg-amber-600"
+              >
+                เปลี่ยนประเภท
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
