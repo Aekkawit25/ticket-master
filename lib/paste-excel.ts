@@ -42,7 +42,7 @@ export const AIRPORT_CODES: readonly string[] = [
 // ─── Sector template (mapped from FlightSectorFormData in Step 2) ─────────────
 export interface SectorTemplate {
   seq: number
-  sectorType: string      // 'Departure' | 'Transit' | 'Arrival'
+  sectorType: string      // 'Departure' | 'Transit' | 'Return' (accepts legacy 'Arrival' via normalizeSectorType at read sites)
   airlineCode: string
   flightNo: string
   depAirportCode: string

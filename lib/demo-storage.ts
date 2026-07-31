@@ -1,5 +1,6 @@
 import { format, parseISO, isValid } from 'date-fns'
 import { buildRouteText, formatDate } from '@/lib/utils'
+import { normalizeSectorType } from '@/lib/sector-type'
 import type { WizardState, FlightSeries, TicketType, TripType, PnrOperationalStatus, PnrConfirmationStatus } from '@/types'
 import { calcTtlDateFromTravelAdjusted, condTtlTypeToTtlType, type TtlType } from '@/lib/ttl-utils'
 import { adjustDateForHolidays } from '@/lib/holiday-utils'
@@ -78,7 +79,7 @@ export interface PnrSectorSchedule {
   flightSetSectorId: string
   /** Display order within the FlightSet (1-based) */
   sequence: number
-  sectorType: 'Departure' | 'Transit' | 'Arrival'
+  sectorType: 'Departure' | 'Transit' | 'Return'
 
   /** Departure date — yyyy-MM-dd (local, never UTC-shifted) */
   departureDate: string
@@ -475,8 +476,6 @@ export function getDemoStocks(): DemoStock[] {
     const raw = window.localStorage.getItem(STORAGE_KEY)
     if (!raw) return []
     const parsed = JSON.parse(raw) as DemoStock[]
-    const migrateSectorType = (t: string) =>
-      t === 'Outbound' ? 'Departure' : t === 'Return' ? 'Arrival' : t === 'Domestic' ? 'Transit' : t
     const migrateFlightNo = (airlineCode: string, flightNo: string): string => {
       let n = String(flightNo || '').trim()
       if (airlineCode) n = n.replace(new RegExp(`^${airlineCode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i'), '')
@@ -484,7 +483,7 @@ export function getDemoStocks(): DemoStock[] {
     }
     const migrateSec = (sec: DemoSector): DemoSector => ({
       ...sec,
-      sectorType: migrateSectorType(sec.sectorType),
+      sectorType: normalizeSectorType(sec.sectorType),
       flightNo: migrateFlightNo(sec.airlineCode, sec.flightNo),
     })
     return parsed.map(s => {
@@ -656,7 +655,7 @@ export function getDemoStocks(): DemoStock[] {
             flightSetId: p.flightSetId ?? flightSets[0]?.flightSetId ?? 'fset-default',
             sectorDates: (p.sectorDates ?? []).map(sd => ({
               ...sd,
-              sectorType: migrateSectorType(sd.sectorType),
+              sectorType: normalizeSectorType(sd.sectorType),
             })),
             initialSeatCount: p.initialSeatCount ?? p.seatTotal,
             stageSnapshots: p.stageSnapshots ?? {},
@@ -982,7 +981,7 @@ export function demoStockToWizardState(stock: DemoStock): WizardState {
           destinationAirport: sch.destinationAirport,
           sectors: sch.sectors.map(s => ({
             seq: s.seq,
-            sector_type: s.sectorType as import('@/types').SectorType,
+            sector_type: normalizeSectorType(s.sectorType),
             airline_code: s.airlineCode,
             flight_no: s.flightNo,
             dep_airport_code: s.depAirportCode,
@@ -1005,7 +1004,7 @@ export function demoStockToWizardState(stock: DemoStock): WizardState {
         destinationAirport: undefined,
         sectors: stock.sectors.map(s => ({
           seq: s.seq,
-          sector_type: s.sectorType as import('@/types').SectorType,
+          sector_type: normalizeSectorType(s.sectorType),
           airline_code: s.airlineCode,
           flight_no: s.flightNo,
           dep_airport_code: s.depAirportCode,
@@ -1285,7 +1284,7 @@ export function wizardStateToDemoStock(state: WizardState): DemoStock {
       return {
         flightSetSectorId: sec.sectorId,
         sequence: sec.seq,
-        sectorType: sec.sectorType as 'Departure' | 'Transit' | 'Arrival',
+        sectorType: normalizeSectorType(sec.sectorType),
         departureDate: depDate,
         // Prefer per-PNR dep_time from wizard; fall back to FlightSet template
         departureTime: sd?.dep_time !== undefined ? sd.dep_time : (sec.depTime ?? ''),

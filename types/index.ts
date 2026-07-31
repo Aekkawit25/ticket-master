@@ -9,7 +9,7 @@ export type TripType = 'One-way' | 'Round-trip' | 'Multi-city'
 export type PNRStatus = 'Pending' | 'Confirmed'
 export type PnrOperationalStatus = 'PENDING' | 'ACTIVE' | 'CLOSED' | 'CANCELLED'
 export type PnrConfirmationStatus = 'PENDING_CONFIRMATION' | 'CONFIRMED'
-export type SectorType = 'Departure' | 'Transit' | 'Arrival'
+export type SectorType = 'Departure' | 'Transit' | 'Return'
 export type RelativeDayType = 'Travel Start' | 'Return Date' | 'Custom Day'
 export type PaymentType =
   | 'RSVN_FEE'

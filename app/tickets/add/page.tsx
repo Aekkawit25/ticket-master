@@ -15,6 +15,7 @@ import { isValidHHmm, sameAirport } from '@/lib/time-utils'
 import { MASTER_AIRLINE_CODE_SET } from '@/lib/master-data'
 import { getStockTypeConfig, getStockTypeConfigSafe, getStockTypeKey, STOCK_TYPE_CONFIG, type StockType } from '@/lib/stock-type-config'
 import { wizardStateToDemoStock, saveDemoStock, getDemoStocks, checkPNRDuplicatesInSystem, formatPNRConflictMessage } from '@/lib/demo-storage'
+import { SECTOR_TYPE } from '@/lib/sector-type'
 import {
   validatePnrRows, buildPnrValidationSummary, scrollToFirstPnrError, hasAnyPnrError,
   type NormalizedPnrRow, type PnrValidationSummaryItem,
@@ -90,8 +91,8 @@ function normalizeForReview(state: WizardState): WizardState {
 }
 
 function getDefaultSchedule(ticketType: TicketType, airlineCode: string, travelDays = 1, sectorCount = 2): FlightScheduleFormData {
-  const dep: FlightSectorFormData = { seq: 1, sector_type: 'Departure', airline_code: airlineCode, flight_no: '', dep_airport_code: 'BKK', arr_airport_code: '', dep_time: '08:00', arr_time: '16:00', arr_day_offset: 0, day_offset: 1, remark: '' }
-  const arr: FlightSectorFormData = { seq: 2, sector_type: 'Arrival', airline_code: airlineCode, flight_no: '', dep_airport_code: '', arr_airport_code: 'BKK', dep_time: '17:00', arr_time: '22:00', arr_day_offset: 0, day_offset: travelDays, remark: '' }
+  const dep: FlightSectorFormData = { seq: 1, sector_type: SECTOR_TYPE.DEPARTURE, airline_code: airlineCode, flight_no: '', dep_airport_code: 'BKK', arr_airport_code: '', dep_time: '08:00', arr_time: '16:00', arr_day_offset: 0, day_offset: 1, remark: '' }
+  const arr: FlightSectorFormData = { seq: 2, sector_type: SECTOR_TYPE.RETURN, airline_code: airlineCode, flight_no: '', dep_airport_code: '', arr_airport_code: 'BKK', dep_time: '17:00', arr_time: '22:00', arr_day_offset: 0, day_offset: travelDays, remark: '' }
   // FIT one-way: only Departure sector(s); count=1 → single sector
   if (ticketType === 'FIT' && sectorCount <= 1) {
     return { scheduleId: 'SCH-A', scheduleName: 'ชุดเที่ยวบินหลัก', isMain: true, remark: '', sectors: [dep] }
@@ -100,8 +101,8 @@ function getDefaultSchedule(ticketType: TicketType, airlineCode: string, travelD
   if (count === 2) {
     return { scheduleId: 'SCH-A', scheduleName: 'ชุดเที่ยวบินหลัก', isMain: true, remark: '', sectors: [dep, { ...arr, seq: 2 }] }
   }
-  // count > 2: insert (count-2) Transit sectors between Departure and Arrival
-  // Default Travel Day: all Transit = Day 1; Arrival = travelDays
+  // count > 2: insert (count-2) Transit sectors between Departure and Return
+  // Default Travel Day: all Transit = Day 1; Return = travelDays
   const transits: FlightSectorFormData[] = Array.from({ length: count - 2 }, (_, i) => ({
     seq: i + 2, sector_type: 'Transit', airline_code: airlineCode,
     flight_no: '', dep_airport_code: '', arr_airport_code: '',
@@ -112,7 +113,7 @@ function getDefaultSchedule(ticketType: TicketType, airlineCode: string, travelD
 }
 
 // Adjusts sector count on an existing schedule set (used when user edits sectorCount in config).
-// Keeps the first (Departure) and last (Arrival) sectors intact; adds/removes Transit sectors.
+// Keeps the first (Departure) and last (Return) sectors intact; adds/removes Transit sectors.
 function adjustSectorCount(
   schedules: FlightScheduleFormData[],
   newCount: number,

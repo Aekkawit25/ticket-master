@@ -2,6 +2,7 @@ import * as XLSX from 'xlsx'
 import { format, parse, isValid } from 'date-fns'
 import { normalizeTime, isValidHHmm } from './time-utils'
 import { getActiveCurrencies } from './currency-storage'
+import { normalizeSectorType } from './sector-type'
 
 // ============================================================
 // Types
@@ -250,7 +251,9 @@ export async function parseExcelImport(file: File): Promise<ImportReviewData> {
 
       sectors.push({
         seq:            parseNum(r['seq']) || idx + 1,
-        sectorType:     sectorType,
+        // Normalize legacy values (e.g. 'Arrival' from an older downloaded template) → 'Return'
+        // ตั้งแต่ตอน import เลย เพื่อไม่ให้สร้างข้อมูลใหม่ด้วยค่าเดิม
+        sectorType:     normalizeSectorType(sectorType),
         airlineCode:    str(r['airlineCode']),
         flightNo:       flightNo,
         depAirportCode: from,

@@ -2,6 +2,7 @@ import { type ClassValue, clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 import { format, parseISO, addDays, differenceInDays, isValid } from 'date-fns'
 import type { FlightSector, FlightPNR, FlightCondition, FlightConditionStage, PaymentSchedule, AmountType } from '@/types'
+import { normalizeSectorType, SECTOR_TYPE } from '@/lib/sector-type'
 
 // ============================================================
 // Dummy PNR Generation  (สร้างเฉพาะตอนเข้า Step 5)
@@ -280,14 +281,14 @@ export function calcSectorDate(travelStart: string | null, dayOffset: number | n
 
 type SectorDateInput = { sector_type: string; day_offset: number; arr_day_offset?: number }
 
-// Travel End = วันที่ของ Sector Type = Arrival ตัวสุดท้าย, ถ้าไม่มี Arrival ใช้ Sector สุดท้าย
+// Travel End = วันที่ของ Sector Type = Return ตัวสุดท้าย, ถ้าไม่มี Return ใช้ Sector สุดท้าย
 // Respects arr_day_offset so overnight arrivals (+1, +2, ...) yield the correct return date.
 export function calcTravelEndFromSectors(
   travelStart: string | null,
   sectors: SectorDateInput[]
 ): string | null {
   if (!travelStart || !sectors?.length) return null
-  const returns = sectors.filter(s => s.sector_type === 'Arrival')
+  const returns = sectors.filter(s => normalizeSectorType(s.sector_type) === SECTOR_TYPE.RETURN)
   const target = returns.length ? returns[returns.length - 1] : sectors[sectors.length - 1]
   const depDate = calcSectorDate(travelStart, target.day_offset)
   const arrOffset = target.arr_day_offset ?? 0
@@ -425,7 +426,7 @@ export function buildRouteText(
 // ============================================================
 // Flight Set Travel Days — same rule used everywhere a Flight Set's
 // duration badge is shown: Dep Date of the first sector to Arr Date of the
-// last (Arrival, or last overall) sector, inclusive of both end days.
+// last (Return, or last overall) sector, inclusive of both end days.
 // ============================================================
 
 type DurationSector = {
@@ -445,7 +446,7 @@ export function calcFlightSetTravelDays(sectors: DurationSector[]): number {
     sector_type: s.sector_type ?? s.sectorType ?? '',
   }))
   const firstOffset = norm[0].day_offset
-  const returns = norm.filter(s => s.sector_type === 'Arrival')
+  const returns = norm.filter(s => normalizeSectorType(s.sector_type) === SECTOR_TYPE.RETURN)
   const target = returns.length ? returns[returns.length - 1] : norm[norm.length - 1]
   const endOffset = target.day_offset + target.arr_day_offset
   return Math.max(1, endOffset - firstOffset + 1)
@@ -543,15 +544,15 @@ export function validateSectors(sectors: FlightSector[], ticketType: string, tri
   if (sectors[0]?.sector_type !== 'Departure') return 'Sector แรกต้องเป็น Departure'
 
   if (tripType === 'One-way') {
-    // One-way: min 1 sector; multi-sector requires Arrival as last
+    // One-way: min 1 sector; multi-sector requires Return as last
     if (sectors.length === 1) return null
-    if (sectors[sectors.length - 1]?.sector_type !== 'Arrival') return 'One-way Sector สุดท้ายต้องเป็น Arrival'
+    if (normalizeSectorType(sectors[sectors.length - 1]?.sector_type) !== SECTOR_TYPE.RETURN) return 'One-way Sector สุดท้ายต้องเป็น Return'
     return null
   }
 
   if (tripType === 'Round-trip') {
     if (sectors.length < 2) return 'Round-trip ต้องมีอย่างน้อย 2 Sectors'
-    if (sectors[sectors.length - 1]?.sector_type !== 'Arrival') return 'Round-trip Sector สุดท้ายต้องเป็น Arrival'
+    if (normalizeSectorType(sectors[sectors.length - 1]?.sector_type) !== SECTOR_TYPE.RETURN) return 'Round-trip Sector สุดท้ายต้องเป็น Return'
     const firstFrom = sectors[0]?.dep_airport_code
     const lastTo    = sectors[sectors.length - 1]?.arr_airport_code
     if (firstFrom && lastTo && firstFrom !== lastTo)
@@ -561,7 +562,7 @@ export function validateSectors(sectors: FlightSector[], ticketType: string, tri
 
   // Multi-city
   if (sectors.length < 2) return 'Multi-city ต้องมีอย่างน้อย 2 Sector'
-  if (sectors[sectors.length - 1]?.sector_type !== 'Arrival') return 'Multi-city Sector สุดท้ายต้องเป็น Arrival'
+  if (normalizeSectorType(sectors[sectors.length - 1]?.sector_type) !== SECTOR_TYPE.RETURN) return 'Multi-city Sector สุดท้ายต้องเป็น Return'
   return null
 }
 

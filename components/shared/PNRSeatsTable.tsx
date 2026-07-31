@@ -23,6 +23,7 @@ import {
 } from '@/lib/pnr-record'
 import { getCurrencyOptions } from '@/lib/currency-storage'
 import { validatePnrRowFields, pnrFieldElementId, type NormalizedPnrRow } from '@/lib/pnr-validation'
+import { normalizeSectorType, SECTOR_TYPE } from '@/lib/sector-type'
 
 // ─── Column definitions — single source of truth ─────────────────────────────
 export const PNR_COLS = [
@@ -662,8 +663,8 @@ export function PNRSeatsTable({
                         {/* Sector badge */}
                         <td className={cn(TD_SEC_C, rowBorderB)} style={{ backgroundColor: hvSec }}>
                           <span className={cn('inline-block text-[10px] font-bold px-1 py-0.5 rounded leading-none',
-                            s?.sectorType === 'Departure' ? 'text-emerald-700 bg-emerald-100' :
-                            s?.sectorType === 'Arrival'   ? 'text-blue-700 bg-blue-100' : 'text-slate-600 bg-slate-100')}>
+                            s?.sectorType === SECTOR_TYPE.DEPARTURE ? 'text-emerald-700 bg-emerald-100' :
+                            normalizeSectorType(s?.sectorType) === SECTOR_TYPE.RETURN ? 'text-blue-700 bg-blue-100' : 'text-slate-600 bg-slate-100')}>
                             S{sIdx + 1}
                           </span>
                         </td>

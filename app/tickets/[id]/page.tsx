@@ -22,6 +22,7 @@ import { SegmentsTab }   from '@/components/tickets/detail/SegmentsTab'
 import { ConditionsTab } from '@/components/tickets/detail/ConditionsTab'
 import { SummaryTab }    from '@/components/tickets/detail/SummaryTab'
 import { LogsTab }       from '@/components/tickets/detail/LogsTab'
+import { normalizeSectorType, SECTOR_TYPE } from '@/lib/sector-type'
 
 
 const TABS = ['Summary', 'PNR', 'Flight Segments', 'Conditions', 'Payment Schedule', 'Logs']
@@ -216,16 +217,16 @@ export default function TicketDetailPage() {
         const route = buildRouteText(fsSectors.map(s => ({ dep_airport_code: s.depAirportCode, arr_airport_code: s.arrAirportCode })))
         let retDate: string | null = null
         if (pnr.sectorSchedules && pnr.sectorSchedules.length > 0) {
-          const arrivals = pnr.sectorSchedules.filter(ss => ss.sectorType === 'Arrival')
-          let found: typeof arrivals[0] | null = null
-          for (let j = arrivals.length - 1; j >= 0; j--) {
-            const fsSec = fsSectors.find(s => s.sectorId === arrivals[j].flightSetSectorId)
-            if (fsSec && BKK.includes(fsSec.arrAirportCode)) { found = arrivals[j]; break }
+          const returns = pnr.sectorSchedules.filter(ss => normalizeSectorType(ss.sectorType) === SECTOR_TYPE.RETURN)
+          let found: typeof returns[0] | null = null
+          for (let j = returns.length - 1; j >= 0; j--) {
+            const fsSec = fsSectors.find(s => s.sectorId === returns[j].flightSetSectorId)
+            if (fsSec && BKK.includes(fsSec.arrAirportCode)) { found = returns[j]; break }
           }
           retDate = found
             ? found.departureDate
-            : arrivals.length > 0
-              ? arrivals[arrivals.length - 1].departureDate
+            : returns.length > 0
+              ? returns[returns.length - 1].departureDate
               : pnr.sectorSchedules[pnr.sectorSchedules.length - 1].departureDate
         } else {
           retDate = pnr.travelEnd || null

@@ -157,10 +157,10 @@ export function downloadExcelTemplate(ticketType: 'Group' | 'FIT' | 'Ticket + La
       [1, 'Departure', 'TG', 'TG676', 'BKK', 'NRT', '08:00', '16:00', 0, 0, ''],
     ]
   } else {
-    // Round-trip: Departure + Arrival
+    // Round-trip: Departure + Return
     sectorsRows = [
       [1, 'Departure', 'TG', 'TG676', 'BKK', 'NRT', '08:00', '16:00', 0, 0, ''],
-      [2, 'Arrival',   'TG', 'TG677', 'NRT', 'BKK', '17:00', '22:00', 0, 4, ''],
+      [2, 'Return',    'TG', 'TG677', 'NRT', 'BKK', '17:00', '22:00', 0, 4, ''],
     ]
   }
   const wsSectors = XLSX.utils.aoa_to_sheet([sectorsHeader, ...sectorsRows])

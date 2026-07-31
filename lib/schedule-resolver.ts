@@ -1,4 +1,5 @@
 import type { DemoPNR, DemoFlightSet, DemoSector, PnrSectorSchedule } from './demo-storage'
+import { normalizeSectorType, SECTOR_TYPE } from './sector-type'
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -54,7 +55,7 @@ export function resolvePnrSectorSchedules(
     return {
       flightSetSectorId: sec.sectorId,
       sequence: sec.seq,
-      sectorType: sec.sectorType as PnrSectorSchedule['sectorType'],
+      sectorType: normalizeSectorType(sec.sectorType),
       departureDate,
       departureTime: (stored?.isTimeOverride && stored.departureTime) ? stored.departureTime : (sec.depTime ?? ''),
       arrivalDate,
@@ -94,7 +95,7 @@ export function adaptLegacyPnrSchedule(
     return {
       flightSetSectorId: sec.sectorId,
       sequence: sec.seq,
-      sectorType: sec.sectorType as PnrSectorSchedule['sectorType'],
+      sectorType: normalizeSectorType(sec.sectorType),
       departureDate,
       departureTime: sec.depTime ?? '',
       arrivalDate,
@@ -129,12 +130,12 @@ export function getPnrSectorSchedules(
 
 /**
  * Derive travelEnd from a resolved schedule list.
- * Uses the last Arrival sector's arrivalDate; falls back to the last sector's arrivalDate.
+ * Uses the last Return sector's arrivalDate; falls back to the last sector's arrivalDate.
  */
 export function resolveTravelEnd(schedules: PnrSectorSchedule[]): string {
   if (!schedules.length) return ''
-  const arrivals = schedules.filter(s => s.sectorType === 'Arrival')
-  const last = arrivals.length ? arrivals[arrivals.length - 1] : schedules[schedules.length - 1]
+  const returns = schedules.filter(s => normalizeSectorType(s.sectorType) === SECTOR_TYPE.RETURN)
+  const last = returns.length ? returns[returns.length - 1] : schedules[schedules.length - 1]
   return last.arrivalDate
 }
 
@@ -157,7 +158,7 @@ export function buildSectorSchedules(
     return {
       flightSetSectorId: sec.sectorId,
       sequence: sec.seq,
-      sectorType: sec.sectorType as PnrSectorSchedule['sectorType'],
+      sectorType: normalizeSectorType(sec.sectorType),
       departureDate,
       departureTime: sec.depTime ?? '',
       arrivalDate,

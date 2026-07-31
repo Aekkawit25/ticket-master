@@ -2,6 +2,7 @@
 // (stock.sectors + pnr.sectorDates) — no fields dropped, no new status invented.
 
 import { formatDateDMY } from '@/lib/pnr-display'
+import { normalizeSectorType } from '@/lib/sector-type'
 import type { DemoStock, DemoPNR } from '@/lib/demo-storage'
 
 export function FlightSegmentsCard({ stock, pnr, label }: { stock: DemoStock; pnr: DemoPNR | undefined; label?: string }) {
@@ -31,7 +32,7 @@ export function FlightSegmentsCard({ stock, pnr, label }: { stock: DemoStock; pn
                 return (
                   <tr key={sec.sectorId} className="border-t border-slate-100">
                     <td className="px-2.5 py-2 text-slate-500">{sec.seq}</td>
-                    <td className="px-2.5 py-2 font-medium text-slate-700">{sec.sectorType}</td>
+                    <td className="px-2.5 py-2 font-medium text-slate-700">{normalizeSectorType(sec.sectorType)}</td>
                     <td className="px-2.5 py-2">{sec.airlineCode}</td>
                     <td className="px-2.5 py-2 font-mono">{sec.airlineCode}{sec.flightNo || '—'}</td>
                     <td className="px-2.5 py-2 font-medium">{sec.depAirportCode}</td>

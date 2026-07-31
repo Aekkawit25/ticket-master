@@ -11,7 +11,7 @@ import type { DemoPNR, DemoFlightSet, PnrSectorSchedule } from '@/lib/demo-stora
 
 function makeSector(
   seq: number,
-  sectorType: 'Departure' | 'Transit' | 'Arrival',
+  sectorType: 'Departure' | 'Transit' | 'Return',
   dayOffset: number,
   arrDayOffset = 0,
   depTime = '08:00',
@@ -81,10 +81,10 @@ function makePNR(
 
 // ─── TC-SS-01: Round-trip 2 sectors, no overnight ────────────────────────────
 
-describe('TC-SS-01: Round-trip 2 sectors — Departure day 1, Arrival day 5', () => {
+describe('TC-SS-01: Round-trip 2 sectors — Departure day 1, Return day 5', () => {
   const sectors = [
     makeSector(1, 'Departure', 1, 0),
-    makeSector(2, 'Arrival', 5, 0),
+    makeSector(2, 'Return', 5, 0),
   ]
   const flightSet = makeFlightSet(sectors)
   const pnr = makePNR('2026-03-01')
@@ -93,7 +93,7 @@ describe('TC-SS-01: Round-trip 2 sectors — Departure day 1, Arrival day 5', ()
     const [dep] = getPnrSectorSchedules(pnr, flightSet)
     expect(dep.departureDate).toBe('2026-03-01')
   })
-  it('Arrival date = 2026-03-05 (day 5)', () => {
+  it('Return date = 2026-03-05 (day 5)', () => {
     const [, arr] = getPnrSectorSchedules(pnr, flightSet)
     expect(arr.departureDate).toBe('2026-03-05')
   })
@@ -105,11 +105,11 @@ describe('TC-SS-01: Round-trip 2 sectors — Departure day 1, Arrival day 5', ()
 
 // ─── TC-SS-02: Transit 3 sectors ─────────────────────────────────────────────
 
-describe('TC-SS-02: 3-sector trip — Departure day 1, Transit day 1, Arrival day 5', () => {
+describe('TC-SS-02: 3-sector trip — Departure day 1, Transit day 1, Return day 5', () => {
   const sectors = [
     makeSector(1, 'Departure', 1, 0),
     makeSector(2, 'Transit', 1, 0),
-    makeSector(3, 'Arrival', 5, 0),
+    makeSector(3, 'Return', 5, 0),
   ]
   const flightSet = makeFlightSet(sectors)
   const pnr = makePNR('2026-06-10')
@@ -121,11 +121,11 @@ describe('TC-SS-02: 3-sector trip — Departure day 1, Transit day 1, Arrival da
     const schedules = getPnrSectorSchedules(pnr, flightSet)
     expect(schedules[1].departureDate).toBe('2026-06-10')
   })
-  it('Arrival date = 2026-06-14', () => {
+  it('Return date = 2026-06-14', () => {
     const schedules = getPnrSectorSchedules(pnr, flightSet)
     expect(schedules[2].departureDate).toBe('2026-06-14')
   })
-  it('travelEnd driven by last Arrival = 2026-06-14', () => {
+  it('travelEnd driven by last Return = 2026-06-14', () => {
     expect(resolveTravelEnd(getPnrSectorSchedules(pnr, flightSet))).toBe('2026-06-14')
   })
 })
@@ -153,7 +153,7 @@ describe('TC-SS-03: Multi-city — 3 Departure sectors on different days', () =>
     const s = getPnrSectorSchedules(pnr, flightSet)
     expect(s[2].departureDate).toBe('2026-08-07')
   })
-  it('travelEnd = last sector departureDate when no Arrival (no plusDay)', () => {
+  it('travelEnd = last sector departureDate when no Return sector (no plusDay)', () => {
     const s = getPnrSectorSchedules(pnr, flightSet)
     expect(resolveTravelEnd(s)).toBe('2026-08-07')
   })
@@ -161,19 +161,19 @@ describe('TC-SS-03: Multi-city — 3 Departure sectors on different days', () =>
 
 // ─── TC-SS-04: +1 overnight day ──────────────────────────────────────────────
 
-describe('TC-SS-04: Arrival flight crosses midnight (+1 day)', () => {
+describe('TC-SS-04: Return flight crosses midnight (+1 day)', () => {
   const sectors = [
     makeSector(1, 'Departure', 1, 0, '09:00', '11:00'),
-    makeSector(2, 'Arrival', 5, 1, '22:00', '01:00'),  // dep day 5, +1 arr
+    makeSector(2, 'Return', 5, 1, '22:00', '01:00'),  // dep day 5, +1 arr
   ]
   const flightSet = makeFlightSet(sectors)
   const pnr = makePNR('2026-04-01')
 
-  it('Arrival departureDate = 2026-04-05', () => {
+  it('Return departureDate = 2026-04-05', () => {
     const s = getPnrSectorSchedules(pnr, flightSet)
     expect(s[1].departureDate).toBe('2026-04-05')
   })
-  it('Arrival arrivalDate = 2026-04-06 (+1 from depDate)', () => {
+  it('Return arrivalDate = 2026-04-06 (+1 from depDate)', () => {
     const s = getPnrSectorSchedules(pnr, flightSet)
     expect(s[1].arrivalDate).toBe('2026-04-06')
   })
@@ -188,10 +188,10 @@ describe('TC-SS-04: Arrival flight crosses midnight (+1 day)', () => {
 
 // ─── TC-SS-05: +2 days ───────────────────────────────────────────────────────
 
-describe('TC-SS-05: Arrival flight +2 days (long-haul overnight)', () => {
+describe('TC-SS-05: Return flight +2 days (long-haul overnight)', () => {
   const sectors = [
     makeSector(1, 'Departure', 1, 0),
-    makeSector(2, 'Arrival', 1, 2, '20:00', '18:00'),  // +2 days
+    makeSector(2, 'Return', 1, 2, '20:00', '18:00'),  // +2 days
   ]
   const flightSet = makeFlightSet(sectors)
   const pnr = makePNR('2026-12-31')
@@ -211,7 +211,7 @@ describe('TC-SS-05: Arrival flight +2 days (long-haul overnight)', () => {
 describe('TC-SS-06: Midnight departure time 00:00', () => {
   const sectors = [
     makeSector(1, 'Departure', 1, 0, '00:00', '03:00'),
-    makeSector(2, 'Arrival', 3, 0, '00:00', '02:30'),
+    makeSector(2, 'Return', 3, 0, '00:00', '02:30'),
   ]
   const flightSet = makeFlightSet(sectors)
   const pnr = makePNR('2026-05-15')
@@ -235,7 +235,7 @@ describe('TC-SS-06: Midnight departure time 00:00', () => {
 describe('TC-SS-07: No times configured on FlightSet sector', () => {
   const sectors = [
     makeSector(1, 'Departure', 1, 0, '', ''),
-    makeSector(2, 'Arrival', 4, 0, '', ''),
+    makeSector(2, 'Return', 4, 0, '', ''),
   ]
   const flightSet = makeFlightSet(sectors)
   const pnr = makePNR('2026-07-01')
@@ -260,7 +260,7 @@ describe('TC-SS-07: No times configured on FlightSet sector', () => {
 describe('TC-SS-08: All dates calculated from FlightSet template — no stored overrides', () => {
   const sectors = [
     makeSector(1, 'Departure', 1, 0, '06:30', '09:00'),
-    makeSector(2, 'Arrival', 7, 0, '14:00', '17:00'),
+    makeSector(2, 'Return', 7, 0, '14:00', '17:00'),
   ]
   const flightSet = makeFlightSet(sectors)
   const pnr = makePNR('2026-09-10', [])  // empty sectorSchedules → legacy path
@@ -288,7 +288,7 @@ describe('TC-SS-08: All dates calculated from FlightSet template — no stored o
 describe('TC-SS-09: PNR has manual departure date override for sector 2', () => {
   const sectors = [
     makeSector(1, 'Departure', 1, 0),
-    makeSector(2, 'Arrival', 5, 0),
+    makeSector(2, 'Return', 5, 0),
   ]
   const flightSet = makeFlightSet(sectors)
 
@@ -311,7 +311,7 @@ describe('TC-SS-09: PNR has manual departure date override for sector 2', () => 
     {
       flightSetSectorId: 'SEC-2',
       sequence: 2,
-      sectorType: 'Arrival',
+      sectorType: 'Return',
       departureDate: '2026-03-10',
       departureTime: '14:00',
       arrivalDate: '2026-03-10',
@@ -345,7 +345,7 @@ describe('TC-SS-09: PNR has manual departure date override for sector 2', () => 
 describe('TC-SS-10: Re-resolve when travelStart changes (new PNR with different date)', () => {
   const sectors = [
     makeSector(1, 'Departure', 1, 0),
-    makeSector(2, 'Arrival', 5, 0),
+    makeSector(2, 'Return', 5, 0),
   ]
   const flightSet = makeFlightSet(sectors)
 
@@ -369,7 +369,7 @@ describe('TC-SS-10: Re-resolve when travelStart changes (new PNR with different 
 describe('TC-SS-11: Date strings must not UTC-shift (local midnight only)', () => {
   const sectors = [
     makeSector(1, 'Departure', 1, 0),
-    makeSector(2, 'Arrival', 2, 1),  // +1 overnight: arr day 2, arrive day 3
+    makeSector(2, 'Return', 2, 1),  // +1 overnight: arr day 2, arrive day 3
   ]
   const flightSet = makeFlightSet(sectors)
 
@@ -399,16 +399,19 @@ describe('TC-SS-11: Date strings must not UTC-shift (local midnight only)', () =
 describe('TC-SS-12: Legacy PNR — sectorSchedules absent, reconstruct from sectorDates', () => {
   const sectors = [
     makeSector(1, 'Departure', 1, 0, '07:00', '09:00'),
-    makeSector(2, 'Arrival', 6, 0, '12:00', '14:00'),
+    makeSector(2, 'Return', 6, 0, '12:00', '14:00'),
   ]
   const flightSet = makeFlightSet(sectors)
 
+  // Note: sectorDates[].sectorType is not read by adaptLegacyPnrSchedule (only .date is —
+  // sector type comes from the FlightSet template above), so this only exercises the
+  // legacy date-fallback path, not sector-type normalization.
   const legacyPnr = makePNR(
     '2026-11-01',
     undefined,  // no sectorSchedules
     [
       { sectorType: 'Departure', date: '2026-11-01' },
-      { sectorType: 'Arrival', date: '2026-11-06' },
+      { sectorType: 'Return', date: '2026-11-06' },
     ]
   )
 

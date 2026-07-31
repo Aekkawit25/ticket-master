@@ -12,6 +12,7 @@ import { EMPTY_PNR_FORM, validatePnrFormValues, buildSectorRows } from '@/lib/pn
 import { TimeInput } from '@/components/ui/time-input'
 import type { DemoStock } from '@/lib/demo-storage'
 import { TtlTemplateConflictModal, type TtlTemplateConflictDecision } from '@/components/shared/TtlTemplateConflictModal'
+import { normalizeSectorType, SECTOR_TYPE } from '@/lib/sector-type'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -78,7 +79,7 @@ function SectorTable({ rows }: { rows: PnrSectorRow[] }) {
           {rows.map(r => {
             const typeColor = r.sectorType === 'Departure'
               ? 'bg-green-100 text-green-700'
-              : r.sectorType === 'Arrival'
+              : normalizeSectorType(r.sectorType) === SECTOR_TYPE.RETURN
                 ? 'bg-purple-100 text-purple-700'
                 : 'bg-amber-100 text-amber-700'
             return (
@@ -86,7 +87,7 @@ function SectorTable({ rows }: { rows: PnrSectorRow[] }) {
                 <td className="px-2 py-1.5 text-center text-slate-400 font-mono whitespace-nowrap">{r.seq}</td>
                 <td className="px-2 py-1.5 text-left whitespace-nowrap">
                   <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${typeColor}`}>
-                    {(r.sectorType === 'Arrival' ? 'Return' : r.sectorType).slice(0, 3).toUpperCase()}
+                    {normalizeSectorType(r.sectorType).slice(0, 3).toUpperCase()}
                   </span>
                 </td>
                 <td className="px-2 py-1.5 text-left font-mono font-medium text-slate-700 whitespace-nowrap">

@@ -12,11 +12,12 @@ import type { FlightSectorFormData, FlightScheduleFormData, SectorType, TicketTy
 import { getActiveAirports, getAirportByCode, type StoredAirport } from '@/lib/airport-storage'
 import { getCountryByCode } from '@/lib/country-storage'
 import { AirlineCell } from '@/components/shared/AirlineCell'
+import { SECTOR_TYPE, SECTOR_TYPE_COLOR } from '@/lib/sector-type'
 
 const SECTOR_TYPE_OPTIONS: { value: SectorType; label: string; text: string }[] = [
-  { value: 'Departure', label: 'Departure', text: 'text-green-600' },
-  { value: 'Transit',   label: 'Transit',   text: 'text-amber-600' },
-  { value: 'Arrival',   label: 'Return',    text: 'text-purple-600' },
+  { value: SECTOR_TYPE.DEPARTURE, label: 'Departure', text: SECTOR_TYPE_COLOR.Departure },
+  { value: SECTOR_TYPE.TRANSIT,   label: 'Transit',   text: SECTOR_TYPE_COLOR.Transit },
+  { value: SECTOR_TYPE.RETURN,    label: 'Return',    text: SECTOR_TYPE_COLOR.Return },
 ]
 
 const MIDDLE_TYPE_OPTIONS = SECTOR_TYPE_OPTIONS.filter(o => o.value === 'Transit')
@@ -189,7 +190,7 @@ function emptySectors(tripType: TripType, airlineCode: string): FlightSectorForm
   const dep = blankSector(1, 'Departure', airlineCode)
   if (tripType === 'One-way') return [dep]
   const arr: FlightSectorFormData = {
-    seq: 2, sector_type: 'Arrival',
+    seq: 2, sector_type: SECTOR_TYPE.RETURN,
     airline_code: airlineCode, flight_no: '',
     dep_airport_code: '', arr_airport_code: '',
     dep_time: '17:00', arr_time: '22:00',
@@ -358,7 +359,7 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
       let r = { ...s }
       // Sector 1: Travel Day always 1
       if (i === 0) r.day_offset = 1
-      // Arrival sector (last, multi-sector): From auto-syncs unless user set Open Jaw
+      // Return sector (last, multi-sector): From auto-syncs unless user set Open Jaw
       if (i === lastIdx && lastIdx > 0) {
         if (!arrFromManualRef.current.has(schedId)) {
           r.dep_airport_code = newSectors[i - 1].arr_airport_code
@@ -448,16 +449,16 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
     if (sectors[0].sector_type !== 'Departure') return false
     if (tripType === 'One-way') {
       if (sectors.length === 1) return true
-      return sectors[sectors.length - 1].sector_type === 'Arrival'
+      return sectors[sectors.length - 1].sector_type === SECTOR_TYPE.RETURN
     }
-    // Round-trip and Multi-city: min 2 sectors, last must be Arrival
-    return sectors.length >= 2 && sectors[sectors.length - 1].sector_type === 'Arrival'
+    // Round-trip and Multi-city: min 2 sectors, last must be Return
+    return sectors.length >= 2 && sectors[sectors.length - 1].sector_type === SECTOR_TYPE.RETURN
   })()
 
   // ── Row state helpers ─────────────────────────────────────────────────────────
   const isTypeLocked = (idx: number) => {
     if (idx === 0) return true                                        // Departure — always locked
-    if (sectors.length > 1 && idx === sectors.length - 1) return true // Arrival — always locked
+    if (sectors.length > 1 && idx === sectors.length - 1) return true // Return — always locked
     if (tripType === 'One-way' && sectors.length <= 1) return true    // 1-sector One-way has no middle
     return false                                                       // Transit — dropdown (Transit only)
   }
@@ -474,12 +475,12 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
     arrFromManualRef.current.delete(schedule?.scheduleId ?? '')
 
     if (newType === 'One-way') {
-      // Keep all sectors; relabel first=Departure, last=Arrival (if >1), middle=Transit
+      // Keep all sectors; relabel first=Departure, last=Return (if >1), middle=Transit
       const base = sectors.length ? [...sectors] : [blankSector(1, 'Departure', airlineCode)]
       const n = base.length
       const normalized = base.map((s, i) => ({
         ...s, seq: i + 1,
-        sector_type: (i === 0 ? 'Departure' : n > 1 && i === n - 1 ? 'Arrival' : 'Transit') as SectorType,
+        sector_type: (i === 0 ? SECTOR_TYPE.DEPARTURE : n > 1 && i === n - 1 ? SECTOR_TYPE.RETURN : SECTOR_TYPE.TRANSIT) as SectorType,
       }))
       updateSectors(normalized)
       onTripTypeChange(newType)
@@ -487,12 +488,12 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
     }
 
     if (newType === 'Round-trip') {
-      // Keep all sectors; relabel first=Departure, last=Arrival, middle=Transit
-      // If only 1 sector exists, append a blank Arrival
+      // Keep all sectors; relabel first=Departure, last=Return, middle=Transit
+      // If only 1 sector exists, append a blank Return
       const base = sectors.length ? [...sectors] : [blankSector(1, 'Departure', airlineCode)]
       if (base.length === 1) {
         base.push({
-          seq: 2, sector_type: 'Arrival', airline_code: airlineCode, flight_no: '',
+          seq: 2, sector_type: SECTOR_TYPE.RETURN, airline_code: airlineCode, flight_no: '',
           dep_airport_code: base[0].arr_airport_code || '', arr_airport_code: base[0].dep_airport_code || '',
           dep_time: '17:00', arr_time: '22:00', arr_day_offset: 0, day_offset: 1, remark: '',
         })
@@ -500,7 +501,7 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
       const n = base.length
       const normalized = base.map((s, i) => ({
         ...s, seq: i + 1,
-        sector_type: (i === 0 ? 'Departure' : i === n - 1 ? 'Arrival' : 'Transit') as SectorType,
+        sector_type: (i === 0 ? SECTOR_TYPE.DEPARTURE : i === n - 1 ? SECTOR_TYPE.RETURN : SECTOR_TYPE.TRANSIT) as SectorType,
       }))
       updateSectors(normalized)
       onTripTypeChange(newType)
@@ -511,12 +512,12 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
     const base = sectors.length ? [...sectors] : [blankSector(1, 'Departure', airlineCode, 'BKK')]
     if (base.length === 1) {
       const prev = base[0]
-      base.push({ seq: 2, sector_type: 'Arrival', airline_code: airlineCode, flight_no: '', dep_airport_code: prev.arr_airport_code || '', arr_airport_code: prev.dep_airport_code || '', dep_time: '17:00', arr_time: '22:00', arr_day_offset: 0, day_offset: 1, remark: '' })
+      base.push({ seq: 2, sector_type: SECTOR_TYPE.RETURN, airline_code: airlineCode, flight_no: '', dep_airport_code: prev.arr_airport_code || '', arr_airport_code: prev.dep_airport_code || '', dep_time: '17:00', arr_time: '22:00', arr_day_offset: 0, day_offset: 1, remark: '' })
     }
     const n = base.length
     const normalized = base.map((s, i) => ({
       ...s, seq: i + 1,
-      sector_type: (i === 0 ? 'Departure' : i === n - 1 ? 'Arrival' : 'Transit') as SectorType,
+      sector_type: (i === 0 ? SECTOR_TYPE.DEPARTURE : i === n - 1 ? SECTOR_TYPE.RETURN : SECTOR_TYPE.TRANSIT) as SectorType,
     }))
     updateSectors(normalized)
     onTripTypeChange(newType)
@@ -539,7 +540,7 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
     if (!canAdd) return
     let insertAt = sectors.length
     for (let i = sectors.length - 1; i >= 0; i--) {
-      if (sectors[i].sector_type === 'Arrival') { insertAt = i; break }
+      if (sectors[i].sector_type === SECTOR_TYPE.RETURN) { insertAt = i; break }
     }
     const prev = sectors[insertAt - 1]
     const newSector = blankSector(insertAt + 1, 'Transit', airlineCode, prev?.arr_airport_code || '')
@@ -588,7 +589,7 @@ export default function Step2Sectors({ schedules, onChange, ticketType, tripType
     const fromCode = sectors[i + 1].dep_airport_code
     if (toCode && fromCode && toCode !== fromCode) {
       if (i === sectors.length - 2) {
-        // Gap before Arrival sector = Open Jaw (info only, not an error)
+        // Gap before Return sector = Open Jaw (info only, not an error)
         openJawSegments.push({ from: toCode, to: fromCode })
       } else {
         // Transit gap = actual route continuity error

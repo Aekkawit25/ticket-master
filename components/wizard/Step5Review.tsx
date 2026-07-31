@@ -12,6 +12,7 @@ import { CheckCircle2, Plane, Users, FileText, AlertTriangle, ArrowLeft, Refresh
 import type { WizardState, FlightPNRFormData, FlightSectorFormData } from '@/types'
 import { PNRSeatsTable } from '@/components/shared/PNRSeatsTable'
 import type { PNRRecord, ScheduleTemplate } from '@/lib/pnr-record'
+import { normalizeSectorType, SECTOR_TYPE_COLOR } from '@/lib/sector-type'
 
 interface Step5Props {
   state: WizardState
@@ -21,12 +22,6 @@ interface Step5Props {
   seriesNameSource?: 'auto' | 'manual'
   onSeriesNameChange?: (name: string) => void
   onRegenerateName?: () => void
-}
-
-const SECTOR_TYPE_COLOR: Record<string, string> = {
-  Departure: 'text-green-600',
-  Arrival:   'text-purple-600',
-  Transit:   'text-amber-600',
 }
 
 export default function Step5Review({
@@ -423,8 +418,8 @@ export default function Step5Review({
                         <TableRow key={i}>
                           <Td className="text-xs text-slate-400">{s.seq ?? i + 1}</Td>
                           <Td>
-                            <span className={`text-xs font-medium ${SECTOR_TYPE_COLOR[s.sector_type] ?? 'text-slate-600'}`}>
-                              {s.sector_type === 'Arrival' ? 'Return' : s.sector_type}
+                            <span className={`text-xs font-medium ${SECTOR_TYPE_COLOR[normalizeSectorType(s.sector_type)] ?? 'text-slate-600'}`}>
+                              {normalizeSectorType(s.sector_type)}
                             </span>
                           </Td>
                           <Td className="font-mono text-xs">

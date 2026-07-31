@@ -18,6 +18,7 @@ import { getActiveHolidays } from './holiday-storage'
 import { lockTtlOnPnrSave } from './pnr-applied-condition'
 import { validatePnrRowFields } from './pnr-validation'
 import type { CondTtlRule } from './condition-schema'
+import { normalizeSectorType } from './sector-type'
 
 // ── Lightweight sector / flightSet types ──────────────────────────────────────
 // Compatible with DemoSector / DemoFlightSet — callers can pass either.
@@ -322,7 +323,7 @@ export function buildDemoPnrFromForm(
   const sectorSchedules = sectorRows.map((r, i) => ({
     flightSetSectorId:  r.sectorId,
     sequence:           i + 1,
-    sectorType:         r.sectorType as 'Departure' | 'Transit' | 'Arrival',
+    sectorType:         normalizeSectorType(r.sectorType),
     departureDate:      r.depDate,
     departureTime:      r.depTime,
     arrivalDate:        r.arrDate,

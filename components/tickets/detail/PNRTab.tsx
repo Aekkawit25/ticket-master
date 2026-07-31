@@ -25,6 +25,7 @@ import { AirlineCell } from '@/components/shared/AirlineCell'
 import { TtlField } from '@/components/shared/TtlField'
 import type { ConditionTtlInfo } from '@/components/shared/TtlField'
 import { buildDemoPnrFromForm, generateDummyPnrCode, pnrToFormValues } from '@/lib/pnr-shared-utils'
+import { normalizeSectorType, SECTOR_TYPE } from '@/lib/sector-type'
 import type { PnrFormValues, PnrModalCondition } from '@/lib/pnr-shared-utils'
 import { getConditionTemplates } from '@/lib/condition-storage'
 import { getEffectiveConditionForPnr, computeTemplateReadiness } from '@/lib/condition-relationship'
@@ -820,8 +821,8 @@ export function PNRTab({ liveStock, mockPNRs, currency, canEdit, jumpToEdit, onU
                             <td className="px-2 py-1.5 text-center">
                               {sc ? (
                                 <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap ${
-                                  sc.sectorType === 'Departure' ? 'bg-green-100 text-green-700' :
-                                  sc.sectorType === 'Arrival'   ? 'bg-purple-100 text-purple-700' :
+                                  sc.sectorType === SECTOR_TYPE.DEPARTURE ? 'bg-green-100 text-green-700' :
+                                  normalizeSectorType(sc.sectorType) === SECTOR_TYPE.RETURN ? 'bg-purple-100 text-purple-700' :
                                                                   'bg-amber-100 text-amber-700'
                                 }`}>S{sc.sequence}</span>
                               ) : <span className="text-slate-300">—</span>}

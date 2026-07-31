@@ -17,7 +17,7 @@ const TRAVEL_START = '2026-03-01'
 const TWO_SECTORS: PnrModalFlightSet['sectors'] = [
   { sectorId: 'S1', seq: 1, sectorType: 'Departure', dayOffset: 1, arrDayOffset: 0,
     depAirportCode: 'BKK', arrAirportCode: 'NRT', depTime: '08:00', arrTime: '15:00' },
-  { sectorId: 'S2', seq: 2, sectorType: 'Arrival',   dayOffset: 3, arrDayOffset: 0,
+  { sectorId: 'S2', seq: 2, sectorType: 'Return',    dayOffset: 3, arrDayOffset: 0,
     depAirportCode: 'NRT', arrAirportCode: 'BKK', depTime: '17:00', arrTime: '22:00' },
 ]
 
@@ -59,7 +59,7 @@ function mkPNR(overrides: Partial<DemoPNR> = {}): DemoPNR {
     pnrId:          'PNR-1', pnrCode: '', dummyPnr: 'DMY-GRPTG2603-0001',
     pnrType:        'dummy', pnrDisplay: 'DMY-GRPTG2603-0001',
     travelStart:    TRAVEL_START, travelEnd: '2026-03-03', flightSetId: 'FS-1',
-    sectorDates:    [{ sectorType: 'Departure', date: '2026-03-01' }, { sectorType: 'Arrival', date: '2026-03-03' }],
+    sectorDates:    [{ sectorType: 'Departure', date: '2026-03-01' }, { sectorType: 'Return', date: '2026-03-03' }],
     seatTotal:      40, seatUsed: 0, seatBalance: 40,
     priceFormat:    'FARE', fare: 1000, yq: 200, taxType: 'separate', tax: 100,
     fareIncludesTax: false, taxStatus: 'completed', total: 1300,

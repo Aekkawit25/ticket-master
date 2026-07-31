@@ -12,7 +12,7 @@ import type { SectorTemplate, PNRSectorRecord } from '@/lib/pnr-record'
 // BKK→SIN→BKK trip: D1 out, D4 back, D5 overnight return
 const TMPL_SECTORS: SectorTemplate[] = [
   { sectorType: 'Departure', dayOffset: 1, arrDayOffset: 0, depAirportCode: 'BKK', arrAirportCode: 'SIN', depTime: '08:00', arrTime: '12:00' },
-  { sectorType: 'Arrival',   dayOffset: 4, arrDayOffset: 0, depAirportCode: 'SIN', arrAirportCode: 'BKK', depTime: '14:00', arrTime: '18:00' },
+  { sectorType: 'Return',    dayOffset: 4, arrDayOffset: 0, depAirportCode: 'SIN', arrAirportCode: 'BKK', depTime: '14:00', arrTime: '18:00' },
   { sectorType: 'Departure', dayOffset: 5, arrDayOffset: 1, depAirportCode: 'BKK', arrAirportCode: 'NRT', depTime: '22:00', arrTime: '06:00' },
 ]
 

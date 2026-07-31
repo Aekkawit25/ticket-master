@@ -20,8 +20,8 @@ function mkSector(overrides: Partial<FlightSector> = {}): FlightSector {
 const DEP_BKK_NRT = mkSector({ seq: 1, sector_type: 'Departure', dep_airport_code: 'BKK', arr_airport_code: 'NRT' })
 const TR_NRT_KIX  = mkSector({ seq: 2, sector_type: 'Transit',   dep_airport_code: 'NRT', arr_airport_code: 'KIX' })
 const TR_KIX_NRT  = mkSector({ seq: 3, sector_type: 'Transit',   dep_airport_code: 'KIX', arr_airport_code: 'NRT' })
-const ARR_NRT_BKK = mkSector({ seq: 4, sector_type: 'Arrival',   dep_airport_code: 'NRT', arr_airport_code: 'BKK' })
-const ARR_BKK     = mkSector({ seq: 2, sector_type: 'Arrival',   dep_airport_code: 'NRT', arr_airport_code: 'BKK' })
+const ARR_NRT_BKK = mkSector({ seq: 4, sector_type: 'Return',    dep_airport_code: 'NRT', arr_airport_code: 'BKK' })
+const ARR_BKK     = mkSector({ seq: 2, sector_type: 'Return',    dep_airport_code: 'NRT', arr_airport_code: 'BKK' })
 
 // ─── Test 1: Round-trip 2 Sectors — must pass ─────────────────────────────────
 
@@ -49,7 +49,7 @@ describe('Round-trip 4 Sectors', () => {
 // ─── Test 3: Round-trip 4 Sectors last.to ≠ first.from — must fail ───────────
 
 describe('Round-trip origin/destination mismatch', () => {
-  const lastToHND = mkSector({ seq: 4, sector_type: 'Arrival', dep_airport_code: 'NRT', arr_airport_code: 'HND' })
+  const lastToHND = mkSector({ seq: 4, sector_type: 'Return', dep_airport_code: 'NRT', arr_airport_code: 'HND' })
 
   it('returns error naming the mismatched airports', () => {
     const err = validateSectors([DEP_BKK_NRT, TR_NRT_KIX, TR_KIX_NRT, lastToHND], 'Group', 'Round-trip')
@@ -86,16 +86,16 @@ describe('One-way 1 Sector', () => {
 
 describe('One-way multi-Sector (connecting flights)', () => {
   const tr  = mkSector({ seq: 2, sector_type: 'Transit', dep_airport_code: 'NRT', arr_airport_code: 'CTS' })
-  const arr = mkSector({ seq: 3, sector_type: 'Arrival', dep_airport_code: 'CTS', arr_airport_code: 'SPK' })
+  const arr = mkSector({ seq: 3, sector_type: 'Return',  dep_airport_code: 'CTS', arr_airport_code: 'SPK' })
 
-  it('Dep + Transit + Arrival is valid', () => {
+  it('Dep + Transit + Return is valid', () => {
     expect(validateSectors([DEP_BKK_NRT, tr, arr], 'FIT', 'One-way')).toBeNull()
   })
 
-  it('Dep + Transit (no Arrival) is invalid', () => {
+  it('Dep + Transit (no Return) is invalid', () => {
     const err = validateSectors([DEP_BKK_NRT, tr], 'FIT', 'One-way')
     expect(err).toBeTruthy()
-    expect(err).toContain('Arrival')
+    expect(err).toContain('Return')
   })
 })
 
@@ -125,7 +125,7 @@ describe('first sector must be Departure', () => {
 
 describe('Round-trip airport check skipped when airports empty', () => {
   const depEmpty = mkSector({ seq: 1, sector_type: 'Departure', dep_airport_code: '', arr_airport_code: '' })
-  const arrEmpty = mkSector({ seq: 2, sector_type: 'Arrival',   dep_airport_code: '', arr_airport_code: '' })
+  const arrEmpty = mkSector({ seq: 2, sector_type: 'Return',    dep_airport_code: '', arr_airport_code: '' })
 
   it('passes when airports are not yet filled', () => {
     expect(validateSectors([depEmpty, arrEmpty], 'Group', 'Round-trip')).toBeNull()

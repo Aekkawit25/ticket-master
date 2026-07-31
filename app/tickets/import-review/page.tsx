@@ -27,6 +27,7 @@ import { newConditionId, newStageId, defaultBaggagePolicy, defaultSeatReductionP
 import type { ImportReviewData, ImportPNR } from '@/lib/excel-import'
 import { addDays, format as fnsFormat, parseISO, isValid } from 'date-fns'
 import { ChevronLeft, CheckCircle, AlertCircle, AlertTriangle, Copy } from 'lucide-react'
+import { normalizeSectorType, SECTOR_TYPE } from '@/lib/sector-type'
 
 // ── Inline ID generator (no dependency on demo-storage genId) ─────────────────
 function genId(prefix: string): string {
@@ -676,8 +677,8 @@ function ImportReviewInner() {
                     <tr key={s.seq} className={`border-b border-slate-100 last:border-0 ${i % 2 === 0 ? '' : 'bg-slate-50/40'} hover:bg-slate-50`}>
                       <td className="px-3 py-2.5 text-xs text-center text-slate-400">{s.seq}</td>
                       <td className="px-3 py-2.5 text-xs text-center">
-                        <span className={`font-medium ${s.sectorType === 'Departure' ? 'text-green-600' : s.sectorType === 'Arrival' ? 'text-purple-600' : 'text-slate-600'}`}>
-                          {s.sectorType === 'Arrival' ? 'Return' : s.sectorType}
+                        <span className={`font-medium ${s.sectorType === SECTOR_TYPE.DEPARTURE ? 'text-green-600' : normalizeSectorType(s.sectorType) === SECTOR_TYPE.RETURN ? 'text-purple-600' : 'text-slate-600'}`}>
+                          {normalizeSectorType(s.sectorType)}
                         </span>
                       </td>
                       <td className="px-3 py-2.5 text-center">
