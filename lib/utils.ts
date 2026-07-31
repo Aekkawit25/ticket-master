@@ -106,7 +106,7 @@ export function cn(...inputs: ClassValue[]) {
  * date-only string treats it as UTC midnight, which shifts to the previous
  * calendar day in timezones behind UTC.  This helper avoids that trap.
  */
-function parseDateSafe(date: string): Date {
+export function parseDateSafe(date: string): Date {
   if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     const [y, m, d] = date.split('-').map(Number)
     return new Date(y, m - 1, d)   // local midnight, no UTC

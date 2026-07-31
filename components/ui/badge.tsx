@@ -49,13 +49,13 @@ export function PnrConfirmationStatusBadge({ status }: { status: string }) {
   return <Badge variant={confirmed ? 'green' : 'orange'} className="whitespace-nowrap">{confirmed ? 'ยืนยันแล้ว' : 'รอยืนยัน'}</Badge>
 }
 
-export function TicketTypeBadge({ type, groupType, sourceType }: { type: string; groupType?: string; sourceType?: string }) {
-  if (sourceType === 'AD_HOC') return <Badge variant="indigo">Ad Hoc ใน Series</Badge>
+export function TicketTypeBadge({ type, groupType, sourceType, className }: { type: string; groupType?: string; sourceType?: string; className?: string }) {
+  if (sourceType === 'AD_HOC') return <Badge variant="indigo" className={className}>Ad Hoc ใน Series</Badge>
   if (type === 'Group') {
-    if (groupType === 'ADHOC') return <Badge variant="orange">Ad Hoc</Badge>
-    return <Badge variant="green">Series</Badge>
+    if (groupType === 'ADHOC') return <Badge variant="orange" className={className}>Ad Hoc</Badge>
+    return <Badge variant="green" className={className}>Series</Badge>
   }
-  if (type === 'FIT') return <Badge variant="blue">FIT</Badge>
-  if (type === 'Ticket + Land') return <Badge variant="purple">Ticket (Land)</Badge>
-  return <Badge variant="gray">{type}</Badge>
+  if (type === 'FIT') return <Badge variant="blue" className={className}>FIT</Badge>
+  if (type === 'Ticket + Land') return <Badge variant="purple" className={className}>Ticket (Land)</Badge>
+  return <Badge variant="gray" className={className}>{type}</Badge>
 }
